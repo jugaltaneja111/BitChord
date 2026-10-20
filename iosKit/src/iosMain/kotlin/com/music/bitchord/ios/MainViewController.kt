@@ -10,6 +10,7 @@ import com.music.bitchord.data.settings.LibrarySort
 import com.music.bitchord.data.settings.LibraryViewType
 import com.music.bitchord.ui.AppUi
 import com.music.bitchord.ui.AppUiHost
+import com.music.bitchord.ui.player.PlayerPlatform
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,7 @@ private fun start() {
     // No PoToken minter on iOS yet: InnerTubeX tries only the clients that need none.
     InnerTubeXResolver.init(CachesPlayerCache(), UserDefaultsConfigStore(), poTokenProvider = null)
     AppUi.install(IosAppUiHost)
+    PlayerPlatform.install(IosPlayerHost)
     startAutoplayIfAsked()
 }
 

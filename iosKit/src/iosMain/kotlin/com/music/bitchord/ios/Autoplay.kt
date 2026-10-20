@@ -10,7 +10,8 @@ import platform.Foundation.NSProcessInfo
 /**
  * A smoke test CI can run without touching the screen: launched with BITCHORD_AUTOPLAY set to a
  * video id, the app plays it at once and prints what the player is doing every two seconds. A
- * position that advances means AVPlayer is decoding the stream.
+ * position that advances means AVPlayer is decoding the stream. BITCHORD_AUTOSEARCH (see
+ * [autoSearchQuery]) also draws a page of results, which is where the search rows get exercised.
  */
 internal fun startAutoplayIfAsked() {
     val videoId = NSProcessInfo.processInfo.environment["BITCHORD_AUTOPLAY"] as? String ?: return
@@ -31,3 +32,7 @@ internal fun startAutoplayIfAsked() {
 }
 
 private const val AUTOPLAY_REPORTS = 30
+
+/** The search CI asks the app to submit at launch, or null. */
+internal fun autoSearchQuery(): String? =
+    NSProcessInfo.processInfo.environment["BITCHORD_AUTOSEARCH"] as? String

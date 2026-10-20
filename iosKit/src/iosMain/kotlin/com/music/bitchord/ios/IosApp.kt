@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +118,12 @@ private fun SearchPage(search: IosSearch, song: Song?, isPlaying: Boolean, conte
     var focusRequested by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    LaunchedEffect(Unit) {
+        autoSearchQuery()?.let { query ->
+            focusRequested = false
+            search.submit(query)
+        }
+    }
 
     fun play(song: Song) {
         search.record(
