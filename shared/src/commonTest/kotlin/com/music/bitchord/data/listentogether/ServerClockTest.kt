@@ -36,7 +36,7 @@ class ServerClockTest {
     }
 
     @Test
-    fun `the shortest round trip wins, not the most recent`() {
+    fun `the shortest round trip wins rather than the most recent`() {
         val clock = clock()
         clock.record(sentAtLocalMs = 0, serverMs = 5_010, receivedAtLocalMs = 20)
         // A later, far slower exchange carrying a worse estimate must not displace it.

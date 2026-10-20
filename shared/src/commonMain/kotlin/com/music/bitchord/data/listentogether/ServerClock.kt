@@ -1,5 +1,9 @@
 package com.music.bitchord.data.listentogether
 
+import kotlin.concurrent.Volatile
+import kotlin.time.TimeSource
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * This device's offset from the party server's clock.
@@ -37,11 +41,14 @@ class ServerClock(
     /**
      * This device's monotonic milliseconds. Injected because the right source differs per platform:
      * Android wants `SystemClock.elapsedRealtime`, which counts through deep sleep, and a desktop
-     * has `System.nanoTime`. Both are monotonic, which is the whole requirement — see the note on
-     * the wall clock above.
+     * has `System.nanoTime` (what [TimeSource.Monotonic] reads there; iOS reads its own monotonic
+     * clock). Both are monotonic, which is the whole requirement — see the note on the wall clock
+     * above.
      */
-    private val localNowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val localNowMs: () -> Long = monotonicMs(),
 ) {
+
+    private val lock = SynchronizedObject()
 
     private data class Sample(val offsetMs: Long, val roundTripMs: Long, val takenAtMs: Long)
 
@@ -58,8 +65,7 @@ class ServerClock(
     /** True once at least one round trip has completed. */
     val synced: Boolean get() = offsetMs != null
 
-    @Synchronized
-    fun record(sentAtLocalMs: Long, serverMs: Long, receivedAtLocalMs: Long) {
+    fun record(sentAtLocalMs: Long, serverMs: Long, receivedAtLocalMs: Long) = synchronized(lock) {
         val roundTrip = (receivedAtLocalMs - sentAtLocalMs).coerceAtLeast(0)
         val midpoint = sentAtLocalMs + roundTrip / 2
         samples.addLast(Sample(serverMs - midpoint, roundTrip, receivedAtLocalMs))
@@ -78,8 +84,7 @@ class ServerClock(
     /** The server's clock, read from here. Null until the first pong lands. */
     fun serverNowMs(): Long? = offsetMs?.let { localNowMs() + it }
 
-    @Synchronized
-    fun reset() {
+    fun reset() = synchronized(lock) {
         samples.clear()
         offsetMs = null
         roundTripMs = 0
@@ -91,5 +96,10 @@ class ServerClock(
     companion object {
         private const val WINDOW = 12
         private const val SAMPLE_TTL_MS = 120_000L
+
+        private fun monotonicMs(): () -> Long {
+            val origin = TimeSource.Monotonic.markNow()
+            return { origin.elapsedNow().inWholeMilliseconds }
+        }
     }
 }

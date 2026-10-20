@@ -19,6 +19,15 @@ kotlin {
         }
     }
 
+    // iPhone and the Apple-silicon simulator. Only commonMain reaches these so far: the code in
+    // jvmSharedMain moves over as it stops depending on the JDK (see docs/IOS_PORT.md).
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "BitChordShared"
+            isStatic = true
+        }
+    }
+
     // Android and desktop are both JVM, but the default hierarchy gives them no source set in
     // common.
     applyDefaultHierarchyTemplate()
@@ -53,6 +62,9 @@ kotlin {
         commonMain.dependencies {
             // Models in this module intentionally have no Android or Compose dependency.
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+            // Locks for code shared with iOS, where the JVM's `synchronized` does not exist. On the
+            // JVM these compile to plain `synchronized` blocks.
+            implementation("org.jetbrains.kotlinx:atomicfu:0.33.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
