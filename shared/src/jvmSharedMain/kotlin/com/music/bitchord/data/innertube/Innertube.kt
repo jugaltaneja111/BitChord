@@ -2,9 +2,7 @@ package com.music.bitchord.data.innertube
 
 import com.music.bitchord.auth.normalizeDataSyncId
 import com.music.bitchord.data.DebugLog as Log
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
@@ -461,9 +459,8 @@ object Innertube {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val client = HttpClient(OkHttp) {
-        // Same OkHttp instance ExoPlayer streams through — see Http.
-        engine { preconfigured = com.music.bitchord.data.Http.client }
+    // Same OkHttp instance ExoPlayer streams through — see Http.
+    private val client = com.music.bitchord.data.appHttpClient {
         install(ContentNegotiation) { json(json) }
         // Without this the only bound is OkHttp's own read timeout, and the
         // failure it raises reads as "Socket timeout has expired […]

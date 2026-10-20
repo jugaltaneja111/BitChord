@@ -18,10 +18,8 @@ import com.metrolist.innertubex.extraction.strategy.PoTokenProviderKind
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import com.metrolist.innertubex.extraction.generateClientPlaybackNonce
 import com.metrolist.innertubex.models.YouTubeLocale
-import com.music.bitchord.data.Http
 import com.music.bitchord.data.TrackLog
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.okhttp.OkHttp
+import com.music.bitchord.data.appHttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
@@ -148,8 +146,7 @@ object InnerTubeXResolver {
         }
     }
 
-    private val http = HttpClient(OkHttp) {
-        engine { preconfigured = Http.client }
+    private val http = appHttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true })
         }

@@ -41,7 +41,6 @@ kotlin {
                 // The network stack the lyrics providers and the YouTube Music
                 // client run on, at the phone's versions — both applications
                 // now call the same code, so they resolve the same libraries.
-                api("io.ktor:ktor-client-core:3.5.2")
                 api("io.ktor:ktor-client-okhttp:3.5.2")
                 api("io.ktor:ktor-client-websockets:3.5.2")
                 api("io.ktor:ktor-client-content-negotiation:3.5.2")
@@ -65,6 +64,12 @@ kotlin {
             // Locks for code shared with iOS, where the JVM's `synchronized` does not exist. On the
             // JVM these compile to plain `synchronized` blocks.
             implementation("org.jetbrains.kotlinx:atomicfu:0.33.0")
+            // Common so shared code can build clients through appHttpClient; each platform adds
+            // its engine (OkHttp in jvmSharedMain, Darwin in iosMain).
+            api("io.ktor:ktor-client-core:3.5.2")
+        }
+        iosMain.dependencies {
+            implementation("io.ktor:ktor-client-darwin:3.5.2")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
