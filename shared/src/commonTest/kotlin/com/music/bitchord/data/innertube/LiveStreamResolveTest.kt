@@ -6,6 +6,7 @@ import com.music.bitchord.data.testEnv
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsBytes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,7 +36,8 @@ class LiveStreamResolveTest {
     }
 
     @Test
-    fun `a public track resolves to an AAC stream googlevideo serves`() = runBlocking {
+    // Off the test's own thread, which on iOS is the main one: nothing here should need it.
+    fun `a public track resolves to an AAC stream googlevideo serves`() = runBlocking(Dispatchers.Default) {
         if (testEnv("BITCHORD_LIVE_YOUTUBE") != "1") {
             println("LiveStreamResolveTest skipped: set BITCHORD_LIVE_YOUTUBE=1 to run it")
             return@runBlocking
