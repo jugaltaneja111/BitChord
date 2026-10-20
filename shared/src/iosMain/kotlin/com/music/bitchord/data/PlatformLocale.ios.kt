@@ -1,6 +1,7 @@
 package com.music.bitchord.data
 
 import platform.Foundation.NSLocale
+import platform.Foundation.countryCode
 import platform.Foundation.currentLocale
 import platform.Foundation.localeIdentifier
 import platform.Foundation.preferredLanguages
@@ -10,6 +11,9 @@ import platform.Foundation.preferredLanguages
 internal actual fun systemLanguageTag(): String =
     NSLocale.preferredLanguages.firstOrNull() as? String
         ?: NSLocale.currentLocale.localeIdentifier.replace('_', '-')
+
+// Settings > General > Language & Region > Region, whatever language the app is shown in.
+internal actual fun systemRegion(): String = NSLocale.currentLocale.countryCode.orEmpty()
 
 private val LANGUAGE_SUBTAG = Regex("[A-Za-z]{2,8}")
 

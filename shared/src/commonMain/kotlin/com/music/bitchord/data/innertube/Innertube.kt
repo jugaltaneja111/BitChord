@@ -73,7 +73,10 @@ object Innertube {
         get() = com.music.bitchord.data.LocaleTags.ytHl(currentLocaleTag)
 
     val currentRegion: String
-        get() = com.music.bitchord.data.LocaleTags.ytGl(currentLocaleTag)
+        get() = com.music.bitchord.data.LocaleTags.ytGl(
+            currentLocaleTag,
+            com.music.bitchord.data.systemRegion(),
+        )
 
     private val acceptLanguageHeader: String
         get() = com.music.bitchord.data.LocaleTags.acceptLanguage(currentLocaleTag)

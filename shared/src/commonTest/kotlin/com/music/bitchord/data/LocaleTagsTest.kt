@@ -55,4 +55,21 @@ class LocaleTagsTest {
         assertTrue(tag.isNotBlank())
         assertEquals(tag, LocaleTags.normalizeAppTag(tag))
     }
+
+    @Test
+    fun `the feed's region is the device's when it has one`() {
+        assertEquals("IN", LocaleTags.ytGl("en", "IN"))
+        assertEquals("DE", LocaleTags.ytGl("en", "de"))
+        // Region beats the language's own guess, Chinese included.
+        assertEquals("HK", LocaleTags.ytGl(LocaleTags.ZH_HANT, "HK"))
+    }
+
+    @Test
+    fun `without a usable device region the language decides`() {
+        assertEquals("US", LocaleTags.ytGl("en", null))
+        assertEquals("US", LocaleTags.ytGl("en", ""))
+        assertEquals("US", LocaleTags.ytGl("es", "419"))
+        assertEquals("TW", LocaleTags.ytGl(LocaleTags.ZH_HANT, ""))
+        assertEquals("CN", LocaleTags.ytGl(LocaleTags.ZH_HANS, null))
+    }
 }

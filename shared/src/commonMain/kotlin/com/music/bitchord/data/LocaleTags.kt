@@ -54,8 +54,13 @@ object LocaleTags {
         }
     }
 
-    /** Geo for Innertube context gl + InnerTubeX locale. */
-    fun ytGl(appTag: String): String {
+    /**
+     * Geo for Innertube context gl + InnerTubeX locale: the device's own region when it has one,
+     * so the feed's charts and picks are the listener's country's rather than always America's.
+     * Without one (a numeric region like "419", or none set), the language decides as before.
+     */
+    fun ytGl(appTag: String, deviceRegion: String? = null): String {
+        deviceRegion?.trim()?.uppercase()?.takeIf { COUNTRY_CODE.matches(it) }?.let { return it }
         return when (normalizeAppTag(appTag)) {
             ZH_HANT -> "TW"
             ZH_HANS -> "CN"
@@ -110,4 +115,6 @@ object LocaleTags {
 
     fun isChineseTag(tag: String): Boolean =
         tag.trim().replace('_', '-').lowercase().startsWith("zh")
+
+    private val COUNTRY_CODE = Regex("[A-Z]{2}")
 }
