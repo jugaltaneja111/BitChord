@@ -212,17 +212,19 @@ jobs:
           mkdir -p build/smoke
           # macOS has no `timeout`: the console runs in the background, then stops; stopping it
           # stops the app too. The app plays a track and walks its pages ten seconds apart (see
-          # Autoplay.kt's tourRequested), and a screenshot lands in the middle of each page.
+          # Autoplay.kt's tourRequested), with a screenshot of each.
           SIMCTL_CHILD_BITCHORD_AUTOPLAY=dQw4w9WgXcQ SIMCTL_CHILD_BITCHORD_TOUR=1 \
             SIMCTL_CHILD_BITCHORD_AUTOSEARCH='daft punk' \
             xcrun simctl launch --console-pty "$UDID" com.music.bitchord > build/smoke/autoplay.log 2>&1 &
           console=$!
-          elapsed=0
-          for shot in 12:1-home 23:2-explore 34:3-category 45:4-album 56:5-artist 67:6-player 80:7-search; do
-            at=${shot%%:*}
-            sleep $((at - elapsed))
-            elapsed=$at
-            xcrun simctl io "$UDID" screenshot "build/smoke/${shot#*:}.png" || true
+          # Each screenshot waits for the app to say it reached the page, then lets it draw.
+          for page in home explore category album artist player search; do
+            for _ in $(seq 1 40); do
+              grep -q "tour: $page" build/smoke/autoplay.log && break
+              sleep 1
+            done
+            sleep 6
+            xcrun simctl io "$UDID" screenshot "build/smoke/$page.png" || true
           done
           kill "$console" 2>/dev/null || true
           # A crash leaves its report on the host.
