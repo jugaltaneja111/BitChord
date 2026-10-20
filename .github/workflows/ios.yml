@@ -79,6 +79,18 @@ jobs:
 
       - run: chmod +x gradlew
 
+      # A booted simulator, so the tests have the system's certificate trust (trustd): standalone
+      # test runs have none, and every HTTPS request fails validation.
+      - name: Boot a simulator
+        id: simulator
+        run: |
+          udid=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          echo "Booting $udid"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
       # The live test resolves a real YouTube stream and fetches its first bytes: the go/no-go
       # for playback on iOS. The simulator passes on variables prefixed SIMCTL_CHILD_.
       - name: Tests on the simulator and the frameworks
@@ -86,6 +98,7 @@ jobs:
           SIMCTL_CHILD_BITCHORD_LIVE_YOUTUBE: '1'
         run: >
           ./gradlew
+          -Pbitchord.ios.simulator=${{ steps.simulator.outputs.udid }}
           :shared:iosSimulatorArm64Test
           :shared:linkDebugFrameworkIosSimulatorArm64
           :shared:linkReleaseFrameworkIosArm64

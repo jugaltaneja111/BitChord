@@ -95,3 +95,13 @@ if (System.getenv("CI") != null) {
         }
     }
 }
+
+// Simulator tests normally run standalone — no booted simulator, so no trustd, and every HTTPS
+// connection fails certificate validation. Given a booted device (its UDID), they run on it
+// instead; CI boots one so the live YouTube tests can reach the network.
+providers.gradleProperty("bitchord.ios.simulator").orNull?.let { udid ->
+    tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+        device.set(udid)
+        standalone.set(false)
+    }
+}
