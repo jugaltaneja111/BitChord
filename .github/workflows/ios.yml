@@ -1,17 +1,58 @@
 name: iOS
 
+# macOS minutes are limited, so only the Linux job runs on every push. It compiles the iOS klibs,
+# which catches most breakage. The macOS job (simulator tests, framework linking) runs only when
+# started by hand.
 on:
   push:
     branches: [main, ios-port]
-  pull_request:
+    paths:
+      - 'shared/**'
+      - 'sharedUi/**'
+      - 'iosApp/**'
+      - '*.gradle.kts'
+      - 'gradle/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: 'Also run the simulator tests and link the frameworks on macOS'
+        type: boolean
+        default: true
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  shared:
-    name: Shared · iOS
+  compile:
+    name: Shared · iOS compile (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x gradlew
+
+      - name: Compile for iOS and test on the JVM
+        run: >
+          ./gradlew
+          :shared:compileKotlinIosArm64
+          :shared:compileKotlinIosSimulatorArm64
+          :shared:compileTestKotlinIosSimulatorArm64
+          :shared:jvmTest
+
+  macos:
+    name: Shared · iOS simulator (macOS)
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    needs: compile
     # Apple silicon, so the simulator tests run on iosSimulatorArm64 natively.
     runs-on: macos-15
     steps:
@@ -27,13 +68,12 @@ jobs:
 
       - run: chmod +x gradlew
 
-      # The Linux jobs can compile iOS klibs but not link or run them; this is where the shared
-      # code is proven on iOS itself.
-      - name: Tests on the simulator
-        run: ./gradlew :shared:iosSimulatorArm64Test
-
-      - name: Link the frameworks
-        run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 :shared:linkReleaseFrameworkIosArm64
+      - name: Tests on the simulator and the frameworks
+        run: >
+          ./gradlew
+          :shared:iosSimulatorArm64Test
+          :shared:linkDebugFrameworkIosSimulatorArm64
+          :shared:linkReleaseFrameworkIosArm64
 
       - name: Upload test reports
         if: failure()
