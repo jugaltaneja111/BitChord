@@ -132,7 +132,7 @@ internal fun IosNowPlaying(
             onRemoveFromQueue = IosPlayer::removeAt,
             onMoveInQueue = IosPlayer::move,
             onClearQueue = IosPlayer::clearQueue,
-            onOpenMenu = {},
+            onOpenMenu = { IosMenus.song = SongMenuRequest(playerSong) },
             onOpenAlbum = { id -> leaveTo { navigator.open(IosPage.Collection(id)) } },
             // The lead credit carries its channel id; anyone else on the line is found by name.
             onOpenArtist = { id, name ->

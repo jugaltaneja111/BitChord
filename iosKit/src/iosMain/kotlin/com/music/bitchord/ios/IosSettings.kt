@@ -28,6 +28,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +76,10 @@ internal object IosSettings {
     val hideSongStatus = BoolPref("${PREFIX}hide_song_status", false)
     val showQueueHistory = BoolPref("${PREFIX}show_queue_history", false)
     val showNerdStats = BoolPref("${PREFIX}show_nerd_stats", false)
+    /** A swiped row plays next instead of joining the end of the queue. */
+    val swipePlayNext = BoolPref("${PREFIX}swipe_play_next", false)
+    /** AutoPlay suggests nothing already played this session. */
+    val dontRepeatSongs = BoolPref("${PREFIX}dont_repeat_songs", false)
 }
 
 private val GroupShape = RoundedCornerShape(14.dp)
@@ -85,6 +94,9 @@ internal fun SettingsPage(
     val signedIn by IosAccount.signedIn.collectAsState()
     val account by IosAccount.account.collectAsState()
     val accounts by IosAccount.accounts.collectAsState()
+    val scope = rememberCoroutineScope()
+    // The phone's page, group for group. A row whose feature the iOS app does not have yet is
+    // listed, greyed and marked, rather than left out or offered as a switch that does nothing.
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
@@ -98,7 +110,7 @@ internal fun SettingsPage(
             )
         }
         item {
-            Group("Account") {
+            Group("Account & integrations") {
                 if (signedIn) {
                     Row(
                         Modifier.fillMaxWidth().clickable { IosOverlays.switcher = true }.padding(16.dp, 12.dp),
@@ -148,39 +160,119 @@ internal fun SettingsPage(
                         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                Divider()
+                Soon("Spotify, Last.fm, ListenBrainz, Discord")
+                Divider()
+                Soon("Listen together")
+            }
+        }
+        item {
+            Group("Audio quality") {
+                Soon("Sources", "Where audio comes from and the order used")
+                Divider()
+                Soon("On Wi-Fi")
+                Divider()
+                Soon("On mobile data")
+            }
+        }
+        item {
+            Group("Downloads") {
+                Soon("Download quality")
+                Divider()
+                Soon("Download over Wi-Fi only")
             }
         }
         item {
             Group("Playback") {
                 Toggle("Autoplay", "Keep playing similar songs when the queue ends", IosSettings.autoplay)
+                Divider()
+                Soon("Prefer music-only version")
+                Divider()
+                Soon("Loudness normalization", "Levels every track to the same loudness")
+                Divider()
+                Soon("Crossfade", "Blends one track into the next")
+                Divider()
+                Soon("Automix")
+                Divider()
+                Soon("Skip silence")
+                Divider()
+                Soon("Equalizer", "Tone, seven bands and balance")
             }
         }
         item {
             Group("Appearance") {
-                Toggle("Full-screen cover art", "Runs the cover to the edges of the player instead of a square sleeve", IosSettings.fullBleedArtwork)
-                Divider()
-                Toggle("Legacy mesh gradient", "Brings back the drifting colour blobs behind the player from v1.5", IosSettings.legacyMeshGradient)
+                Soon("Theme", "The iOS app is dark for now")
                 Divider()
                 Toggle("Reduce animation", "Freezes the main player's gradient instead of drifting", IosSettings.reduceAnimation)
                 Divider()
                 Toggle("Reduce dynamic blur", "Swaps frosted glass for solid fills across the app", IosSettings.reduceDynamicBlur)
+                Divider()
+                Toggle("Full-screen cover art", "Runs the cover to the edges of the player instead of a square sleeve", IosSettings.fullBleedArtwork)
+                Divider()
+                Toggle("Legacy mesh gradient", "Brings back the drifting colour blobs behind the player from v1.5", IosSettings.legacyMeshGradient)
+                Divider()
+                Soon("Animated cover art", "Plays the looping video some releases ship instead of a still sleeve")
+                Divider()
+                Soon("Synced lyrics", "Lights up the words on the player as they’re sung")
+                Divider()
+                Soon("Lyrics sources")
             }
         }
         item {
-            Group("Player") {
-                Toggle("Hide song status", "Hides the “Playing from” or “Played by” text in the main player", IosSettings.hideSongStatus)
+            Group("App icon") { AppIconPicker() }
+        }
+        item {
+            Group("Local music") {
+                Soon("Music from the Files app")
+            }
+        }
+        item {
+            var imageCache by remember { mutableStateOf(imageCacheSize()) }
+            Group("Storage") {
+                ActionRow("Clear image cache", value = imageCache.takeIf { it > 0 }?.let(::megabytes)) {
+                    scope.launch {
+                        clearImageCache()
+                        imageCache = imageCacheSize()
+                        IosPlayerHost.showMessage("Image cache cleared")
+                    }
+                }
                 Divider()
-                Toggle("Show queue history", "Show up to 25 previously played songs above Now playing in the queue", IosSettings.showQueueHistory)
-                Divider()
-                Toggle("Show stats for nerds", "Codec, bitrate and sample rate on the player", IosSettings.showNerdStats)
+                Soon("Song cache")
             }
         }
         item {
             Group("Your data") {
+                Soon("Replay", "Your top songs, artists, albums and genres")
+                Divider()
                 ActionRow("Clear search history") {
                     onClearSearchHistory()
                     IosPlayerHost.showMessage("Search history cleared")
                 }
+                Divider()
+                Soon("Export and import data")
+            }
+        }
+        item {
+            Group("Miscellaneous") {
+                Toggle("Play next on swipe", "A swiped song plays next instead of joining the end of the queue", IosSettings.swipePlayNext)
+                Divider()
+                Toggle("Don’t repeat songs in current session", "AutoPlay won’t suggest a song already played this session", IosSettings.dontRepeatSongs)
+                Divider()
+                Toggle("Show queue history", "Show up to 25 previously played songs above Now playing in the queue", IosSettings.showQueueHistory)
+                Divider()
+                Toggle("Hide song status", "Hides the “Playing from” or “Played by” text in the main player", IosSettings.hideSongStatus)
+            }
+        }
+        item {
+            Group("Language") {
+                Soon("App language")
+            }
+        }
+        item {
+            Group("Advanced & experimental") {
+                Toggle("Show stats for nerds", "Codec, bitrate and sample rate on the player", IosSettings.showNerdStats)
+                Divider()
+                Soon("Smart audio alignment")
             }
         }
         item {
@@ -193,6 +285,26 @@ internal fun SettingsPage(
             }
         }
     }
+}
+
+/** A setting the phone has and this app does not yet: shown, so the page reads the same. */
+@Composable
+private fun Soon(title: String, subtitle: String? = null) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White.copy(alpha = 0.45f))
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text("Coming soon", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun megabytes(bytes: Long): String {
+    val tenths = (bytes * 10 / (1024 * 1024)).coerceAtLeast(1)
+    return "${tenths / 10}.${tenths % 10} MB"
 }
 
 @Composable
@@ -240,10 +352,9 @@ private fun Toggle(title: String, subtitle: String, pref: BoolPref) {
 }
 
 @Composable
-private fun ActionRow(title: String, destructive: Boolean = false, onClick: () -> Unit) {
-    Text(
-        title,
-        color = if (destructive) Color(0xFFFF6B6B) else Color.White,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp),
-    )
+private fun ActionRow(title: String, destructive: Boolean = false, value: String? = null, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp)) {
+        Text(title, color = if (destructive) Color(0xFFFF6B6B) else Color.White, modifier = Modifier.weight(1f))
+        value?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
 }

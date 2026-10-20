@@ -14,9 +14,12 @@ user agent, which Google requires), the session read off music.youtube.com's `yt
 against the API, then kept in the Keychain. Signed in, Home is the personal feed with Recently
 Played, Library is the account's, and the player can like. Several Google logins can be kept,
 each with its personal and brand channels, switched from the avatar as on the phone; History is
-the account's own. Settings has the options the iOS app can apply so far (autoplay, appearance,
-player). Not yet: lyrics (the providers are JVM-only), song menus, playlists, Replay, downloads,
-Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+the account's own. Holding a song, or its ⋮ in the player, opens the phone's menu (like, add to a
+playlist, library, radio, play next, queue, album, artist, share); holding a card, or a page's ⋯,
+the release's (play, queue, save, share, rename and delete an own playlist). Settings follows the
+phone's page group for group: what the iOS app can apply works (including the Liquid Glass app
+icons), the rest is listed as coming. Not yet: lyrics (the providers are JVM-only), Replay,
+downloads, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

@@ -75,7 +75,10 @@ internal object IosPlayerHost : PlayerHost {
         targetLanguageTag: String,
     ): LyricsRomanizationResult = LyricsRomanizationResult.Unavailable
 
-    override fun showMessage(message: String) = println("BitChord: $message")
+    override fun showMessage(message: String) {
+        println("BitChord: $message")
+        IosToast.show(message)
+    }
 
     @Composable
     override fun AudioPipelineDialog(hazeState: HazeState, isPlaying: Boolean, onDismiss: () -> Unit) = Unit

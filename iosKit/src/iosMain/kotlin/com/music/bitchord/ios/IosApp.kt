@@ -244,6 +244,13 @@ internal fun IosApp() {
                     if (IosAccount.signedIn.value && navigator.top == null) navigator.select(IosTab.LIBRARY)
                 })
             }
+            // Above the pages and the player: a menu can be opened from either.
+            IosMenuHost(navigator, onLeavePlayer = { playerOpen = false })
+            IosToast.Host(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = with(density) { barsHeight.toDp() } + 12.dp, start = 24.dp, end = 24.dp),
+            )
         }
     }
 }
@@ -265,6 +272,7 @@ private fun HomePage(
         state = state,
         listState = rememberLazyListState(),
         onItemClick = { item, shelfTitle -> navigator.openShelfItem(item, shelfTitle) },
+        onItemLongPress = { IosMenus.openShelfItem(it) },
         onRetry = feeds::loadHome,
         refreshing = false,
         onRefresh = feeds::loadHome,
@@ -305,8 +313,8 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
         state = state,
         listState = rememberLazyListState(),
         onShelfItemClick = { navigator.openShelfItem(it, null) },
-        onShelfItemLongPress = {},
-        onNewPlaylist = { IosPlayerHost.showMessage("Creating playlists is not in the iOS app yet") },
+        onShelfItemLongPress = { IosMenus.openShelfItem(it) },
+        onNewPlaylist = { if (signedIn) IosMenus.newPlaylist = emptyList() else IosOverlays.login = true },
         onShowAll = {},
         replay = {},
         onSignIn = { IosOverlays.login = true },
@@ -385,8 +393,12 @@ private fun SearchPage(
         focusRequested = focusRequested,
         onFocusHandled = { focusRequested = false },
         onSongClick = { songs, index -> songs.getOrNull(index)?.let(::play) },
-        onSongLongPress = {},
-        onSongSwipe = {},
+        onSongLongPress = { IosMenus.song = SongMenuRequest(it) },
+        onSongSwipe = IosPlayer::swipe,
+        onBrowseLongPress = { item ->
+            IosMenus.browse = BrowseMenuRequest(item.browseId, item.title, item.subtitle, item.thumbnailUrl)
+        },
+        onTypeaheadLongPress = { IosMenus.song = SongMenuRequest(it) },
         onTopResultPlay = ::play,
         onTopResultPlaylist = ::play,
         onBrowseClick = ::open,
@@ -499,6 +511,10 @@ private suspend fun runTour(
     setPlayerOpen(true)
     step("player")
     delay(TOUR_STEP_MS)
+    IosPlayer.song.value?.let { IosMenus.song = SongMenuRequest(it) }
+    step("menu")
+    delay(TOUR_STEP_MS)
+    IosMenus.song = null
     setPlayerOpen(false)
     IosOverlays.login = true
     step("login")

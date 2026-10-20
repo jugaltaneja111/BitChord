@@ -267,9 +267,14 @@ internal object IosAccount {
     }
 
     /** Like, or take a like back, painted at once and put back if YouTube Music refuses it. */
-    fun toggleLike(song: Song, current: LikeStatus) {
+    fun toggleLike(song: Song, current: LikeStatus) =
+        rate(song, current, if (current == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE)
+
+    fun toggleDislike(song: Song, current: LikeStatus) =
+        rate(song, current, if (current == LikeStatus.DISLIKE) LikeStatus.INDIFFERENT else LikeStatus.DISLIKE)
+
+    private fun rate(song: Song, current: LikeStatus, next: LikeStatus) {
         if (!_signedIn.value) return
-        val next = if (current == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE
         LikeState.set(song.videoId, next)
         scope.launch {
             YtMusicRepository.rate(song.videoId, next).onFailure {

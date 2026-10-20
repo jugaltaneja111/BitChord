@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -190,6 +191,13 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
     }
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
+    // The account's own playlist offers Remove on each row; asked once per page.
+    val signedIn by IosAccount.signedIn.collectAsState()
+    var owned by remember(page.browseId) { mutableStateOf(false) }
+    LaunchedEffect(page.browseId, signedIn) {
+        owned = signedIn && type == BrowseType.PLAYLIST &&
+            YtMusicRepository.playlistOwned(page.browseId).getOrNull() == true
+    }
 
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "header") {
@@ -206,6 +214,15 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                 topInset = topInset,
                 onPlay = { IosPlayer.playQueue(songs, 0) },
                 onShuffle = { IosPlayer.playShuffled(songs) },
+                onMore = {
+                    IosMenus.browse = BrowseMenuRequest(
+                        browseId = page.browseId,
+                        title = title,
+                        subtitle = loaded?.subtitle ?: page.fallback?.subtitle.orEmpty(),
+                        thumbnailUrl = loaded?.thumbnailUrl ?: page.fallback?.thumbnailUrl,
+                        fromPage = true,
+                    )
+                },
             )
         }
         when (val s = state) {
@@ -219,6 +236,19 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                     SongRow(
                         song = song,
                         onClick = { IosPlayer.playQueue(songs, index) },
+                        onLongPress = {
+                            IosMenus.song = SongMenuRequest(
+                                song = song,
+                                fromPlaylistId = page.browseId.removePrefix("VL").takeIf { owned },
+                                onRemoved = removed@{
+                                    val now = (state as? UiState.Success)?.data ?: return@removed
+                                    val updated = now.copy(songs = now.songs.filterNot { it.setVideoId == song.setVideoId })
+                                    PageCache.put(key, updated)
+                                    state = UiState.Success(updated)
+                                },
+                            )
+                        },
+                        onSwipeToQueue = { IosPlayer.swipe(song) },
                         trackNumber = if (type == BrowseType.ALBUM) song.trackNumber ?: (index + 1) else null,
                         isCurrent = isCurrent,
                         isPlaying = isCurrent && isPlaying,
@@ -243,6 +273,7 @@ private fun CollectionHeader(
     topInset: Dp,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
+    onMore: () -> Unit,
 ) {
     Column(
         Modifier.fillMaxWidth().padding(top = topInset + 56.dp, start = PAGE_GUTTER, end = PAGE_GUTTER, bottom = 12.dp),
@@ -286,13 +317,13 @@ private fun CollectionHeader(
             Text(typeLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(18.dp))
-        PlayControls(onPlay = onPlay, onShuffle = onShuffle)
+        PlayControls(onPlay = onPlay, onShuffle = onShuffle, onMore = onMore)
     }
 }
 
 /** The phone's release controls: a labelled Play pill and Shuffle. */
 @Composable
-private fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier) {
+private fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier, onMore: (() -> Unit)? = null) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier
@@ -308,6 +339,7 @@ private fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Mo
             Text("Play", color = Color.Black, style = MaterialTheme.typography.titleMedium)
         }
         CircleAction(BitChordIcons.Shuffle, "Shuffle", onShuffle)
+        onMore?.let { CircleAction(Icons.Rounded.MoreHoriz, "More", it) }
     }
 }
 
@@ -368,6 +400,9 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                         PlayControls(
                             onPlay = { IosPlayer.playQueue(top, 0) },
                             onShuffle = { IosPlayer.playShuffled(top) },
+                            onMore = {
+                                IosMenus.browse = BrowseMenuRequest(page.browseId, name, stats, artist?.thumbnailUrl, fromPage = true)
+                            },
                         )
                     }
                 }
@@ -378,6 +413,8 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                         SongRow(
                             song = song,
                             onClick = { IosPlayer.playQueue(top, index) },
+                            onLongPress = { IosMenus.song = SongMenuRequest(song) },
+                            onSwipeToQueue = { IosPlayer.swipe(song) },
                             isCurrent = isCurrent,
                             isPlaying = isCurrent && isPlaying,
                         )
@@ -389,6 +426,7 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                             Shelf(
                                 shelf = shelf,
                                 onItemClick = { navigator.openShelfItem(it, name) },
+                                onItemLongPress = { IosMenus.openShelfItem(it, name) },
                                 currentSong = current,
                                 isPlaying = isPlaying,
                             )
@@ -547,6 +585,8 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
                                 index,
                             )
                         },
+                        onLongPress = { IosMenus.song = SongMenuRequest(song) },
+                        onSwipeToQueue = { IosPlayer.swipe(song) },
                         isCurrent = isCurrent,
                         isPlaying = isCurrent && isPlaying,
                         searchPlayingStyle = true,

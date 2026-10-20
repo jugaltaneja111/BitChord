@@ -76,6 +76,8 @@ internal object IosPlayer {
 
     /** The queue as it was before shuffling, so turning shuffle off puts it back. */
     private var unshuffled: List<Song>? = null
+    /** Every track started since launch, which "Don't repeat songs" keeps AutoPlay from suggesting. */
+    private val playedThisSession = mutableSetOf<String>()
     private var extending = false
 
     private val _error = MutableStateFlow<String?>(null)
@@ -118,6 +120,35 @@ internal object IosPlayer {
         unshuffled = songs
         _shuffle.value = true
     }
+
+    /** [songs] straight after the one playing; they start now if nothing is. */
+    fun playNext(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val index = _index.value
+        if (_song.value == null || index < 0) {
+            playQueue(songs, 0)
+            return
+        }
+        val queue = _queue.value
+        _queue.value = queue.take(index + 1) + songs + queue.drop(index + 1)
+        unshuffled = unshuffled?.plus(songs)
+        IosPlayerHost.showMessage(if (songs.size == 1) "Playing next" else "${songs.size} songs playing next")
+    }
+
+    /** [songs] at the end of the queue; they start now if nothing is playing. */
+    fun addToQueue(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        if (_song.value == null || _index.value < 0) {
+            playQueue(songs, 0)
+            return
+        }
+        _queue.value = _queue.value + songs
+        unshuffled = unshuffled?.plus(songs)
+        IosPlayerHost.showMessage(if (songs.size == 1) "Added to queue" else "${songs.size} songs added to queue")
+    }
+
+    /** A swiped row: the end of the queue, or next with "Play next on swipe". */
+    fun swipe(song: Song) = if (IosSettings.swipePlayNext.flow.value) playNext(listOf(song)) else addToQueue(listOf(song))
 
     fun jumpTo(index: Int) {
         if (index in _queue.value.indices) playAt(index)
@@ -218,7 +249,8 @@ internal object IosPlayer {
         extending = true
         scope.launch {
             YtMusicRepository.radio(last.videoId).onSuccess { radio ->
-                val known = _queue.value.map { it.videoId }.toSet()
+                val known = _queue.value.map { it.videoId }.toSet() +
+                    if (IosSettings.dontRepeatSongs.flow.value) playedThisSession else emptySet()
                 val added = radio.filter { it.videoId !in known }
                 if (added.isEmpty()) return@onSuccess
                 val start = _queue.value.size
@@ -243,6 +275,7 @@ internal object IosPlayer {
     private fun playAt(index: Int) {
         val song = _queue.value.getOrNull(index) ?: return
         _index.value = index
+        playedThisSession += song.videoId
         _song.value = song
         _error.value = null
         // Fetched ahead, so the next song is already queued when this one ends. A queue of one is
