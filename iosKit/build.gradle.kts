@@ -14,6 +14,9 @@ kotlin {
         target.binaries.framework {
             baseName = "BitChordKit"
             isStatic = true
+            // A call into a library built against another version fails the build here, not at
+            // runtime on someone's phone.
+            freeCompilerArgs += "-Xpartial-linkage-loglevel=ERROR"
         }
     }
 
@@ -21,7 +24,7 @@ kotlin {
         iosMain.dependencies {
             implementation(project(":sharedUi"))
             // Artwork over the Ktor client the rest of the app uses (Darwin underneath).
-            implementation("io.coil-kt.coil3:coil-network-ktor3:3.0.4")
+            implementation("io.coil-kt.coil3:coil-network-ktor3:3.4.0")
         }
     }
 }

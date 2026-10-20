@@ -95,6 +95,18 @@ kotlin {
             implementation(kotlin("test"))
             implementation("junit:junit:4.13.2")
         }
+        // On iOS the versions above are only a floor. Kotlin/Native links libraries by symbol, and
+        // one built against an older Compose than the app's breaks at runtime (an IrLinkageError
+        // in MaterialTheme killed the first iOS build at launch). So iOS takes the releases built
+        // for this Compose (1.10): material3 is the plugin's own pairing, the rest the newest
+        // that do not pull Compose past it. Android and the desktop keep their pins.
+        iosMain.dependencies {
+            api("org.jetbrains.compose.material3:material3:1.9.0")
+            api("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+            api("io.coil-kt.coil3:coil-compose:3.4.0")
+            api("dev.chrisbanes.haze:haze:1.7.2")
+            api("dev.chrisbanes.haze:haze-materials:1.7.2")
+        }
         androidMain.dependencies {
             // The phone's own versions, so nothing here moves them.
             implementation("androidx.activity:activity-compose:1.9.3")
