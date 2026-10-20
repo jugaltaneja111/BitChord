@@ -41,10 +41,8 @@ kotlin {
                 // The JVM half of the network stack (see commonMain for the rest).
                 api("io.ktor:ktor-client-okhttp:3.5.2")
                 api("org.jsoup:jsoup:1.22.2")
-                // YouTube stream resolution, as the phone does it: InnerTubeX's
-                // client catalog and cipher tiers, NewPipe as the fallback. NewPipe
-                // is compile-only because the phone ships a trimmed jar of it.
-                api("com.github.MetrolistGroup.innertubex:innertubex:v0.7.0")
+                // NewPipe, the JVM-only fallback for YouTube stream resolution. Compile-only
+                // because the phone ships a trimmed jar of it.
                 compileOnly("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
             }
         }
@@ -63,6 +61,9 @@ kotlin {
             api("io.ktor:ktor-serialization-kotlinx-json:3.5.2")
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+            // YouTube stream resolution, as the phone does it: InnerTubeX's client catalog and
+            // cipher tiers. It is multiplatform and published for iOS too.
+            api("com.github.MetrolistGroup.innertubex:innertubex:v0.7.0")
             // Locks for code shared with iOS, where the JVM's `synchronized` does not exist. On the
             // JVM these compile to plain `synchronized` blocks.
             implementation("org.jetbrains.kotlinx:atomicfu:0.33.0")

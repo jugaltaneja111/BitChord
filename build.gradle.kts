@@ -21,15 +21,21 @@ buildscript {
          * ART's verifier rejects the whole class for that, so the dev build died
          * with a VerifyError the moment the player composed. The JVM bytecode
          * kotlinc produces is valid — the fault is entirely in the dex lowering,
-         * and it is fixed as of 8.11.32. 8.13.x is the newest 8.x line, and also
-         * the first to read Kotlin 2.3 @Metadata: 8.10.9 caps out at 2.2.0 and
-         * warns "malformed kotlin.Metadata" on every class this project compiles.
+         * and it is fixed as of 8.11.32.
          *
          * Only debug dexing is affected — release-mode allocation keeps the
          * palette in place, which is why prod builds were fine and only dev
-         * crashed. Removable once AGP itself bundles something past 8.11.32.
+         * crashed.
+         *
+         * The version also has to read the Kotlin @Metadata this project
+         * compiles: an R8 older than the Kotlin it is fed warns "An error
+         * occurred when parsing kotlin metadata" on every class while
+         * shrinking. 8.13.x reads Kotlin 2.3; Kotlin 2.4 (needed so iOS can
+         * link InnerTubeX, which is built with it) needs 9.x — 9.5.26 shrinks
+         * the release build without a metadata warning. Keep this pinned in
+         * step with the Kotlin version until AGP bundles an R8 that reads it.
          */
-        classpath("com.android.tools:r8:8.13.23")
+        classpath("com.android.tools:r8:9.5.26")
     }
 }
 /*
@@ -68,10 +74,10 @@ extra["bitchordBetaSuffix"] = "beta1"
 plugins {
     id("com.android.application") version "8.10.1" apply false
     id("com.android.library") version "8.10.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.3.20" apply false
-    id("org.jetbrains.kotlin.multiplatform") version "2.3.20" apply false
-    id("org.jetbrains.kotlin.jvm") version "2.3.20" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.3.20" apply false
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.3.20" apply false
+    id("org.jetbrains.kotlin.android") version "2.4.10" apply false
+    id("org.jetbrains.kotlin.multiplatform") version "2.4.10" apply false
+    id("org.jetbrains.kotlin.jvm") version "2.4.10" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.10" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10" apply false
     id("org.jetbrains.compose") version "1.10.3" apply false
 }
