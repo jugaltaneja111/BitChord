@@ -1,11 +1,27 @@
 # BitChord for iOS — port plan
 
-Status: Phase 1 in progress. `shared` has iOS targets, and its `commonMain` compiles for
-`iosArm64` and `iosSimulatorArm64` (including `commonTest`). Nothing has been linked or run on
-a device or simulator yet; the `iOS` workflow is the first place that happens.
+Status: Phase 4 go. On a booted iOS simulator, InnerTubeX resolves a public track to an AAC
+stream (`VISIONOS` client, no PoToken) and googlevideo serves it (`LiveStreamResolveTest`, run
+by the manual `iOS` workflow). `shared` compiles and links for `iosArm64` and
+`iosSimulatorArm64`; its common tests pass on the simulator. Most of the shared logic is in
+`commonMain` now, including the YouTube client (`Innertube`, `InnertubeParser`,
+`InnerTubeXResolver`). Nothing plays audio on iOS yet, and there is no app shell.
 
 Building on Linux: Kotlin/Native compiles iOS klibs there (`:shared:compileKotlinIosArm64`),
-but linking frameworks and running tests needs macOS with Xcode.
+but linking frameworks and running tests needs macOS with Xcode. CI compiles on Linux for
+every push and runs macOS only when started by hand (macOS minutes are limited).
+
+Known iOS issues:
+
+- Simulator tests must run on a booted simulator (`-Pbitchord.ios.simulator=<udid>`):
+  standalone runs have no trustd, so every HTTPS certificate fails validation.
+- InnerTubeX's QuickJS solver reported `InternalError: stack overflow` while parsing the
+  player script during warm-up on iOS. Tracks whose URLs need deciphering will depend on it;
+  the direct `VISIONOS` stream did not. Likely QuickJS's stack check meeting GCD's 512 KB
+  worker stacks; to investigate with InnerTubeX.
+- `TrackLog` cannot tag lines with a track on iOS (no `ThreadContextElement` in
+  Kotlin/Native), so its per-track export shows everything held.
+- Kotlin 2.4.10 is required (InnerTubeX's iOS klibs are built with it), and with it R8 9.5.26.
 
 ## Goal and approach
 
