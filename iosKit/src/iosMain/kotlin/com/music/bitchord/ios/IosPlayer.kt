@@ -71,7 +71,7 @@ internal object IosPlayer {
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
     /** Keep playing the last song's radio once the queue runs out, as the phone does by default. */
-    private val _autoplay = MutableStateFlow(true)
+    private val _autoplay = IosSettings.autoplay.flow
     val autoplay: StateFlow<Boolean> = _autoplay.asStateFlow()
 
     /** The queue as it was before shuffling, so turning shuffle off puts it back. */
@@ -181,7 +181,7 @@ internal object IosPlayer {
     }
 
     fun toggleAutoplay() {
-        _autoplay.value = !_autoplay.value
+        IosSettings.autoplay.set(!_autoplay.value)
     }
 
     fun togglePlayPause() {

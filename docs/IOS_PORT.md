@@ -12,8 +12,11 @@ own), a mini player and the shared full player with its queue, shuffle, repeat a
 Back is a swipe from the left edge. YouTube Music sign-in works as on the phone: Google's own page in a WKWebView (with Safari's
 user agent, which Google requires), the session read off music.youtube.com's `ytcfg`, checked
 against the API, then kept in the Keychain. Signed in, Home is the personal feed with Recently
-Played, Library is the account's, and the player can like. Not yet: lyrics (the providers are
-JVM-only), several accounts and channel switching, song menus, settings. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+Played, Library is the account's, and the player can like. Several Google logins can be kept,
+each with its personal and brand channels, switched from the avatar as on the phone; History is
+the account's own. Settings has the options the iOS app can apply so far (autoplay, appearance,
+player). Not yet: lyrics (the providers are JVM-only), song menus, playlists, Replay, downloads,
+Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

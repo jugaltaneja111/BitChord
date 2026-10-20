@@ -20,6 +20,9 @@ internal sealed interface IosPage {
     data class Collection(val browseId: String, val fallback: BrowseItem? = null) : IosPage
     data class Artist(val browseId: String, val name: String) : IosPage
     data class Category(val item: MoodGenre) : IosPage
+    /** What the signed-in account has been listening to, most recent first. */
+    data object History : IosPage
+    data object Settings : IosPage
 }
 
 /**

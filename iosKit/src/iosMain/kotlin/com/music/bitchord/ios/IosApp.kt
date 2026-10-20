@@ -75,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -156,19 +157,40 @@ internal fun IosApp() {
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
                 val page = navigator.top
                 if (page != null) {
-                    IosPageHost(page, navigator, contentPadding, statusBar)
+                    IosPageHost(page, navigator, contentPadding, statusBar, onClearSearchHistory = search::clearHistory)
                 } else {
+                    // Root pages start under the top bar, not under the clock.
+                    val pageTop = statusBar + TOP_BAR_HEIGHT
                     when (navigator.tab) {
-                        IosTab.HOME -> HomePage(feeds, navigator, song, isPlaying, contentPadding, statusBar)
-                        IosTab.EXPLORE -> ExplorePage(feeds, navigator, contentPadding, statusBar)
-                        IosTab.LIBRARY -> LibraryPage(navigator, contentPadding, statusBar)
+                        IosTab.HOME -> HomePage(feeds, navigator, song, isPlaying, contentPadding, pageTop)
+                        IosTab.EXPLORE -> ExplorePage(feeds, navigator, contentPadding, pageTop)
+                        IosTab.LIBRARY -> LibraryPage(navigator, contentPadding, pageTop)
                         IosTab.SEARCH -> SearchPage(search, navigator, song, isPlaying, contentPadding)
                     }
-                    // The phone's account button, over every tab but Search's field.
-                    if (navigator.tab != IosTab.SEARCH) {
-                        AccountButton(Modifier.align(Alignment.TopEnd).padding(top = statusBar + 4.dp, end = 12.dp))
-                    }
                 }
+            }
+            // What scrolls up fades out under the clock and the bar rather than running into them.
+            val scrimHeight = statusBar + if (navigator.top == null && navigator.tab != IosTab.SEARCH) TOP_BAR_HEIGHT else 0.dp
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(scrimHeight + 12.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black,
+                            0.6f to Color.Black.copy(alpha = 0.85f),
+                            1f to Color.Transparent,
+                        ),
+                    ),
+            )
+            // The phone's History and account pill, over every root tab but Search's field.
+            if (navigator.top == null && navigator.tab != IosTab.SEARCH) {
+                TopActions(
+                    onOpenHistory = { navigator.open(IosPage.History) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = statusBar + (TOP_BAR_HEIGHT - 46.dp) / 2, end = 16.dp),
+                )
             }
             Column(
                 Modifier
@@ -205,8 +227,12 @@ internal fun IosApp() {
             ) {
                 IosNowPlaying(navigator, onDismiss = { playerOpen = false })
             }
-            if (IosOverlays.account) {
-                AccountSheet(onDismiss = { IosOverlays.account = false })
+            if (IosOverlays.switcher) {
+                AccountSwitcher(
+                    hazeState = hazeState,
+                    onOpenSettings = { navigator.open(IosPage.Settings) },
+                    onDismiss = { IosOverlays.switcher = false },
+                )
             }
             AnimatedVisibility(
                 visible = IosOverlays.login,
@@ -215,7 +241,7 @@ internal fun IosApp() {
             ) {
                 IosLoginScreen(onClose = {
                     IosOverlays.login = false
-                    if (IosAccount.signedIn.value) navigator.select(IosTab.LIBRARY)
+                    if (IosAccount.signedIn.value && navigator.top == null) navigator.select(IosTab.LIBRARY)
                 })
             }
         }
@@ -229,7 +255,7 @@ private fun HomePage(
     song: Song?,
     isPlaying: Boolean,
     contentPadding: PaddingValues,
-    statusBar: Dp,
+    topPadding: Dp,
 ) {
     val state by feeds.home.collectAsState()
     val loadingMore by feeds.homeLoadingMore.collectAsState()
@@ -243,7 +269,7 @@ private fun HomePage(
         refreshing = false,
         onRefresh = feeds::loadHome,
         pullState = rememberPullToRefreshState(),
-        contentPadding = PaddingValues(top = statusBar + 8.dp, bottom = contentPadding.calculateBottomPadding()),
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
         title = "Listen Now",
         signedIn = signedIn,
         onSignIn = { IosOverlays.login = true },
@@ -256,7 +282,7 @@ private fun HomePage(
 }
 
 @Composable
-private fun ExplorePage(feeds: IosFeeds, navigator: IosNavigator, contentPadding: PaddingValues, statusBar: Dp) {
+private fun ExplorePage(feeds: IosFeeds, navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp) {
     val state by feeds.explore.collectAsState()
     ExploreScreen(
         state = state,
@@ -266,12 +292,12 @@ private fun ExplorePage(feeds: IosFeeds, navigator: IosNavigator, contentPadding
         refreshing = false,
         onRefresh = feeds::loadExplore,
         pullState = rememberPullToRefreshState(),
-        contentPadding = PaddingValues(top = statusBar + 8.dp, bottom = contentPadding.calculateBottomPadding()),
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
     )
 }
 
 @Composable
-private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, statusBar: Dp) {
+private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp) {
     val signedIn by IosAccount.signedIn.collectAsState()
     val state by IosAccount.library.collectAsState()
     LibraryScreen(
@@ -288,7 +314,7 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
         refreshing = false,
         onRefresh = IosAccount::loadLibrary,
         pullState = rememberPullToRefreshState(),
-        contentPadding = PaddingValues(top = statusBar + 8.dp, bottom = contentPadding.calculateBottomPadding()),
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
         links = emptyList(),
         deviceItems = emptyList(),
     )
@@ -478,9 +504,16 @@ private suspend fun runTour(
     step("login")
     delay(TOUR_STEP_MS)
     IosOverlays.login = false
+    navigator.open(IosPage.Settings)
+    step("settings")
+    delay(TOUR_STEP_MS)
+    navigator.back()
     navigator.select(IosTab.SEARCH)
     search.submit(autoSearchQuery() ?: "daft punk")
     step("search")
 }
 
 private const val TOUR_STEP_MS = 10_000L
+
+/** The top bar the History and account pill sit in, above each root page's big title. */
+private val TOP_BAR_HEIGHT = 52.dp

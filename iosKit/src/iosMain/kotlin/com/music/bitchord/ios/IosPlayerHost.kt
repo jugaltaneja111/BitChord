@@ -81,29 +81,32 @@ internal object IosPlayerHost : PlayerHost {
     override fun AudioPipelineDialog(hazeState: HazeState, isPlaying: Boolean, onDismiss: () -> Unit) = Unit
 }
 
-/** The phone's defaults (AppSettings), held for the session until iOS has a settings screen. */
+/**
+ * The phone's defaults (AppSettings). The ones the Settings page offers are the listener's,
+ * kept in the app's defaults (see [IosSettings]); the rest are fixed until iOS has what they set.
+ */
 private object IosPlayerSettings : PlayerSettingsSource {
     override val animatedCanvas = MutableStateFlow(true)
     override val audioQualityCellular = MutableStateFlow(AudioQuality.LOSSLESS)
     override val audioQualityWifi = MutableStateFlow(AudioQuality.LOSSLESS)
     override val canvasOverCellular = MutableStateFlow(false)
-    override val fullBleedArtwork = MutableStateFlow(true)
-    override val hideSongStatus = MutableStateFlow(false)
-    override val showQueueHistory = MutableStateFlow(false)
+    override val fullBleedArtwork = IosSettings.fullBleedArtwork.flow
+    override val hideSongStatus = IosSettings.hideSongStatus.flow
+    override val showQueueHistory = IosSettings.showQueueHistory.flow
     // The bar would drive nothing: an iOS app cannot set the system volume.
     override val hideVolumeBar = MutableStateFlow(true)
     override val hideStatusBar = MutableStateFlow(false)
     override val lastPlayerScreen = MutableStateFlow(LastPlayerScreen.MAIN)
-    override val legacyMeshGradient = MutableStateFlow(false)
+    override val legacyMeshGradient = IosSettings.legacyMeshGradient.flow
     override val lyricsBlur = MutableStateFlow(true)
     override val lyricsOffsetMs = MutableStateFlow(0)
     override val lyricsSourceOrder = MutableStateFlow<List<LyricsSource>>(LyricsSource.offered)
     override val meteredConnection = MutableStateFlow<Boolean?>(null)
     override val preferUsbDac = MutableStateFlow(false)
     override val prioritizeSpotifyCanvas = MutableStateFlow(false)
-    override val reduceAnimation = MutableStateFlow(false)
-    override val reduceDynamicBlur = MutableStateFlow(false)
-    override val showNerdStats = MutableStateFlow(false)
+    override val reduceAnimation = IosSettings.reduceAnimation.flow
+    override val reduceDynamicBlur = IosSettings.reduceDynamicBlur.flow
+    override val showNerdStats = IosSettings.showNerdStats.flow
     override val smartAnalysis = MutableStateFlow(SmartAnalysis())
     override val smartFadeEnabled = MutableStateFlow(false)
     override val smartMixInProgress = MutableStateFlow(false)

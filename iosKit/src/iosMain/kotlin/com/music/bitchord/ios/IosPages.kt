@@ -59,6 +59,7 @@ import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.UiState
 import com.music.bitchord.ui.components.MessageState
+import com.music.bitchord.ui.components.PlayingAccent
 import com.music.bitchord.ui.components.PAGE_GUTTER
 import com.music.bitchord.ui.components.SongRow
 import com.music.bitchord.ui.components.songListSkeleton
@@ -96,12 +97,22 @@ private object PageCache {
 }
 
 @Composable
-internal fun IosPageHost(page: IosPage, navigator: IosNavigator, contentPadding: PaddingValues, topInset: Dp) {
+internal fun IosPageHost(
+    page: IosPage,
+    navigator: IosNavigator,
+    contentPadding: PaddingValues,
+    topInset: Dp,
+    onClearSearchHistory: () -> Unit,
+) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        // Pages with no artwork header of their own start under the back button.
+        val underBack = topInset + 52.dp
         when (page) {
             is IosPage.Collection -> CollectionPage(page, contentPadding, topInset)
             is IosPage.Artist -> ArtistPageView(page, navigator, contentPadding, topInset)
             is IosPage.Category -> CategoryPage(page, navigator, contentPadding, topInset)
+            IosPage.History -> HistoryPage(contentPadding, underBack)
+            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory)
         }
         BackButton(onClick = { navigator.back() }, modifier = Modifier.padding(top = topInset + 4.dp, start = 8.dp))
     }
@@ -485,3 +496,64 @@ internal fun LazyListState.nearEnd(): Boolean {
 }
 
 private const val MAX_TOP_SONGS = 5
+
+/**
+ * The account's listening history, most recent first, as the phone's HistoryScreen draws it.
+ * A row plays with the rest of the history behind it.
+ */
+@Composable
+private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
+    var reloads by remember { mutableIntStateOf(0) }
+    var state by remember { mutableStateOf<UiState<List<Song>>>(UiState.Loading) }
+    val generation by IosAccount.generation.collectAsState()
+    LaunchedEffect(reloads, generation) {
+        state = UiState.Loading
+        state = YtMusicRepository.history().fold(
+            onSuccess = { UiState.Success(it) },
+            onFailure = { UiState.Error(it.message ?: "Could not load your history") },
+        )
+    }
+    val current by IosPlayer.song.collectAsState()
+    val isPlaying by IosPlayer.isPlaying.collectAsState()
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
+    ) {
+        item(key = "title") {
+            Text(
+                "History",
+                style = MaterialTheme.typography.displayLarge,
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+        }
+        when (val s = state) {
+            UiState.Loading -> songListSkeleton(count = 10, keyPrefix = "skeleton:history")
+            is UiState.Error -> item(key = "error") {
+                MessageState(s.message, actionLabel = "Retry", onAction = { reloads++ })
+            }
+            is UiState.Success -> {
+                val songs = s.data
+                if (songs.isEmpty()) {
+                    item(key = "empty") { MessageState("Nothing played on this account yet") }
+                }
+                itemsIndexed(songs, key = { index, song -> "${song.videoId}:$index" }) { index, song ->
+                    val isCurrent = current?.videoId == song.videoId
+                    SongRow(
+                        song = song,
+                        onClick = {
+                            IosPlayer.playQueue(
+                                songs.map { it.copy(playbackSource = "History", playbackSourceType = PlaybackSourceType.HISTORY) },
+                                index,
+                            )
+                        },
+                        isCurrent = isCurrent,
+                        isPlaying = isCurrent && isPlaying,
+                        searchPlayingStyle = true,
+                        activeTint = PlayingAccent,
+                    )
+                }
+            }
+        }
+    }
+}
