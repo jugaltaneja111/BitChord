@@ -61,12 +61,11 @@ class LiveStreamResolveTest {
         println("LiveStreamResolveTest: ${stream.clientName}/${stream.profileId} ${stream.mimeType} ${stream.kbps} kbps")
         assertTrue(stream.mimeType.startsWith("audio/mp4"), "expected AAC in MP4, got ${stream.mimeType}")
 
-        val bytes = appHttpClient().use { client ->
-            client.get(stream.url) {
-                stream.headers.forEach { (name, value) -> header(name, value) }
-                header("Range", "bytes=0-1023")
-            }.bodyAsBytes()
-        }
+        // Not closed: an appHttpClient shares the app's HTTP stack (see appHttpClient).
+        val bytes = appHttpClient().get(stream.url) {
+            stream.headers.forEach { (name, value) -> header(name, value) }
+            header("Range", "bytes=0-1023")
+        }.bodyAsBytes()
         assertTrue(bytes.size >= 8, "googlevideo returned ${bytes.size} bytes")
         // Every MP4 opens with an `ftyp` box: a 4-byte size, then the type.
         assertEquals("ftyp", bytes.copyOfRange(4, 8).decodeToString())

@@ -32,8 +32,9 @@ class LiveHttpTest {
     fun `plain https requests succeed`() = runBlocking(Dispatchers.Default) {
         if (testEnv("BITCHORD_LIVE_YOUTUBE") != "1") return@runBlocking
         val results = listOf(
-            appHttpClient().use { fetch("appHttpClient music.youtube.com", it, "https://music.youtube.com/") },
-            appHttpClient().use { fetch("appHttpClient example.com", it, "https://example.com/") },
+            // Not closed: an appHttpClient shares the app's HTTP stack (see appHttpClient).
+            fetch("appHttpClient music.youtube.com", appHttpClient(), "https://music.youtube.com/"),
+            fetch("appHttpClient example.com", appHttpClient(), "https://example.com/"),
             HttpClient().use { fetch("default engine music.youtube.com", it, "https://music.youtube.com/") },
         )
         // Reported, not asserted: InnerTubeX resolves without a visitor id, and YouTube does not
