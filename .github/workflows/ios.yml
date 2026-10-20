@@ -19,7 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: 'Build the app on macOS: the unsigned IPA, then a smoke run on the simulator'
+        description: 'Build the unsigned IPA on macOS'
+        type: boolean
+        default: true
+      smoke:
+        description: 'Launch the app on the simulator and play a track (macOS)'
         type: boolean
         default: true
       tests:
@@ -126,7 +130,7 @@ jobs:
   app:
     name: iOS app · unsigned IPA (macOS)
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.app) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.app || inputs.smoke)) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ios-v'))
     needs: compile
     runs-on: macos-15
@@ -154,6 +158,7 @@ jobs:
       # Unsigned: sideloading tools (AltStore, SideStore, Sideloadly) sign it with the installer's
       # own Apple ID. The Kotlin framework is built by the project's own build phase.
       - name: Build the unsigned IPA
+        if: github.event_name != 'workflow_dispatch' || inputs.app
         run: |
           xcodebuild -project iosApp/BitChord.xcodeproj -scheme BitChord \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
@@ -166,6 +171,7 @@ jobs:
           ls -lh build/BitChord-unsigned.ipa
 
       - name: Upload the IPA
+        if: github.event_name != 'workflow_dispatch' || inputs.app
         uses: actions/upload-artifact@v4
         with:
           name: BitChord-unsigned-ipa
@@ -184,6 +190,7 @@ jobs:
       # After the IPA, so a smoke failure never costs the deliverable. Plays a track with no taps
       # (see iosKit's Autoplay.kt) and passes when the playhead moves.
       - name: Boot a simulator
+        if: github.event_name != 'workflow_dispatch' || inputs.smoke
         id: simulator
         run: |
           udid=$(xcrun simctl list devices available -j \
@@ -193,6 +200,7 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       - name: Smoke run on the simulator
+        if: github.event_name != 'workflow_dispatch' || inputs.smoke
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
         run: |
@@ -202,14 +210,20 @@ jobs:
             build
           xcrun simctl install "$UDID" build/ios-sim/Build/Products/Debug-iphonesimulator/BitChord.app
           mkdir -p build/smoke
+          # macOS has no `timeout`: the console runs in the background for a minute, then stops.
           SIMCTL_CHILD_BITCHORD_AUTOPLAY=dQw4w9WgXcQ \
-            timeout 70 xcrun simctl launch --console-pty "$UDID" com.music.bitchord \
-            | tee build/smoke/autoplay.log || true
+            xcrun simctl launch --console-pty "$UDID" com.music.bitchord > build/smoke/autoplay.log 2>&1 &
+          console=$!
+          sleep 60
+          kill "$console" 2>/dev/null || true
           xcrun simctl io "$UDID" screenshot build/smoke/app.png
+          # A crash leaves its report on the host.
+          cp ~/Library/Logs/DiagnosticReports/BitChord* build/smoke/ 2>/dev/null || true
+          cat build/smoke/autoplay.log
           grep -E 'autoplay: playing=true .*positionMs=[1-9][0-9]{3,}' build/smoke/autoplay.log
 
       - name: Upload the smoke run
-        if: always()
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.smoke)
         uses: actions/upload-artifact@v4
         with:
           name: ios-smoke
