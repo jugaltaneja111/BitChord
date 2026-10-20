@@ -1,0 +1,43 @@
+name: iOS
+
+on:
+  push:
+    branches: [main, ios-port]
+  pull_request:
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared:
+    name: Shared · iOS
+    # Apple silicon, so the simulator tests run on iosSimulatorArm64 natively.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x gradlew
+
+      # The Linux jobs can compile iOS klibs but not link or run them; this is where the shared
+      # code is proven on iOS itself.
+      - name: Tests on the simulator
+        run: ./gradlew :shared:iosSimulatorArm64Test
+
+      - name: Link the frameworks
+        run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 :shared:linkReleaseFrameworkIosArm64
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-shared-test-reports
+          path: shared/build/reports/tests/

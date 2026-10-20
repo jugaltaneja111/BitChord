@@ -1,6 +1,11 @@
 # BitChord for iOS — port plan
 
-Status: planning. Nothing here has been built or run on iOS yet.
+Status: Phase 1 in progress. `shared` has iOS targets, and its `commonMain` compiles for
+`iosArm64` and `iosSimulatorArm64` (including `commonTest`). Nothing has been linked or run on
+a device or simulator yet; the `iOS` workflow is the first place that happens.
+
+Building on Linux: Kotlin/Native compiles iOS klibs there (`:shared:compileKotlinIosArm64`),
+but linking frameworks and running tests needs macOS with Xcode.
 
 ## Goal and approach
 
