@@ -41,13 +41,24 @@ jobs:
 
       - run: chmod +x gradlew
 
+      # Started by hand, the live YouTube test runs here too: on the JVM, from GitHub's network,
+      # which tells a CI network problem apart from an iOS one without spending macOS minutes.
       - name: Compile for iOS and test on the JVM
+        env:
+          BITCHORD_LIVE_YOUTUBE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: >
           ./gradlew
           :shared:compileKotlinIosArm64
           :shared:compileKotlinIosSimulatorArm64
           :shared:compileTestKotlinIosSimulatorArm64
           :shared:jvmTest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-shared-test-reports
+          path: shared/build/test-results/
 
   macos:
     name: Shared · iOS simulator (macOS)

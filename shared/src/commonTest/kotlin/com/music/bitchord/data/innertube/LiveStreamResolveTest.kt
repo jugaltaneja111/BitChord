@@ -1,5 +1,6 @@
 package com.music.bitchord.data.innertube
 
+import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.appHttpClient
 import com.music.bitchord.data.testEnv
 import io.ktor.client.request.get
@@ -39,11 +40,21 @@ class LiveStreamResolveTest {
             println("LiveStreamResolveTest skipped: set BITCHORD_LIVE_YOUTUBE=1 to run it")
             return@runBlocking
         }
+        // InnerTubeX's own account of each client it tries, so a failure here says why.
+        TrackLog.echo = { level, tag, message, error ->
+            println("$level $tag: $message${error?.let { " ($it)" }.orEmpty()}")
+        }
+        InnerTubeXResolver.debugLogging = true
         // No PoToken minter, as on a platform without one: only the clients that need none are tried.
         InnerTubeXResolver.init(MemoryPlayers(), MemoryStore(), poTokenProvider = null)
 
         // AAC in MP4, the format AVFoundation plays natively.
-        val stream = InnerTubeXResolver.extract(VIDEO_ID, maxKbps = 320, requireM4a = true)
+        val stream = try {
+            InnerTubeXResolver.extract(VIDEO_ID, maxKbps = 320, requireM4a = true)
+        } catch (e: Exception) {
+            println("LiveStreamResolveTest: extract failed: $e")
+            throw e
+        }
         assertNotNull(stream, "no client returned a stream for $VIDEO_ID")
         println("LiveStreamResolveTest: ${stream.clientName}/${stream.profileId} ${stream.mimeType} ${stream.kbps} kbps")
         assertTrue(stream.mimeType.startsWith("audio/mp4"), "expected AAC in MP4, got ${stream.mimeType}")

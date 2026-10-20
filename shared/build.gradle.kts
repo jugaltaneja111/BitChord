@@ -84,3 +84,14 @@ android {
     namespace = "com.music.bitchord.shared"
     compileSdk = 36
 }
+
+// On CI, print what tests write: the live YouTube test's output is the diagnosis when it fails,
+// and the job log is where it can be read.
+if (System.getenv("CI") != null) {
+    tasks.withType<AbstractTestTask>().configureEach {
+        testLogging {
+            showStandardStreams = true
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+    }
+}
