@@ -30,6 +30,13 @@ on:
         description: 'Run the shared tests on the iOS simulator (macOS)'
         type: boolean
         default: false
+      runner:
+        # GitHub's Apple-silicon pool sometimes has no machine to give for hours. The Intel one is
+        # separate and builds the same device IPA, but has no arm64 simulator, so no smoke run.
+        description: 'macOS machine for the IPA (Intel builds the IPA only, without the smoke run)'
+        type: choice
+        options: [macos-15, macos-15-intel]
+        default: macos-15
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
@@ -133,7 +140,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && (inputs.app || inputs.smoke)) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ios-v'))
     needs: compile
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner || 'macos-15' }}
     permissions:
       # To attach the IPA to the tag's release.
       contents: write
@@ -190,7 +197,7 @@ jobs:
       # After the IPA, so a smoke failure never costs the deliverable. Plays a track with no taps
       # (see iosKit's Autoplay.kt) and passes when the playhead moves.
       - name: Boot a simulator
-        if: github.event_name != 'workflow_dispatch' || inputs.smoke
+        if: github.event_name != 'workflow_dispatch' || (inputs.smoke && inputs.runner != 'macos-15-intel')
         id: simulator
         run: |
           udid=$(xcrun simctl list devices available -j \
@@ -200,7 +207,7 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       - name: Smoke run on the simulator
-        if: github.event_name != 'workflow_dispatch' || inputs.smoke
+        if: github.event_name != 'workflow_dispatch' || (inputs.smoke && inputs.runner != 'macos-15-intel')
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
         run: |
@@ -237,7 +244,7 @@ jobs:
           if ls build/smoke/BitChord*.ips >/dev/null 2>&1; then echo "The app crashed"; exit 1; fi
 
       - name: Upload the smoke run
-        if: always() && (github.event_name != 'workflow_dispatch' || inputs.smoke)
+        if: always() && (github.event_name != 'workflow_dispatch' || (inputs.smoke && inputs.runner != 'macos-15-intel'))
         uses: actions/upload-artifact@v4
         with:
           name: ios-smoke
