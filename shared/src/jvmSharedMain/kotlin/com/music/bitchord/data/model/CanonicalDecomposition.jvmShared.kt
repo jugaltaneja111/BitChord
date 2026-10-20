@@ -4,3 +4,6 @@ import java.text.Normalizer
 
 internal actual fun canonicalDecomposition(text: String): String =
     Normalizer.normalize(text, Normalizer.Form.NFD)
+
+internal actual fun compatibilityComposition(text: String): String =
+    Normalizer.normalize(text, Normalizer.Form.NFKC)

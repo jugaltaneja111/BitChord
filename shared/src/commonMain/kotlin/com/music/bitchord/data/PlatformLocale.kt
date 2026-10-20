@@ -7,4 +7,4 @@ internal expect fun systemLanguageTag(): String
  * The primary language subtag of [tag], lowercased ("en-US" -> "en"), or "" when [tag] is not a
  * well-formed language tag.
  */
-internal expect fun primaryLanguage(tag: String): String
+expect fun primaryLanguage(tag: String): String

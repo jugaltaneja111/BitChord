@@ -19,6 +19,11 @@ internal class LockedMap<K, V> {
         synchronized(lock) { map[key] = value }
     }
 
+    /** Stores [value] unless [key] already has one; returns what was there. */
+    fun putIfAbsent(key: K, value: V): V? = synchronized(lock) {
+        map[key] ?: null.also { map[key] = value }
+    }
+
     fun remove(key: K): V? = synchronized(lock) { map.remove(key) }
 
     fun clear() {

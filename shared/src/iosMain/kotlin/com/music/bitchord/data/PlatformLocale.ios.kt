@@ -13,5 +13,5 @@ internal actual fun systemLanguageTag(): String =
 
 private val LANGUAGE_SUBTAG = Regex("[A-Za-z]{2,8}")
 
-internal actual fun primaryLanguage(tag: String): String =
+actual fun primaryLanguage(tag: String): String =
     tag.substringBefore('-').takeIf { LANGUAGE_SUBTAG.matches(it) }?.lowercase().orEmpty()

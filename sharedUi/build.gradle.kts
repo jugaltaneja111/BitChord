@@ -50,6 +50,10 @@ kotlin {
         }
     }
 
+    // iPhone and the Apple-silicon simulator; the iOS app links this module (see iosApp/).
+    iosArm64()
+    iosSimulatorArm64()
+
     applyDefaultHierarchyTemplate()
 
     compilerOptions {
@@ -57,8 +61,7 @@ kotlin {
     }
 
     sourceSets {
-        // Both targets are JVMs, so the UI is written once against the JDK here
-        // rather than in commonMain.
+        // The UI is written once in commonMain. What only the JVM targets share stays here.
         val jvmSharedMain by creating {
             dependsOn(commonMain.get())
         }
