@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.ui.player.PlayerSettings
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
 import dev.chrisbanes.haze.HazeState
@@ -59,6 +61,29 @@ import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+/**
+ * A platform's refractive glass for the floating bars, where it has one: Android 12+ draws real
+ * liquid glass. With none provided, the bars are frosted (Haze) instead, as on every other
+ * platform.
+ */
+interface BarGlass {
+    @Composable
+    fun Modifier.glassSurface(shape: CornerBasedShape): Modifier
+
+    /** Icon and label colour on the glass, which shows whatever is behind it. */
+    @Composable
+    fun contentColor(): Color
+}
+
+val LocalBarGlass = staticCompositionLocalOf<BarGlass?> { null }
+
+/**
+ * The hairline a floating surface carries wherever the glass itself is not drawn: a surface
+ * filled with the theme's near-black has no edge of its own against a dark page.
+ */
+val GLASS_EDGE_WIDTH = 0.5.dp
+val GLASS_EDGE_COLOR = Color.White.copy(alpha = 0.10f)
 
 data class BottomTab(
     val label: String,
@@ -75,7 +100,7 @@ data class BottomTab(
  * Shared with [GlassNavBar], which is meant to measure the same as this bar
  * rather than merely near it.
  */
-internal val PILL_INSET = 6.dp
+val PILL_INSET = 6.dp
 
 /**
  * How far the floating bars stand off the bottom edge: the system navigation
@@ -86,7 +111,7 @@ internal val PILL_INSET = 6.dp
  * height it has with the hint showing instead. Three-button navigation is
  * taller than the floor, so it still wins there.
  */
-internal val floatingBarInsets: WindowInsets
+val floatingBarInsets: WindowInsets
     @Composable get() = WindowInsets.navigationBars.union(WindowInsets(bottom = GESTURE_BAR_FLOOR))
 
 /** A gesture bar's inset — 45px at the test phone's 3x density. */
@@ -102,10 +127,10 @@ private val GESTURE_BAR_FLOOR = 15.dp
  * numbers are a pair: change one and the bar's height moves unless the other
  * moves against it.
  */
-internal val TAB_VERTICAL_PADDING = 9.dp
+val TAB_VERTICAL_PADDING = 9.dp
 
 /** The gap between a tab's glyph and its label, in both bars. */
-internal val TAB_ICON_LABEL_GAP = 2.dp
+val TAB_ICON_LABEL_GAP = 2.dp
 
 /**
  * The spring the selection indicator and the tab glyphs both travel on.
@@ -119,7 +144,7 @@ internal val TAB_ICON_LABEL_GAP = 2.dp
  * Stiffness 320 puts the whole movement at roughly a third of a second, quick
  * enough that the tap and the arrival feel like one event.
  */
-internal val GlassSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
+val GlassSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
 
 /**
  * How far the indicator elongates along its travel, at full stride.
@@ -135,7 +160,7 @@ internal val GlassSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
  * Sixteen percent is enough to be felt and not enough to be caught at: past
  * about a fifth the pill starts reading as a stretched image of itself.
  */
-internal const val STRETCH = 0.16f
+const val STRETCH = 0.16f
 
 /**
  * How much of the stretch is taken back out of the indicator's height.
@@ -146,7 +171,7 @@ internal const val STRETCH = 0.16f
  * than drawn. Half keeps the sense of something with a volume to redistribute
  * while leaving the glyph its ground.
  */
-internal const val SQUASH = 0.5f
+const val SQUASH = 0.5f
 
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
@@ -159,9 +184,10 @@ fun FloatingBottomBar(
 ) {
     val pillShape = RoundedCornerShape(percent = 50)
     val container = MaterialTheme.colorScheme.surface
-    val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val useGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
-    val reduceAnimation by AppSettings.reduceAnimation.collectAsStateWithLifecycle()
+    val reduceDynamicBlur by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
+    val glass = LocalBarGlass.current
+    val useGlass = glass != null
+    val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
     // The glass settle is exactly the motion "reduce animation" promises to
     // drop — snapping both the indicator's travel and the glyph's pop to
     // their target leaves the tap itself instant rather than eased.
@@ -222,7 +248,7 @@ fun FloatingBottomBar(
                 if (reduceDynamicBlur) {
                     Modifier.background(container)
                 } else if (useGlass) {
-                    Modifier.liquidGlass(shape = pillShape)
+                    with(glass!!) { Modifier.glassSurface(pillShape) }
                 } else {
                     Modifier.optimizedHazeEffect(
                         state = hazeState,
@@ -299,8 +325,7 @@ fun FloatingBottomBar(
             // contrast against it. Glass mode reads luminance off the surface
             // color instead and picks pure black or white, same as the tint
             // Echo's floating nav bar uses for its own liquid glass.
-            val glassTint = glassContentColor()
-            val adaptiveTint = if (useGlass) glassTint else null
+            val adaptiveTint = glass?.contentColor()
             tabs.forEachIndexed { index, tab ->
                 BottomBarItem(
                     tab = tab,

@@ -1,6 +1,13 @@
 package com.music.bitchord.ios
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import com.music.bitchord.ui.components.BottomTab
+import com.music.bitchord.ui.components.FloatingBottomBar
+import com.music.bitchord.ui.components.MiniPlayer
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
@@ -108,8 +115,6 @@ private val BitChordTypography = Typography(
     labelSmall = TextStyle(fontWeight = FontWeight.W600, fontSize = 11.sp),
 )
 
-private val MiniPlayerHeight = 64.dp
-private val TabBarHeight = 56.dp
 
 /** The phone's shell: four tabs, the pages opened on them, the mini player and the full player. */
 @Composable
@@ -121,10 +126,12 @@ internal fun IosApp() {
         var playerOpen by remember { mutableStateOf(false) }
         val song by IosPlayer.song.collectAsState()
         val isPlaying by IosPlayer.isPlaying.collectAsState()
-        val navigationBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val chrome = navigationBar + TabBarHeight + if (song != null) MiniPlayerHeight + 8.dp else 0.dp
-        val contentPadding = PaddingValues(bottom = chrome + 8.dp)
+        val hazeState = remember { HazeState() }
+        val density = LocalDensity.current
+        // The floating bars' measured height, so the last row of a page clears them.
+        var barsHeight by remember { mutableIntStateOf(0) }
+        val contentPadding = PaddingValues(bottom = with(density) { barsHeight.toDp() } + 8.dp)
 
         fun back() {
             if (playerOpen) {
@@ -145,26 +152,47 @@ internal fun IosApp() {
         }
 
         Box(Modifier.fillMaxSize().background(Color.Black).edgeSwipeBack(::back)) {
-            val page = navigator.top
-            if (page != null) {
-                IosPageHost(page, navigator, contentPadding, statusBar)
-            } else {
-                when (navigator.tab) {
-                    IosTab.HOME -> HomePage(feeds, navigator, song, isPlaying, contentPadding, statusBar)
-                    IosTab.EXPLORE -> ExplorePage(feeds, navigator, contentPadding, statusBar)
-                    IosTab.SEARCH -> SearchPage(search, navigator, song, isPlaying, contentPadding)
-                    IosTab.LIBRARY -> LibraryPage(contentPadding, statusBar)
+            // The page is what the bars frost over.
+            Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+                val page = navigator.top
+                if (page != null) {
+                    IosPageHost(page, navigator, contentPadding, statusBar)
+                } else {
+                    when (navigator.tab) {
+                        IosTab.HOME -> HomePage(feeds, navigator, song, isPlaying, contentPadding, statusBar)
+                        IosTab.EXPLORE -> ExplorePage(feeds, navigator, contentPadding, statusBar)
+                        IosTab.LIBRARY -> LibraryPage(contentPadding, statusBar)
+                        IosTab.SEARCH -> SearchPage(search, navigator, song, isPlaying, contentPadding)
+                    }
                 }
             }
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onSizeChanged { barsHeight = it.height },
+            ) {
                 song?.let { current ->
+                    val loading by IosPlayer.isLoading.collectAsState()
                     MiniPlayer(
                         song = current,
-                        onOpen = { playerOpen = true },
-                        modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                        isPlaying = isPlaying,
+                        isLoading = loading,
+                        hazeState = hazeState,
+                        onPlayPause = IosPlayer::togglePlayPause,
+                        onNext = IosPlayer::next,
+                        onPrevious = IosPlayer::previous,
+                        onExpand = { playerOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
                     )
+                    Spacer(Modifier.height(8.dp))
                 }
-                TabBar(navigator.tab, onSelect = navigator::select, bottomInset = navigationBar)
+                FloatingBottomBar(
+                    tabs = BottomTabs,
+                    selectedIndex = navigator.tab.ordinal,
+                    onTabSelected = { navigator.select(IosTab.entries[it]) },
+                    hazeState = hazeState,
+                )
             }
             AnimatedVisibility(
                 visible = playerOpen && song != null,
@@ -197,7 +225,7 @@ private fun HomePage(
         onRefresh = feeds::loadHome,
         pullState = rememberPullToRefreshState(),
         contentPadding = PaddingValues(top = statusBar + 8.dp, bottom = contentPadding.calculateBottomPadding()),
-        title = "Home",
+        title = "Listen Now",
         signedIn = false,
         onSignIn = null,
         onLoadMore = feeds::loadMoreHome,
@@ -342,50 +370,23 @@ private fun SearchPage(
     )
 }
 
-@Composable
-private fun TabBar(selected: IosTab, onSelect: (IosTab) -> Unit, bottomInset: Dp) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(Color(0xF20D0D0F))
-            .padding(bottom = bottomInset)
-            .height(TabBarHeight),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IosTab.entries.forEach { tab ->
-            val active = tab == selected
-            val tint = if (active) Color.White else Color(0xFF8E8E93)
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(interactionSource = null, indication = null) { onSelect(tab) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(tab.icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.height(3.dp))
-                Text(tab.label, color = tint, style = MaterialTheme.typography.labelSmall)
-            }
-        }
-    }
-}
-
 private val IosTab.label: String
     get() = when (this) {
         IosTab.HOME -> "Home"
         IosTab.EXPLORE -> "Explore"
-        IosTab.SEARCH -> "Search"
         IosTab.LIBRARY -> "Library"
+        IosTab.SEARCH -> "Search"
     }
 
 private val IosTab.icon: ImageVector
     get() = when (this) {
         IosTab.HOME -> BitChordIcons.Home
         IosTab.EXPLORE -> BitChordIcons.TabExplore
-        IosTab.SEARCH -> BitChordIcons.TabSearch
         IosTab.LIBRARY -> BitChordIcons.TabLibrary
+        IosTab.SEARCH -> BitChordIcons.TabSearch
     }
+
+private val BottomTabs = IosTab.entries.map { BottomTab(it.label, it.icon) }
 
 /**
  * iOS's back gesture: a drag that starts at the left edge and travels right. Watched before the
@@ -458,59 +459,3 @@ private suspend fun runTour(
 }
 
 private const val TOUR_STEP_MS = 10_000L
-
-@Composable
-private fun MiniPlayer(song: Song, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    val isPlaying by IosPlayer.isPlaying.collectAsState()
-    val isLoading by IosPlayer.isLoading.collectAsState()
-    val error by IosPlayer.error.collectAsState()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(MiniPlayerHeight)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF1C1C1E))
-            .clickable(onClick = onOpen)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AsyncImage(
-            model = song.thumbnailUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                song.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                error ?: song.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (error != null) Color(0xFFFF6B6B) else Color(0xFF8E8E93),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (isLoading) {
-            CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
-            Spacer(Modifier.width(12.dp))
-        } else {
-            IconButton(onClick = IosPlayer::togglePlayPause) {
-                Icon(
-                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.White,
-                )
-            }
-        }
-        IconButton(onClick = IosPlayer::next) {
-            Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = Color.White)
-        }
-    }
-}

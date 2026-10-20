@@ -11,7 +11,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Home and Explore, loaded as the desktop loads them: the core feed and the supplementary browse
@@ -91,8 +94,45 @@ internal class IosFeeds {
         _explore.value = UiState.Loading
         scope.launch {
             YtMusicRepository.moodAndGenres()
-                .onSuccess { _explore.value = UiState.Success(it) }
+                .onSuccess {
+                    _explore.value = UiState.Success(it)
+                    loadCategoryArtwork(it)
+                }
                 .onFailure { _explore.value = UiState.Error(it.message ?: "Could not load Explore") }
+        }
+    }
+
+    /**
+     * Category buttons carry no artwork of their own. As the phone does, a few at a time are
+     * resolved from the shelves they open, so the grid gains real art without holding up the
+     * list or crowding the browse client.
+     */
+    private fun loadCategoryArtwork(sections: List<MoodGenreSection>) {
+        scope.launch {
+            val limiter = Semaphore(4)
+            coroutineScope {
+                sections.flatMap(MoodGenreSection::items).forEach { item ->
+                    launch {
+                        val artwork = limiter.withPermit {
+                            YtMusicRepository.moodGenreArtwork(item.browseId, item.params).getOrNull()
+                        } ?: return@launch
+                        val current = (_explore.value as? UiState.Success)?.data ?: return@launch
+                        _explore.value = UiState.Success(
+                            current.map { section ->
+                                section.copy(
+                                    items = section.items.map {
+                                        if (it.browseId == item.browseId && it.params == item.params) {
+                                            it.copy(thumbnailUrl = artwork)
+                                        } else {
+                                            it
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 

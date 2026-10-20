@@ -1,6 +1,5 @@
 package com.music.bitchord.ui.components
 
-import com.music.bitchord.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,7 +36,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -56,9 +54,13 @@ import coil3.compose.AsyncImage
 import com.music.bitchord.data.model.ROW_ART_PX
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.artworkAt
-import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.ui.player.PlayerSettings
 import com.music.bitchord.sharedui.resources.Res as SharedRes
 import com.music.bitchord.sharedui.resources.ic_player_next
+import com.music.bitchord.sharedui.resources.pause
+import com.music.bitchord.sharedui.resources.play
+import com.music.bitchord.sharedui.resources.widget_next
+import com.music.bitchord.ui.player.rememberRemoteArtworkUrl
 import com.music.bitchord.ui.components.thumbnailBorder
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
@@ -69,6 +71,7 @@ import dev.chrisbanes.haze.materials.HazeMaterials
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -205,7 +208,7 @@ interface MiniPlayerPull {
  * more than one item.
  */
 @Composable
-internal fun Modifier.miniPlayerGestures(
+fun Modifier.miniPlayerGestures(
     pull: MiniPlayerPull?,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -324,7 +327,7 @@ internal fun Modifier.miniPlayerGestures(
  * sheet's travel, never a recomposition of the bar.
  */
 @Composable
-internal fun Modifier.playerDockArt(dock: PlayerDock?, corner: Dp): Modifier {
+fun Modifier.playerDockArt(dock: PlayerDock?, corner: Dp): Modifier {
     if (dock == null) return this
     val placed = remember { arrayOfNulls<LayoutCoordinates>(1) }
     DisposableEffect(dock) {
@@ -359,7 +362,7 @@ fun MiniPlayer(
     pull: MiniPlayerPull? = null,
     modifier: Modifier = Modifier,
 ) {
-    val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
+    val reduceDynamicBlur by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val haptics = rememberHaptics()
     // percent rather than a dp figure, so the corner stays exactly half the
     // height if the row's contents ever change it — which is what keeps a pill
@@ -452,7 +455,7 @@ fun MiniPlayer(
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = stringResource(if (isPlaying) R.string.pause else R.string.play),
+                        contentDescription = stringResource(if (isPlaying) SharedRes.string.pause else SharedRes.string.play),
                         tint = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.size(GLYPH_SIZE),
                     )
@@ -487,10 +490,10 @@ fun MiniPlayer(
  * read as one glyph at two sizes. Shared with the glass bar's docked player.
  */
 @Composable
-internal fun MiniPlayerNextGlyph(tint: Color) {
+fun MiniPlayerNextGlyph(tint: Color) {
     Icon(
         painter = painterResource(SharedRes.drawable.ic_player_next),
-        contentDescription = stringResource(R.string.widget_next),
+        contentDescription = stringResource(SharedRes.string.widget_next),
         tint = tint,
         modifier = Modifier
             .size(NEXT_GLYPH_SIZE)

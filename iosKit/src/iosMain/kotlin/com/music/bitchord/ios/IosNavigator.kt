@@ -12,7 +12,7 @@ import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
 
 /** The phone's four tabs, in its order. */
-internal enum class IosTab { HOME, EXPLORE, SEARCH, LIBRARY }
+internal enum class IosTab { HOME, EXPLORE, LIBRARY, SEARCH }
 
 /** A page opened on top of a tab. */
 internal sealed interface IosPage {

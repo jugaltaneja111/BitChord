@@ -5,11 +5,12 @@ stream (`VISIONOS` client, no PoToken) and googlevideo serves it (`LiveStreamRes
 `sharedUi` — every shared page and the player — now lives in `commonMain` and compiles for iOS,
 with iOS `actual`s for its platform hooks. The iOS app is `iosKit` (Kotlin: AVPlayer engine,
 queue, search wiring, entry point) plus `iosApp` (a SwiftUI shell, generated with XcodeGen). It
-has the phone's four tabs (shared Home, Explore and Search; Library signed out), Explore's
+has the phone's four tabs in its floating bar, with its mini player (both now in `sharedUi`;
+shared Home, Explore with its category art, and Search; Library signed out), Explore's
 category pages, album / playlist and artist pages (written for iOS, as each platform writes its
 own), a mini player and the shared full player with its queue, shuffle, repeat and autoplay.
-Back is a swipe from the left edge. Not yet: lyrics (the providers are JVM-only), accounts, song
-menus, settings. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+Back is a swipe from the left edge. Not yet: lyrics (the providers are JVM-only), accounts (so Home is
+YouTube Music's signed-out feed, not the personal one the phone shows), song menus, settings. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

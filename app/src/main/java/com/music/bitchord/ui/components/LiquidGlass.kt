@@ -80,16 +80,7 @@ private const val SURFACE_OPACITY = 0.4f
  */
 private const val GLASS_RESOLUTION_SCALE = 0.33f
 
-/**
- * The hairline along a bar's edge, and what stands in for the glass rim
- * wherever the glass itself is not drawn.
- *
- * A surface filled with the theme's own `surface` colour has no edge of its own
- * against a dark page — it is the same near-black the page is. The glass gets
- * its edge from [Highlight], and this is that edge for everything that does not.
- */
-internal val GLASS_EDGE_WIDTH = 0.5.dp
-internal val GLASS_EDGE_COLOR = Color.White.copy(alpha = 0.10f)
+// GLASS_EDGE_WIDTH and GLASS_EDGE_COLOR live in sharedUi's FloatingBottomBar.kt.
 
 /**
  * Icon and label colour for content sitting on a glass surface.
@@ -232,4 +223,13 @@ fun Modifier.liquidGlass(shape: CornerBasedShape): Modifier {
         exportedBackdrop = exportedBackdrop,
         backdropScale = GLASS_RESOLUTION_SCALE,
     )
+}
+
+/** This platform's [BarGlass], for the shared floating bars: the liquid glass above. */
+object AndroidBarGlass : BarGlass {
+    @Composable
+    override fun Modifier.glassSurface(shape: CornerBasedShape): Modifier = liquidGlass(shape)
+
+    @Composable
+    override fun contentColor(): Color = glassContentColor()
 }

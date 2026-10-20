@@ -238,6 +238,8 @@ import com.music.bitchord.ui.components.FloatingBarsTapGuard
 import com.music.bitchord.ui.components.BottomTab
 import com.music.bitchord.ui.components.FLOATING_BAR_MAX_WIDTH
 import com.music.bitchord.ui.components.FloatingBottomBar
+import com.music.bitchord.ui.components.AndroidBarGlass
+import com.music.bitchord.ui.components.LocalBarGlass
 import com.music.bitchord.ui.components.GlassNavBar
 import com.music.bitchord.ui.components.floatingtabbar.rememberFloatingTabBarScrollConnection
 import com.music.bitchord.ui.components.FrostedTopBar
@@ -400,6 +402,7 @@ class MainActivity : AppCompatActivity() {
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides iosOverscrollFactory,
                     LocalLiquidGlassEnabled provides liquidGlassEnabled,
+                    LocalBarGlass provides AndroidBarGlass.takeIf { liquidGlassEnabled && isGlassSupported() },
                     LocalAppBackdrop provides appBackdrop,
                 ) {
                 // The window's width, measured rather than asked for.
