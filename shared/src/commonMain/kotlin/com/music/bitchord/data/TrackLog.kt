@@ -2,13 +2,10 @@ package com.music.bitchord.data
 
 import com.music.bitchord.data.model.Song
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -79,40 +76,37 @@ object TrackLog {
     // reads it (see the class doc), so a release build skips straight to
     // record(), which is what Copy Log actually depends on.
 
-    fun d(tag: String, message: String, about: String? = working.get()) {
+    fun d(tag: String, message: String, about: String? = TrackContext.current()) {
         echo?.invoke('D', tag, message, null)
         record('D', message, about)
     }
 
-    fun i(tag: String, message: String, about: String? = working.get()) {
+    fun i(tag: String, message: String, about: String? = TrackContext.current()) {
         echo?.invoke('I', tag, message, null)
         record('I', message, about)
     }
 
-    fun w(tag: String, message: String, about: String? = working.get()) {
+    fun w(tag: String, message: String, about: String? = TrackContext.current()) {
         echo?.invoke('W', tag, message, null)
         record('W', message, about)
     }
 
-    fun w(tag: String, message: String, error: Throwable, about: String? = working.get()) {
+    fun w(tag: String, message: String, error: Throwable, about: String? = TrackContext.current()) {
         echo?.invoke('W', tag, message, error)
         record('W', "$message\n${error.stackTraceToString()}", about)
     }
 
-    fun e(tag: String, message: String, about: String? = working.get()) {
+    fun e(tag: String, message: String, about: String? = TrackContext.current()) {
         echo?.invoke('E', tag, message, null)
         record('E', message, about)
     }
 
-    fun e(tag: String, message: String, error: Throwable, about: String? = working.get()) {
+    fun e(tag: String, message: String, error: Throwable, about: String? = TrackContext.current()) {
         echo?.invoke('E', tag, message, error)
         record('E', "$message\n${error.stackTraceToString()}", about)
     }
 
     // ── Whose line is it ────────────────────────────────────────────────────
-
-    /** The track whose work this thread is doing, if it is doing any. */
-    private val working = ThreadLocal<String?>()
 
     /**
      * A coroutine context that files everything logged inside it against [id].
@@ -126,15 +120,15 @@ object TrackLog {
      * a track id, and threading one through all of them to serve a debug button
      * would be a worse trade than the button is worth.
      *
-     * Carried as a [kotlinx.coroutines.ThreadContextElement] rather than a bare
-     * thread local because that work hops threads constantly —
-     * `withContext(IO)` for a fetch, `Dispatchers.Default` for the JS engine —
-     * and this follows it, including into every child coroutine.
+     * That work hops threads constantly — `withContext(IO)` for a fetch,
+     * `Dispatchers.Default` for the JS engine — and on the JVM the id follows
+     * it, including into every child coroutine (see [TrackContext]).
      */
-    fun about(id: String?): CoroutineContext = working.asContextElement(id)
+    fun about(id: String?): CoroutineContext = TrackContext.about(id)
 
     private class Line(val at: Long, val level: Char, val text: String, val track: String?)
 
+    private val linesLock = SynchronizedObject()
     private val lines = ArrayDeque<Line>()
 
     /** Total characters held, so the buffer is bounded by size rather than by count. */
@@ -152,8 +146,8 @@ object TrackLog {
         } else {
             message
         }
-        synchronized(lines) {
-            lines.addLast(Line(System.currentTimeMillis(), level, text, about))
+        synchronized(linesLock) {
+            lines.addLast(Line(wallClockMs(), level, text, about))
             held += text.length
             while (held > MAX_HELD_CHARS && lines.isNotEmpty()) {
                 held -= lines.removeFirst().text.length
@@ -170,11 +164,11 @@ object TrackLog {
      * which track they are about: a track served whole from the disk cache is
      * resolved by nobody and would otherwise have no start at all.
      */
-    private val startedAt = ConcurrentHashMap<String, Long>()
+    private val startedAt = LockedMap<String, Long>()
 
     fun onTrackStarted(videoId: String) {
         if (startedAt.size >= MAX_REMEMBERED) startedAt.clear()
-        startedAt[videoId] = System.currentTimeMillis()
+        startedAt[videoId] = wallClockMs()
     }
 
     /**
@@ -200,7 +194,7 @@ object TrackLog {
      * cache, or the track a cold start resumes on.
      */
     suspend fun forTrack(song: Song, stats: NerdStats.Snapshot?): String = withContext(Dispatchers.Default) {
-        val held = synchronized(lines) { lines.toList() }
+        val held = synchronized(linesLock) { lines.toList() }
         val from = listOfNotNull(
             held.firstOrNull { it.track == song.videoId }?.at,
             startedAt[song.videoId]?.minus(LEAD_IN_MS),
@@ -208,7 +202,7 @@ object TrackLog {
         val since = held.filter { from == null || it.at >= from }
         val window = since.filter { it.track == null || it.track == song.videoId }
         header(song, stats, from, window.size, since.size - window.size) + "\n" +
-            window.joinToString("\n") { "${CLOCK.format(Date(it.at))} ${it.level} ${it.text}" } +
+            window.joinToString("\n") { "${clockTime(it.at)} ${it.level} ${it.text}" } +
             "\n"
     }
 
@@ -235,8 +229,8 @@ object TrackLog {
         appendLine("playing: ${stats.describe()}")
         sourcesLine()?.let(::appendLine)
         appendLine(
-            "window: ${from?.let { CLOCK.format(Date(it)) } ?: "everything held"} → " +
-                "${CLOCK.format(Date())} ($count lines" +
+            "window: ${from?.let { clockTime(it) } ?: "everything held"} → " +
+                "${clockTime(wallClockMs())} ($count lines" +
                 (if (elsewhere > 0) ", $elsewhere for other tracks left out)" else ")"),
         )
         headerLines().forEach(::appendLine)
@@ -260,8 +254,6 @@ object TrackLog {
         }
         return measured + promised + tier
     }
-
-    private val CLOCK = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     /**
      * How far back of a track's selection to reach when nothing was ever filed

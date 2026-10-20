@@ -4,7 +4,6 @@ import com.music.bitchord.data.sources.SourceTrackKeys
 import com.music.bitchord.data.sources.StreamFormat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Architectural provenance of audio pipeline telemetry statistics.
@@ -183,7 +182,10 @@ object NerdStats {
      */
     fun megahertzLabel(hz: Int): String? =
         if (hz < 1_000_000) null
-        else java.math.BigDecimal(hz).movePointLeft(6).stripTrailingZeros().toPlainString() + " MHz"
+        else {
+            val fraction = (hz % 1_000_000).toString().padStart(6, '0').trimEnd('0')
+            "${hz / 1_000_000}${if (fraction.isEmpty()) "" else ".$fraction"} MHz"
+        }
 
     fun isDolbyAtmosMime(mimeType: String?): Boolean =
         mimeType != null && (mimeType.endsWith("eac3-joc") || mimeType.endsWith("eac3"))
@@ -261,13 +263,13 @@ object NerdStats {
      * resolves the *next* track through the same code, so one loose value would
      * end up describing the wrong song.
      */
-    private val picked = ConcurrentHashMap<String, Int>()
+    private val picked = LockedMap<String, Int>()
 
     /** As [picked], for the richer format a non-YouTube source can state. */
-    private val declared = ConcurrentHashMap<String, StreamFormat>()
+    private val declared = LockedMap<String, StreamFormat>()
 
     /** Authoritative source name that supplied the stream, keyed by media/track id. */
-    private val sources = ConcurrentHashMap<String, String>()
+    private val sources = LockedMap<String, String>()
 
     fun onStreamPicked(videoId: String, kbps: Int, source: String? = null) {
         if (kbps > 0) {

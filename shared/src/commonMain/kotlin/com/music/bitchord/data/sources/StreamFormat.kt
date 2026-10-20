@@ -1,7 +1,5 @@
 package com.music.bitchord.data.sources
 
-import java.util.Locale
-
 /**
  * What a source is about to hand the decoder, as far as the source will say.
  *
@@ -41,11 +39,14 @@ data class StreamFormat(
         get() = if (isDolbyAtmos) "Dolby Atmos" else listOfNotNull(
             codec?.uppercase(),
             bitDepth?.let { "$it-bit" },
-            sampleRateHz?.let { "${"%.1f".format(Locale.ROOT, it / 1000f).removeSuffix(".0")} kHz" },
+            sampleRateHz?.let { "${kilohertz(it)} kHz" },
             kbps?.takeIf { isLossless != true }?.let { "$it kbps" },
         ).joinToString(" · ").ifEmpty { "Unknown format" }
 
     private companion object {
+        /** [hz] in kHz to one decimal place, without a trailing ".0": 44100 -> "44.1". */
+        fun kilohertz(hz: Int): String = oneDecimal(hz / 1000f).removeSuffix(".0")
+
         val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "aiff", "ape", "wv", "dsf", "dff")
         val DOLBY_ATMOS_CODECS = setOf("eac3-joc", "ec3-joc", "dolby-atmos")
     }

@@ -21,6 +21,8 @@ import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaylistMove
 import com.music.bitchord.data.model.PlaylistPrivacy
 import kotlin.concurrent.Volatile
+import kotlin.io.encoding.Base64
+import kotlinx.io.IOException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,10 +42,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import java.io.IOException
-import java.security.MessageDigest
-import java.util.Base64
-import java.util.Locale
 
 /**
  * Minimal Innertube (youtubei) client.
@@ -603,8 +601,8 @@ object Innertube {
     /** Timed caption transcript used as a last-resort lyrics source. */
     suspend fun transcript(videoId: String): JsonObject = postMusic("get_transcript") {
         // get_transcript expects a tiny protobuf: field 1, length, video id.
-        val bytes = byteArrayOf(10, videoId.toByteArray().size.toByte()) + videoId.toByteArray()
-        put("params", Base64.getEncoder().encodeToString(bytes))
+        val bytes = byteArrayOf(10, videoId.encodeToByteArray().size.toByte()) + videoId.encodeToByteArray()
+        put("params", Base64.Default.encode(bytes))
     }
 
     suspend fun search(query: String, params: String? = null, anonymous: Boolean = true): JsonObject =
@@ -1254,10 +1252,9 @@ object Innertube {
         listOf("SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID")
 
     private fun sapisidHash(sapisid: String, origin: String = MUSIC_ORIGIN): String {
-        val timestamp = System.currentTimeMillis() / 1000
-        val digest = MessageDigest.getInstance("SHA-1")
-            .digest("$timestamp $sapisid $origin".toByteArray())
-            .joinToString("") { "%02x".format(Locale.ROOT, it) }
+        val timestamp = com.music.bitchord.data.wallClockMs() / 1000
+        val digest = com.music.bitchord.data.sha1("$timestamp $sapisid $origin".encodeToByteArray())
+            .toHexString()
         return "SAPISIDHASH ${timestamp}_$digest"
     }
 }

@@ -58,7 +58,7 @@ object AndroidStreamHooks {
             available = { webViewSupported },
         )
         InnerTubeXResolver.init(
-            filesDir = app.filesDir,
+            playerCache = FilePlayerCache(app.filesDir),
             store = object : InnerTubeXResolver.ConfigStore {
                 override fun getString(key: String): String? = prefs.getString(key, null)
                 override fun getLong(key: String): Long? = if (prefs.contains(key)) prefs.getLong(key, 0L) else null

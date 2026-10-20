@@ -4,6 +4,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import com.music.bitchord.ui.player.PlayerPlatform
 import com.music.bitchord.data.DebugLog
 import com.music.bitchord.data.TrackLog
+import com.music.bitchord.data.innertube.FilePlayerCache
 import com.music.bitchord.data.innertube.InnerTubeXResolver
 import com.music.bitchord.data.innertube.StreamResolver
 import com.music.bitchord.data.innertube.potoken.PoTokenGenerator
@@ -54,7 +55,7 @@ fun main() {
         DesktopStreamClient.ceiling.get() ?: DesktopSourceRegistry.ceiling(null).maxKbps
     }
     InnerTubeXResolver.init(
-        filesDir = DesktopMediaCache.directory.toFile(),
+        playerCache = FilePlayerCache(DesktopMediaCache.directory.toFile()),
         store = DesktopInnerTubeXStore,
         poTokenProvider = PoTokenGenerator(
             createMinter = { DesktopPoTokenWebView.getNewPoTokenGenerator() },

@@ -24,16 +24,17 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 /** YouTube stream extraction through InnerTubeX's live-benchmarked client catalog and cipher tiers. */
 object InnerTubeXResolver {
@@ -68,21 +69,34 @@ object InnerTubeXResolver {
     @Volatile
     var debugLogging: Boolean = false
 
+    /**
+     * Where the preprocessed EJS players are kept, across processes. Solving a
+     * player from scratch is the 8.7s step; a preprocessed one is reused per
+     * player version, so only the first launch after YouTube rotates its player
+     * pays it.
+     */
+    interface PlayerCache {
+        fun read(key: String): String?
+
+        /** Stores [value] under [key], or forgets [key] when [value] is null. */
+        fun write(key: String, value: String?)
+    }
+
     private var prefs: ConfigStore? = null
     private var poTokens: TokenProvider? = null
-    private var playerDir: File? = null
+    private var players: PlayerCache? = null
     private var warmup: Job? = null
 
     /**
-     * @param filesDir where the preprocessed EJS players are kept.
+     * @param playerCache where the preprocessed EJS players are kept.
      * @param poTokenProvider the platform's BotGuard minter — the phone's
      *   WebView one. Null where there is none, which leaves the clients that
      *   need a PoToken out of the catalog.
      */
-    fun init(filesDir: File, store: ConfigStore, poTokenProvider: TokenProvider?) {
+    fun init(playerCache: PlayerCache, store: ConfigStore, poTokenProvider: TokenProvider?) {
         prefs = store
         poTokens = poTokenProvider
-        playerDir = File(filesDir, "innertubex_players").apply { mkdirs() }
+        players = playerCache
         scope.launch {
             cipherService.setPreprocessedPlayerCache(::readPlayer, ::writePlayer)
             warm(WARM_DELAY_MS)
@@ -111,27 +125,10 @@ object InnerTubeXResolver {
         }
     }
 
-    /**
-     * EJS preprocessed players, kept across processes. Solving a player from
-     * scratch is the 8.7s step; a preprocessed one is reused per player version,
-     * so only the first launch after YouTube rotates its player pays it.
-     */
-    private fun readPlayer(key: String): String? =
-        playerDir?.let { File(it, key) }?.takeIf { it.isFile }?.readText()
+    private fun readPlayer(key: String): String? = players?.read(key)
 
     private fun writePlayer(key: String, value: String?) {
-        val dir = playerDir ?: return
-        val file = File(dir, key)
-        if (value == null) {
-            file.delete()
-            return
-        }
-        val tmp = File(dir, "$key.tmp")
-        tmp.writeText(value)
-        tmp.renameTo(file)
-        // Players rotate every few days; only the newest are worth their megabytes.
-        dir.listFiles()?.filter { !it.name.endsWith(".tmp") }?.sortedByDescending { it.lastModified() }
-            ?.drop(KEPT_PLAYERS)?.forEach { it.delete() }
+        players?.write(key, value)
     }
 
     /** The installed PoToken provider, or one that can mint nothing when there is not one. */
@@ -197,11 +194,14 @@ object InnerTubeXResolver {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** Guards [minted] and [excluded]: extraction, playback and session changes run on different threads. */
+    private val lock = SynchronizedObject()
+
     /** What each minted URL was, so its fetch can be dressed and its refusal attributed. */
-    private val minted = ConcurrentHashMap<String, Extracted>()
+    private val minted = HashMap<String, Extracted>()
 
     /** Clients refused a track mid-playback, by videoId, and until when. */
-    private val excluded = ConcurrentHashMap<String, ConcurrentHashMap<String, Long>>()
+    private val excluded = HashMap<String, HashMap<String, Long>>()
 
     /**
      * InnerTubeX picks one format per ask and has no bitrate ceiling of its own:
@@ -245,13 +245,15 @@ object InnerTubeXResolver {
             profileId = stream.profileId,
             headers = stream.headers,
         )
-        if (minted.size >= MAX_REMEMBERED) minted.clear()
-        minted[extracted.url] = extracted
+        synchronized(lock) {
+            if (minted.size >= MAX_REMEMBERED) minted.clear()
+            minted[extracted.url] = extracted
+        }
         return extracted
     }
 
     /** Headers the media fetch for [url] must carry, when InnerTubeX minted it. */
-    fun headersFor(url: String): Map<String, String>? = minted[url]?.headers
+    fun headersFor(url: String): Map<String, String>? = synchronized(lock) { minted[url]?.headers }
 
     /**
      * Records that googlevideo refused [url] mid-playback.
@@ -259,7 +261,7 @@ object InnerTubeXResolver {
      * @return the videoId it was minted for, or null when InnerTubeX did not mint it.
      */
     fun onRefused(url: String): String? {
-        val refused = minted.remove(url) ?: return null
+        val refused = synchronized(lock) { minted.remove(url) } ?: return null
         exclude(refused.videoId, refused.profileId)
         // A refused ciphered URL is the signal the remote cipher config may be stale; it has its own cooldown.
         scope.launch { runCatching { cipherService.refreshAfterStreamRejection() } }
@@ -268,21 +270,26 @@ object InnerTubeXResolver {
 
     fun exclude(videoId: String, profileId: String) {
         TrackLog.w(TAG, "InnerTubeX: $profileId refused $videoId; skipping it for this track", about = videoId)
-        excluded.getOrPut(videoId) { ConcurrentHashMap() }[profileId] = MonotonicClock.nowMs() + EXCLUDE_MS
+        val until = MonotonicClock.nowMs() + EXCLUDE_MS
+        synchronized(lock) { excluded.getOrPut(videoId) { HashMap() }[profileId] = until }
     }
 
     fun onSessionChanged() {
-        excluded.clear()
-        minted.clear()
+        synchronized(lock) {
+            excluded.clear()
+            minted.clear()
+        }
         // A new cookie or visitor means a new player config and PoToken binding.
         if (prefs != null) warm(0)
     }
 
     private fun excludedFor(videoId: String): Set<String> {
-        val entries = excluded[videoId] ?: return emptySet()
         val now = MonotonicClock.nowMs()
-        entries.entries.removeAll { it.value <= now }
-        return entries.keys.toSet()
+        return synchronized(lock) {
+            val entries = excluded[videoId] ?: return emptySet()
+            entries.entries.removeAll { it.value <= now }
+            entries.keys.toSet()
+        }
     }
 
     private const val PLAYER_CONFIG_URL =
@@ -292,5 +299,4 @@ object InnerTubeXResolver {
     private const val MAX_REMEMBERED = 64
     /** Off the cold-start path; the first tap on a track is rarely sooner. */
     private const val WARM_DELAY_MS = 2_000L
-    private const val KEPT_PLAYERS = 3
 }
