@@ -1,5 +1,7 @@
 package com.music.bitchord.data.webdav
 
+import kotlin.concurrent.Volatile
+
 /**
  * In-memory credentials for [com.music.bitchord.data.Http]'s interceptor.
  *

@@ -3,7 +3,6 @@ package com.music.bitchord.data.innertube
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
-import java.util.Locale
 
 /**
  * The identity a googlevideo URL says minted it, as far as its media fetch
@@ -119,7 +118,7 @@ data class PlayerClient(
          */
         fun forStreamUrl(url: String): PlayerClient {
             val parsed = url.toHttpUrlOrNull() ?: return IOS
-            val name = parsed.queryParameter("c")?.uppercase(Locale.ROOT) ?: return IOS
+            val name = parsed.queryParameter("c")?.uppercase() ?: return IOS
             val version = parsed.queryParameter("cver")
             return when {
                 name.startsWith("IOS") ->
@@ -147,7 +146,7 @@ data class PlayerClient(
         fun rangeBytesFor(url: String): Long {
             val parsed = url.toHttpUrlOrNull() ?: return Long.MAX_VALUE
             if (!parsed.host.endsWith("googlevideo.com")) return Long.MAX_VALUE
-            val name = parsed.queryParameter("c")?.uppercase(Locale.ROOT)
+            val name = parsed.queryParameter("c")?.uppercase()
             return if (name == "ANDROID_VR" || name?.startsWith("TVHTML5_SIMPLY") == true) {
                 NARROW_RANGE_BYTES
             } else {

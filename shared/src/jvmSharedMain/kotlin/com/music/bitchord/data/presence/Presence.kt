@@ -2,6 +2,7 @@ package com.music.bitchord.data.presence
 
 import com.music.bitchord.data.DebugLog
 import com.music.bitchord.data.Http
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

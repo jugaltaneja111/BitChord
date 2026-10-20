@@ -5,7 +5,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.text.Normalizer
-import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -43,7 +42,7 @@ object LrcRed {
     private val ISRC = Regex("""[A-Z]{2}[A-Z0-9]{3}\d{7}""")
 
     fun documentUrl(isrc: String): String? =
-        isrc.trim().uppercase(Locale.ROOT).takeIf { ISRC.matches(it) }?.let { "${BASE}s/$it.ttml" }
+        isrc.trim().uppercase().takeIf { ISRC.matches(it) }?.let { "${BASE}s/$it.ttml" }
 
     /**
      * [get] is how the document is fetched; [LyricsRepository] passes one that
@@ -137,7 +136,7 @@ object LrcRed {
     private fun normalized(value: String): String =
         Normalizer.normalize(value, Normalizer.Form.NFD)
             .replace(COMBINING_MARKS, "")
-            .lowercase(Locale.ROOT)
+            .lowercase()
             .map { if (it.isLetterOrDigit()) it else ' ' }
             .joinToString("")
             .replace(WHITESPACE, " ")

@@ -160,7 +160,7 @@ val TRANSLATION_LANGUAGES = listOf(
     TranslationLanguage("zu", "Zulu"),
 )
 
-private val byCode = TRANSLATION_LANGUAGES.associateBy { it.code.lowercase(Locale.ROOT) }
+private val byCode = TRANSLATION_LANGUAGES.associateBy { it.code.lowercase() }
 
 /**
  * What to call [code] on screen, written in [inLocale].
@@ -172,7 +172,7 @@ private val byCode = TRANSLATION_LANGUAGES.associateBy { it.code.lowercase(Local
  * is wrong but legible; an empty label in a picker is neither.
  */
 fun translationLanguageName(code: String, inLocale: Locale): String {
-    val entry = byCode[code.lowercase(Locale.ROOT)]
+    val entry = byCode[code.lowercase()]
     // A subtag is the whole point of the codes that carry one, and the platform
     // renders it as territory: zh-CN comes back "Chinese (China)", which names
     // the country rather than the script and leaves zh-TW looking like the same

@@ -28,6 +28,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.concurrent.Volatile
 import kotlin.math.ceil
 import kotlin.math.floor
 

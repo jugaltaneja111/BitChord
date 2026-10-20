@@ -1,5 +1,6 @@
 package com.music.bitchord.data.canvas
 
+import kotlin.concurrent.Volatile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull

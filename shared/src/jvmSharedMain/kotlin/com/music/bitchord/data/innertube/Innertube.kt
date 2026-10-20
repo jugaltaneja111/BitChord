@@ -20,6 +20,7 @@ import io.ktor.serialization.kotlinx.json.json
 import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaylistMove
 import com.music.bitchord.data.model.PlaylistPrivacy
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -66,7 +67,7 @@ object Innertube {
     val currentLocaleTag: String
         get() {
             val raw = appLanguage()?.ifEmpty { null }
-                ?: Locale.getDefault().toLanguageTag().ifEmpty { "en" }
+                ?: com.music.bitchord.data.systemLanguageTag().ifEmpty { "en" }
             return com.music.bitchord.data.LocaleTags.normalizeAppTag(raw)
         }
 

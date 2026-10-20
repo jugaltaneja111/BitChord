@@ -23,7 +23,7 @@ data class SearchHistoryEntity(
     /** The kind of entity this represents. */
     val entityType: EntityType,
     /** Timestamp (epoch millis) — updated on each re-tap to bubble it to the top. */
-    val timestamp: Long = System.currentTimeMillis(),
+    val timestamp: Long = com.music.bitchord.data.wallClockMs(),
 )
 
 enum class EntityType {

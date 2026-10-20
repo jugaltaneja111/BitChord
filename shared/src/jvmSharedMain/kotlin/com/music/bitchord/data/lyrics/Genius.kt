@@ -15,7 +15,6 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.TextNode
 import java.net.URLEncoder
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -169,12 +168,12 @@ object Genius {
         targetArtist: String,
     ): JsonObject? {
         if (candidates.isEmpty()) return null
-        val normTitle = targetTitle.lowercase(Locale.ROOT)
-        val normArtist = targetArtist.lowercase(Locale.ROOT)
+        val normTitle = targetTitle.lowercase()
+        val normArtist = targetArtist.lowercase()
 
         val scored = candidates.mapNotNull { item ->
-            val title = item["title"]?.jsonPrimitive?.contentOrNull?.lowercase(Locale.ROOT) ?: ""
-            val artist = item["artist_names"]?.jsonPrimitive?.contentOrNull?.lowercase(Locale.ROOT) ?: ""
+            val title = item["title"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: ""
+            val artist = item["artist_names"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: ""
             var score = 0
 
             val titleMatches = normTitle.isNotBlank() && (title == normTitle || title.contains(normTitle) || normTitle.contains(title))

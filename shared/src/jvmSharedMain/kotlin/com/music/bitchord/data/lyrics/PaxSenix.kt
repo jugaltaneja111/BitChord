@@ -1,5 +1,6 @@
 package com.music.bitchord.data.lyrics
 
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

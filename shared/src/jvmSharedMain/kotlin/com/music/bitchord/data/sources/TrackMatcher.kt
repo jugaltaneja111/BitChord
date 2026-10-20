@@ -3,7 +3,6 @@ package com.music.bitchord.data.sources
 import com.music.bitchord.data.model.Song
 import kotlin.math.abs
 import java.text.Normalizer
-import java.util.Locale
 
 /**
  * Decides whether one catalogue's track is the same recording as another's,
@@ -522,7 +521,7 @@ object TrackMatcher {
      */
     internal fun normalize(text: String): String =
         Normalizer.normalize(text, Normalizer.Form.NFKC)
-            .lowercase(Locale.ROOT)
+            .lowercase()
             .replace("&", " and ")
             .replace(CJK_OPEN, "(")
             .replace(CJK_CLOSE, ")")

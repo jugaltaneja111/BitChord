@@ -1,7 +1,6 @@
 package com.music.bitchord.data.canvas
 
 import java.text.Normalizer
-import java.util.Locale
 
 /**
  * Which provider a clip came from — read in one place, by
@@ -67,7 +66,7 @@ data class CanvasArtwork(
 fun String.normalizeForMatch(): String =
     Normalizer.normalize(this, Normalizer.Form.NFD)
         .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-        .lowercase(Locale.ROOT)
+        .lowercase()
         .replace(Regex("[^a-z0-9\\s]"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()

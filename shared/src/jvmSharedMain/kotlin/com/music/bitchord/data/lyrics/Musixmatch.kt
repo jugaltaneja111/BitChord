@@ -76,14 +76,14 @@ object Musixmatch {
 
     private fun score(track: Track, title: String, artist: String, seconds: Int): Double {
         var score = 0.0
-        val name = track.trackName.trim().lowercase(Locale.ROOT)
-        val targetTitle = title.trim().lowercase(Locale.ROOT)
+        val name = track.trackName.trim().lowercase()
+        val targetTitle = title.trim().lowercase()
         score += when {
             name == targetTitle -> 80.0
             name.contains(targetTitle) || targetTitle.contains(name) -> 40.0
             else -> 0.0
         }
-        if (track.artistName.trim().lowercase(Locale.ROOT).contains(artist.trim().lowercase(Locale.ROOT))) {
+        if (track.artistName.trim().lowercase().contains(artist.trim().lowercase())) {
             score += 40.0
         }
         track.trackLength?.let { length ->

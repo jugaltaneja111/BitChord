@@ -9,6 +9,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.async
@@ -485,7 +486,7 @@ object LyricsTranslation {
 
     private fun comparable(text: String): String = text
         .trim()
-        .lowercase(Locale.ROOT)
+        .lowercase()
         .replace(Regex("\\s+"), " ")
 
     private suspend fun Call.awaitBody(): String = suspendCancellableCoroutine { continuation ->
@@ -547,12 +548,12 @@ object LyricsTranslation {
     }
 
     private fun canonicalLanguage(tag: String): String = when (
-        Locale.forLanguageTag(tag.replace('_', '-')).language.lowercase(Locale.ROOT)
+        Locale.forLanguageTag(tag.replace('_', '-')).language.lowercase()
     ) {
         "iw" -> "he"
         "in" -> "id"
         "ji" -> "yi"
-        else -> Locale.forLanguageTag(tag.replace('_', '-')).language.lowercase(Locale.ROOT)
+        else -> Locale.forLanguageTag(tag.replace('_', '-')).language.lowercase()
     }
 
     private fun sameLanguage(first: String, second: String): Boolean =
