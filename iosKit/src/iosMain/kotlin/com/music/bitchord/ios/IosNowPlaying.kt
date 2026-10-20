@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
+import com.music.bitchord.data.LikeState
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaybackSourceType
@@ -31,8 +32,7 @@ import kotlin.math.roundToInt
  * The full player over everything, from the mini player. Dragged down past a quarter of the
  * screen it goes; the shared screen's own layers (lyrics, queue, sheets) take Back first.
  *
- * Signed out, with no lyrics yet: liking needs an account, and the lyrics providers are still
- * JVM-only — both come with later steps of the port.
+ * No lyrics yet: the lyrics providers are still JVM-only, and come with a later step of the port.
  */
 @Composable
 internal fun IosNowPlaying(
@@ -49,6 +49,10 @@ internal fun IosNowPlaying(
     val shuffle by IosPlayer.shuffle.collectAsState()
     val repeatMode by IosPlayer.repeatMode.collectAsState()
     val autoplay by IosPlayer.autoplay.collectAsState()
+    val signedIn by IosAccount.signedIn.collectAsState()
+    val account by IosAccount.account.collectAsState()
+    val likes by LikeState.overrides.collectAsState()
+    val likeStatus = likes[song.videoId] ?: LikeStatus.INDIFFERENT
 
     // Whatever started the track knew its title and artwork, rarely which album and artist pages
     // it belongs to. Asked while the player is up, as the phone does.
@@ -106,10 +110,12 @@ internal fun IosNowPlaying(
             repeatMode = repeatMode,
             shuffleEnabled = shuffle,
             autoplayEnabled = autoplay,
-            signedIn = false,
-            accountName = null,
-            likeStatus = LikeStatus.INDIFFERENT,
-            onToggleLike = { IosPlayerHost.showMessage("Sign in to like songs") },
+            signedIn = signedIn,
+            accountName = account?.name?.takeIf(String::isNotBlank),
+            likeStatus = likeStatus,
+            onToggleLike = {
+                if (signedIn) IosAccount.toggleLike(song, likeStatus) else leaveTo { IosOverlays.login = true }
+            },
             onPlayPause = IosPlayer::togglePlayPause,
             onNext = IosPlayer::next,
             onPrevious = IosPlayer::previous,

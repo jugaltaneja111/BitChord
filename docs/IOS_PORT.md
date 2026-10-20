@@ -9,8 +9,11 @@ has the phone's four tabs in its floating bar, with its mini player (both now in
 shared Home, Explore with its category art, and Search; Library signed out), Explore's
 category pages, album / playlist and artist pages (written for iOS, as each platform writes its
 own), a mini player and the shared full player with its queue, shuffle, repeat and autoplay.
-Back is a swipe from the left edge. Not yet: lyrics (the providers are JVM-only), accounts (so Home is
-YouTube Music's signed-out feed, not the personal one the phone shows), song menus, settings. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+Back is a swipe from the left edge. YouTube Music sign-in works as on the phone: Google's own page in a WKWebView (with Safari's
+user agent, which Google requires), the session read off music.youtube.com's `ytcfg`, checked
+against the API, then kept in the Keychain. Signed in, Home is the personal feed with Recently
+Played, Library is the account's, and the player can like. Not yet: lyrics (the providers are
+JVM-only), several accounts and channel switching, song menus, settings. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

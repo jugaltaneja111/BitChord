@@ -39,7 +39,7 @@ internal fun autoSearchQuery(): String? =
 
 /**
  * BITCHORD_TOUR: walk every page CI cannot tap its way to — Home, Explore, a category, an album,
- * an artist, the full player, search — a fixed time apart, so the screenshots CI takes on the
+ * an artist, the full player, the sign-in page, search — a fixed time apart, so the screenshots CI takes on the
  * same clock land one on each. Each step is printed as it starts.
  */
 internal fun tourRequested(): Boolean = NSProcessInfo.processInfo.environment["BITCHORD_TOUR"] != null

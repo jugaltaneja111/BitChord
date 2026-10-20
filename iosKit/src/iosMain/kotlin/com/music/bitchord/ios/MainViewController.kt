@@ -39,6 +39,8 @@ private fun start() {
     InnerTubeXResolver.init(CachesPlayerCache(), UserDefaultsConfigStore(), poTokenProvider = null)
     AppUi.install(IosAppUiHost)
     PlayerPlatform.install(IosPlayerHost)
+    // Before the first page asks for anything, so it is asked as the listener.
+    IosAccount.restore()
     startAutoplayIfAsked()
 }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -30,6 +31,10 @@ internal class IosFeeds {
     private val _homeLoadingMore = MutableStateFlow(false)
     val homeLoadingMore: StateFlow<Boolean> = _homeLoadingMore.asStateFlow()
 
+    private val _recentsLoading = MutableStateFlow(false)
+    /** The account's own Recently Played, asked for apart from the feed and laid at its head. */
+    val recentsLoading: StateFlow<Boolean> = _recentsLoading.asStateFlow()
+
     private val _explore = MutableStateFlow<UiState<List<MoodGenreSection>>>(UiState.Loading)
     val explore: StateFlow<UiState<List<MoodGenreSection>>> = _explore.asStateFlow()
 
@@ -40,14 +45,30 @@ internal class IosFeeds {
     init {
         loadHome()
         loadExplore()
+        // A sign-in or sign-out makes the feed someone else's.
+        scope.launch {
+            IosAccount.generation.drop(1).collect { loadHome() }
+        }
     }
 
     fun loadHome() {
         val current = ++generation
+        val signedIn = IosAccount.signedIn.value
         _home.value = UiState.Loading
         continuation = null
         seenTitles.clear()
         _homeLoadingMore.value = false
+        _recentsLoading.value = signedIn
+        if (signedIn) {
+            scope.launch {
+                YtMusicRepository.homeRecentlyPlayed()
+                    .onSuccess { shelf ->
+                        if (current != generation) return@onSuccess
+                        shelf?.let { publish(listOf(it), prepend = true) }
+                    }
+                if (current == generation) _recentsLoading.value = false
+            }
+        }
         scope.launch {
             YtMusicRepository.home()
                 .onSuccess { feed ->
@@ -136,8 +157,14 @@ internal class IosFeeds {
         }
     }
 
-    private fun publish(shelves: List<HomeShelf>) {
+    private fun publish(shelves: List<HomeShelf>, prepend: Boolean = false) {
         val existing = (_home.value as? UiState.Success)?.data.orEmpty()
+        if (prepend) {
+            val replacing = shelves.map { it.title.lowercase() }.toSet()
+            seenTitles.addAll(replacing)
+            _home.value = UiState.Success(shelves + existing.filterNot { it.title.lowercase() in replacing })
+            return
+        }
         val added = shelves.withoutRepeatsOf(existing)
             .filter { it.items.isNotEmpty() && seenTitles.add(it.title.lowercase()) }
         if (added.isNotEmpty()) _home.value = UiState.Success(existing + added)

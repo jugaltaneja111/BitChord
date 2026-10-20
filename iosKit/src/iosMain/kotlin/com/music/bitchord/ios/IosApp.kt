@@ -161,8 +161,12 @@ internal fun IosApp() {
                     when (navigator.tab) {
                         IosTab.HOME -> HomePage(feeds, navigator, song, isPlaying, contentPadding, statusBar)
                         IosTab.EXPLORE -> ExplorePage(feeds, navigator, contentPadding, statusBar)
-                        IosTab.LIBRARY -> LibraryPage(contentPadding, statusBar)
+                        IosTab.LIBRARY -> LibraryPage(navigator, contentPadding, statusBar)
                         IosTab.SEARCH -> SearchPage(search, navigator, song, isPlaying, contentPadding)
+                    }
+                    // The phone's account button, over every tab but Search's field.
+                    if (navigator.tab != IosTab.SEARCH) {
+                        AccountButton(Modifier.align(Alignment.TopEnd).padding(top = statusBar + 4.dp, end = 12.dp))
                     }
                 }
             }
@@ -201,6 +205,19 @@ internal fun IosApp() {
             ) {
                 IosNowPlaying(navigator, onDismiss = { playerOpen = false })
             }
+            if (IosOverlays.account) {
+                AccountSheet(onDismiss = { IosOverlays.account = false })
+            }
+            AnimatedVisibility(
+                visible = IosOverlays.login,
+                enter = slideInVertically(tween(320)) { it },
+                exit = slideOutVertically(tween(260)) { it },
+            ) {
+                IosLoginScreen(onClose = {
+                    IosOverlays.login = false
+                    if (IosAccount.signedIn.value) navigator.select(IosTab.LIBRARY)
+                })
+            }
         }
     }
 }
@@ -216,6 +233,8 @@ private fun HomePage(
 ) {
     val state by feeds.home.collectAsState()
     val loadingMore by feeds.homeLoadingMore.collectAsState()
+    val signedIn by IosAccount.signedIn.collectAsState()
+    val recentsLoading by feeds.recentsLoading.collectAsState()
     HomeScreen(
         state = state,
         listState = rememberLazyListState(),
@@ -226,10 +245,11 @@ private fun HomePage(
         pullState = rememberPullToRefreshState(),
         contentPadding = PaddingValues(top = statusBar + 8.dp, bottom = contentPadding.calculateBottomPadding()),
         title = "Listen Now",
-        signedIn = false,
-        onSignIn = null,
+        signedIn = signedIn,
+        onSignIn = { IosOverlays.login = true },
         onLoadMore = feeds::loadMoreHome,
         loadingMore = loadingMore,
+        recentlyPlayedLoading = recentsLoading,
         currentSong = song,
         isPlaying = isPlaying,
     )
@@ -250,22 +270,23 @@ private fun ExplorePage(feeds: IosFeeds, navigator: IosNavigator, contentPadding
     )
 }
 
-/** Signed out for now: accounts come with a later step of the port. */
 @Composable
-private fun LibraryPage(contentPadding: PaddingValues, statusBar: Dp) {
+private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, statusBar: Dp) {
+    val signedIn by IosAccount.signedIn.collectAsState()
+    val state by IosAccount.library.collectAsState()
     LibraryScreen(
-        signedIn = false,
-        state = UiState.Loading,
+        signedIn = signedIn,
+        state = state,
         listState = rememberLazyListState(),
-        onShelfItemClick = {},
+        onShelfItemClick = { navigator.openShelfItem(it, null) },
         onShelfItemLongPress = {},
-        onNewPlaylist = { IosPlayerHost.showMessage("Playlists need an account") },
+        onNewPlaylist = { IosPlayerHost.showMessage("Creating playlists is not in the iOS app yet") },
         onShowAll = {},
         replay = {},
-        onSignIn = { IosPlayerHost.showMessage("Sign-in is not in the iOS app yet") },
-        onRetry = {},
+        onSignIn = { IosOverlays.login = true },
+        onRetry = IosAccount::loadLibrary,
         refreshing = false,
-        onRefresh = {},
+        onRefresh = IosAccount::loadLibrary,
         pullState = rememberPullToRefreshState(),
         contentPadding = PaddingValues(top = statusBar + 8.dp, bottom = contentPadding.calculateBottomPadding()),
         links = emptyList(),
@@ -453,6 +474,10 @@ private suspend fun runTour(
     step("player")
     delay(TOUR_STEP_MS)
     setPlayerOpen(false)
+    IosOverlays.login = true
+    step("login")
+    delay(TOUR_STEP_MS)
+    IosOverlays.login = false
     navigator.select(IosTab.SEARCH)
     search.submit(autoSearchQuery() ?: "daft punk")
     step("search")

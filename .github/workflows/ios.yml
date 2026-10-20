@@ -218,7 +218,7 @@ jobs:
             xcrun simctl launch --console-pty "$UDID" com.music.bitchord > build/smoke/autoplay.log 2>&1 &
           console=$!
           # Each screenshot waits for the app to say it reached the page, then lets it draw.
-          for page in home explore category album artist player search; do
+          for page in home explore category album artist player login search; do
             for _ in $(seq 1 40); do
               grep -q "tour: $page" build/smoke/autoplay.log && break
               sleep 1
