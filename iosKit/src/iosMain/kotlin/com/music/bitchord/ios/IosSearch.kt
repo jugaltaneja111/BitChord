@@ -1,0 +1,119 @@
+package com.music.bitchord.ios
+
+import com.music.bitchord.data.YtMusicRepository
+import com.music.bitchord.data.model.SearchFilter
+import com.music.bitchord.data.model.SearchHistoryEntity
+import com.music.bitchord.data.model.SearchResult
+import com.music.bitchord.data.model.UiState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+/**
+ * The search page's state, as the phone's MainViewModel keeps it for the same screen: the query,
+ * typed suggestions, the submitted results and their next page. History lives for the session.
+ */
+internal class IosSearch {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var typingJob: Job? = null
+    private var searchJob: Job? = null
+    private var continuation: String? = null
+
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    private val _filter = MutableStateFlow(SearchFilter.ALL)
+    val filter: StateFlow<SearchFilter> = _filter.asStateFlow()
+
+    private val _results = MutableStateFlow<UiState<List<SearchResult>>?>(null)
+    val results: StateFlow<UiState<List<SearchResult>>?> = _results.asStateFlow()
+
+    private val _loadingMore = MutableStateFlow(false)
+    val loadingMore: StateFlow<Boolean> = _loadingMore.asStateFlow()
+
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+
+    private val _typeahead = MutableStateFlow<List<SearchResult>>(emptyList())
+    val typeahead: StateFlow<List<SearchResult>> = _typeahead.asStateFlow()
+
+    private val _history = MutableStateFlow<List<SearchHistoryEntity>>(emptyList())
+    val history: StateFlow<List<SearchHistoryEntity>> = _history.asStateFlow()
+
+    fun onQueryChange(value: String) {
+        _query.value = value
+        // Typing again drops the results: the page goes back to suggestions for the new words.
+        _results.value = null
+        searchJob?.cancel()
+        typingJob?.cancel()
+        if (value.isBlank()) {
+            _suggestions.value = emptyList()
+            _typeahead.value = emptyList()
+            return
+        }
+        typingJob = scope.launch {
+            delay(TYPING_DEBOUNCE_MS)
+            launch { YtMusicRepository.searchSuggestions(value).onSuccess { _suggestions.value = it } }
+            launch { YtMusicRepository.searchTypeahead(value).onSuccess { _typeahead.value = it.rows } }
+        }
+    }
+
+    fun onFilterChange(value: SearchFilter) {
+        _filter.value = value
+        if (_results.value != null) submit()
+    }
+
+    fun submit(text: String = _query.value) {
+        if (text.isBlank()) return
+        _query.value = text
+        typingJob?.cancel()
+        searchJob?.cancel()
+        continuation = null
+        _results.value = UiState.Loading
+        searchJob = scope.launch {
+            YtMusicRepository.searchPage(text, _filter.value)
+                .onSuccess { page ->
+                    continuation = page.continuation
+                    _results.value = UiState.Success(page.rows)
+                }
+                .onFailure { _results.value = UiState.Error(it.message ?: "Search failed") }
+        }
+    }
+
+    fun loadMore() {
+        val token = continuation ?: return
+        val current = (_results.value as? UiState.Success)?.data ?: return
+        if (_loadingMore.value) return
+        _loadingMore.value = true
+        scope.launch {
+            YtMusicRepository.searchContinuation(token, _filter.value).onSuccess { page ->
+                continuation = page.continuation
+                _results.value = UiState.Success(current + page.rows)
+            }
+            _loadingMore.value = false
+        }
+    }
+
+    fun record(entity: SearchHistoryEntity) {
+        _history.value = listOf(entity) + _history.value.filter { it.id != entity.id }.take(MAX_HISTORY - 1)
+    }
+
+    fun removeHistory(id: String) {
+        _history.value = _history.value.filter { it.id != id }
+    }
+
+    fun clearHistory() {
+        _history.value = emptyList()
+    }
+
+    private companion object {
+        const val TYPING_DEBOUNCE_MS = 250L
+        const val MAX_HISTORY = 30
+    }
+}

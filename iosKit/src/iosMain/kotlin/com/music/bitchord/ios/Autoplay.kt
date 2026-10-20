@@ -1,0 +1,33 @@
+package com.music.bitchord.ios
+
+import com.music.bitchord.data.TrackLog
+import com.music.bitchord.data.model.Song
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import platform.Foundation.NSProcessInfo
+
+/**
+ * A smoke test CI can run without touching the screen: launched with BITCHORD_AUTOPLAY set to a
+ * video id, the app plays it at once and prints what the player is doing every two seconds. A
+ * position that advances means AVPlayer is decoding the stream.
+ */
+internal fun startAutoplayIfAsked() {
+    val videoId = NSProcessInfo.processInfo.environment["BITCHORD_AUTOPLAY"] as? String ?: return
+    TrackLog.echo = { level, tag, message, error ->
+        println("$level $tag: $message${error?.let { " ($it)" }.orEmpty()}")
+    }
+    IosPlayer.playQueue(listOf(Song(videoId = videoId, title = "Autoplay", artist = "", thumbnailUrl = null)), 0)
+    MainScope().launch {
+        repeat(AUTOPLAY_REPORTS) {
+            delay(2_000)
+            println(
+                "autoplay: playing=${IosPlayer.isPlaying.value} loading=${IosPlayer.isLoading.value} " +
+                    "positionMs=${IosPlayer.position.positionMs} durationMs=${IosPlayer.durationMs.value} " +
+                    "error=${IosPlayer.error.value}",
+            )
+        }
+    }
+}
+
+private const val AUTOPLAY_REPORTS = 30

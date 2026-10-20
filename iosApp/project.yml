@@ -1,0 +1,52 @@
+# XcodeGen spec for the iOS app; CI generates BitChord.xcodeproj from it (`xcodegen generate`), so
+# no project file is kept in the repository. The Kotlin framework, BitChordKit, is built by Gradle
+# from the build phase below.
+name: BitChord
+options:
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  BitChord:
+    type: application
+    platform: iOS
+    sources:
+      - iosApp
+    scheme: {}
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: BitChord
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        # Keeps playing with the screen locked.
+        UIBackgroundModes: [audio]
+        # Compose draws at the display's full rate (ProMotion) only with this.
+        CADisableMinimumFrameDurationOnPhone: true
+        # The UI is dark; the status bar's style is set here rather than per screen.
+        UIViewControllerBasedStatusBarAppearance: false
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord
+        PRODUCT_NAME: BitChord
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Where :iosKit:embedAndSignAppleFrameworkForXcode puts the framework for this build.
+        FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../iosKit/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS: [$(inherited), -framework, BitChordKit]
+        # The Gradle build reads and writes outside the sandboxed script inputs.
+        ENABLE_USER_SCRIPT_SANDBOXING: false
+    preBuildScripts:
+      - name: Build the Kotlin framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :iosKit:embedAndSignAppleFrameworkForXcode

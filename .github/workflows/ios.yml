@@ -1,24 +1,31 @@
 name: iOS
 
 # macOS minutes are limited, so only the Linux job runs on every push. It compiles the iOS klibs,
-# which catches most breakage. The macOS job (simulator tests, framework linking) runs only when
-# started by hand.
+# which catches most breakage. The macOS jobs run only when started by hand, or (the app) for an
+# `ios-v*` tag.
 on:
   push:
     branches: [main, ios-port]
+    # Path filters do not apply to tags: an ios-v* tag always builds.
+    tags: ['ios-v*']
     paths:
       - 'shared/**'
       - 'sharedUi/**'
+      - 'iosKit/**'
       - 'iosApp/**'
       - '*.gradle.kts'
       - 'gradle/**'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
     inputs:
-      macos:
-        description: 'Also run the simulator tests and link the frameworks on macOS'
+      app:
+        description: 'Build the app on macOS: the unsigned IPA, then a smoke run on the simulator'
         type: boolean
         default: true
+      tests:
+        description: 'Run the shared tests on the iOS simulator (macOS)'
+        type: boolean
+        default: false
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
@@ -51,6 +58,9 @@ jobs:
           :shared:compileKotlinIosArm64
           :shared:compileKotlinIosSimulatorArm64
           :shared:compileTestKotlinIosSimulatorArm64
+          :sharedUi:compileKotlinIosArm64
+          :iosKit:compileKotlinIosArm64
+          :iosKit:compileKotlinIosSimulatorArm64
           :shared:jvmTest
 
       - name: Upload test reports
@@ -62,7 +72,7 @@ jobs:
 
   macos:
     name: Shared · iOS simulator (macOS)
-    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    if: github.event_name == 'workflow_dispatch' && inputs.tests
     needs: compile
     # Apple silicon, so the simulator tests run on iosSimulatorArm64 natively.
     runs-on: macos-15
@@ -112,3 +122,96 @@ jobs:
           path: |
             shared/build/reports/tests/
             shared/build/test-results/
+
+  app:
+    name: iOS app · unsigned IPA (macOS)
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.app) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ios-v'))
+    needs: compile
+    runs-on: macos-15
+    permissions:
+      # To attach the IPA to the tag's release.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x gradlew
+
+      - name: Generate the Xcode project
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          cd iosApp && xcodegen generate
+
+      # Unsigned: sideloading tools (AltStore, SideStore, Sideloadly) sign it with the installer's
+      # own Apple ID. The Kotlin framework is built by the project's own build phase.
+      - name: Build the unsigned IPA
+        run: |
+          xcodebuild -project iosApp/BitChord.xcodeproj -scheme BitChord \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+          mkdir -p build/ipa/Payload
+          cp -R build/ios-device/Build/Products/Release-iphoneos/BitChord.app build/ipa/Payload/
+          (cd build/ipa && zip -qry ../BitChord-unsigned.ipa Payload)
+          ls -lh build/BitChord-unsigned.ipa
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: BitChord-unsigned-ipa
+          path: build/BitChord-unsigned.ipa
+
+      - name: Attach the IPA to the release
+        if: startsWith(github.ref, 'refs/tags/ios-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --prerelease --title "BitChord iOS $GITHUB_REF_NAME" \
+                 --notes "Unsigned IPA for sideloading (AltStore, SideStore, Sideloadly)."
+          gh release upload "$GITHUB_REF_NAME" build/BitChord-unsigned.ipa --clobber
+
+      # After the IPA, so a smoke failure never costs the deliverable. Plays a track with no taps
+      # (see iosKit's Autoplay.kt) and passes when the playhead moves.
+      - name: Boot a simulator
+        id: simulator
+        run: |
+          udid=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke run on the simulator
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          xcodebuild -project iosApp/BitChord.xcodeproj -scheme BitChord \
+            -configuration Debug -sdk iphonesimulator -destination "id=$UDID" \
+            -derivedDataPath build/ios-sim \
+            build
+          xcrun simctl install "$UDID" build/ios-sim/Build/Products/Debug-iphonesimulator/BitChord.app
+          mkdir -p build/smoke
+          SIMCTL_CHILD_BITCHORD_AUTOPLAY=dQw4w9WgXcQ \
+            timeout 70 xcrun simctl launch --console-pty "$UDID" com.music.bitchord \
+            | tee build/smoke/autoplay.log || true
+          xcrun simctl io "$UDID" screenshot build/smoke/app.png
+          grep -E 'autoplay: playing=true .*positionMs=[1-9][0-9]{3,}' build/smoke/autoplay.log
+
+      - name: Upload the smoke run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke
+          path: build/smoke/
+
