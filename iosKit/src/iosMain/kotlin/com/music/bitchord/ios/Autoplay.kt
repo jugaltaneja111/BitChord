@@ -31,8 +31,15 @@ internal fun startAutoplayIfAsked() {
     }
 }
 
-private const val AUTOPLAY_REPORTS = 30
+private const val AUTOPLAY_REPORTS = 40
 
 /** The search CI asks the app to submit at launch, or null. */
 internal fun autoSearchQuery(): String? =
     NSProcessInfo.processInfo.environment["BITCHORD_AUTOSEARCH"] as? String
+
+/**
+ * BITCHORD_TOUR: walk every page CI cannot tap its way to — Home, Explore, a category, an album,
+ * an artist, the full player, search — a fixed time apart, so the screenshots CI takes on the
+ * same clock land one on each. Each step is printed as it starts.
+ */
+internal fun tourRequested(): Boolean = NSProcessInfo.processInfo.environment["BITCHORD_TOUR"] != null

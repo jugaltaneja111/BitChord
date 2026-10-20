@@ -210,20 +210,27 @@ jobs:
             build
           xcrun simctl install "$UDID" build/ios-sim/Build/Products/Debug-iphonesimulator/BitChord.app
           mkdir -p build/smoke
-          # macOS has no `timeout`: the console runs in the background for a minute, then stops.
-          # Plays a track and draws a page of search results, then a screenshot while the app is
-          # still up: stopping the console stops the app too.
-          SIMCTL_CHILD_BITCHORD_AUTOPLAY=dQw4w9WgXcQ SIMCTL_CHILD_BITCHORD_AUTOSEARCH='daft punk' \
+          # macOS has no `timeout`: the console runs in the background, then stops; stopping it
+          # stops the app too. The app plays a track and walks its pages ten seconds apart (see
+          # Autoplay.kt's tourRequested), and a screenshot lands in the middle of each page.
+          SIMCTL_CHILD_BITCHORD_AUTOPLAY=dQw4w9WgXcQ SIMCTL_CHILD_BITCHORD_TOUR=1 \
+            SIMCTL_CHILD_BITCHORD_AUTOSEARCH='daft punk' \
             xcrun simctl launch --console-pty "$UDID" com.music.bitchord > build/smoke/autoplay.log 2>&1 &
           console=$!
-          sleep 50
-          xcrun simctl io "$UDID" screenshot build/smoke/app.png
-          sleep 10
+          elapsed=0
+          for shot in 12:1-home 23:2-explore 34:3-category 45:4-album 56:5-artist 67:6-player 80:7-search; do
+            at=${shot%%:*}
+            sleep $((at - elapsed))
+            elapsed=$at
+            xcrun simctl io "$UDID" screenshot "build/smoke/${shot#*:}.png" || true
+          done
           kill "$console" 2>/dev/null || true
           # A crash leaves its report on the host.
           cp ~/Library/Logs/DiagnosticReports/BitChord* build/smoke/ 2>/dev/null || true
           cat build/smoke/autoplay.log
           grep -E 'autoplay: playing=true .*positionMs=[1-9][0-9]{3,}' build/smoke/autoplay.log
+          # The tour reached its last page.
+          grep -q 'tour: search' build/smoke/autoplay.log
           # And it is still alive: a crash, even after the music started, fails the run.
           if ls build/smoke/BitChord*.ips >/dev/null 2>&1; then echo "The app crashed"; exit 1; fi
 

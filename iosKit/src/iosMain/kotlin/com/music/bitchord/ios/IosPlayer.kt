@@ -4,6 +4,7 @@ import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.innertube.InnerTubeXResolver
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.ui.player.RepeatModes
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +41,7 @@ internal object IosPlayer {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loadJob: Job? = null
 
-    private val engine = IosAudioEngine(onEnded = ::next, onFailed = ::fail)
+    private val engine = IosAudioEngine(onEnded = ::onEnded, onFailed = ::fail)
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
@@ -61,6 +62,21 @@ internal object IosPlayer {
     val isPlaying: StateFlow<Boolean> = engine.isPlaying
     val durationMs: StateFlow<Long> = engine.durationMs
     val position get() = engine.position
+
+    private val _shuffle = MutableStateFlow(false)
+    val shuffle: StateFlow<Boolean> = _shuffle.asStateFlow()
+
+    /** One of [RepeatModes]. */
+    private val _repeatMode = MutableStateFlow(RepeatModes.OFF)
+    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    /** Keep playing the last song's radio once the queue runs out, as the phone does by default. */
+    private val _autoplay = MutableStateFlow(true)
+    val autoplay: StateFlow<Boolean> = _autoplay.asStateFlow()
+
+    /** The queue as it was before shuffling, so turning shuffle off puts it back. */
+    private var unshuffled: List<Song>? = null
+    private var extending = false
 
     private val _error = MutableStateFlow<String?>(null)
     /** Why the last track would not play, until the next one starts. */
@@ -89,8 +105,83 @@ internal object IosPlayer {
 
     fun playQueue(songs: List<Song>, startIndex: Int) {
         if (songs.isEmpty()) return
+        unshuffled = null
+        _shuffle.value = false
         _queue.value = songs
         playAt(startIndex.coerceIn(songs.indices))
+    }
+
+    /** A whole list in random order, from its first song. */
+    fun playShuffled(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        playQueue(songs.shuffled(), 0)
+        unshuffled = songs
+        _shuffle.value = true
+    }
+
+    fun jumpTo(index: Int) {
+        if (index in _queue.value.indices) playAt(index)
+    }
+
+    fun removeAt(index: Int) {
+        val queue = _queue.value
+        if (index !in queue.indices || index == _index.value) return
+        _queue.value = queue.toMutableList().apply { removeAt(index) }
+        if (index < _index.value) _index.value -= 1
+    }
+
+    fun move(from: Int, to: Int) {
+        val queue = _queue.value
+        if (from !in queue.indices || to !in queue.indices || from == to) return
+        _queue.value = queue.toMutableList().apply { add(to, removeAt(from)) }
+        val current = _index.value
+        _index.value = when {
+            from == current -> to
+            from < current && to >= current -> current - 1
+            from > current && to <= current -> current + 1
+            else -> current
+        }
+    }
+
+    /** Everything but the song playing. */
+    fun clearQueue() {
+        val song = _song.value ?: return
+        unshuffled = null
+        _queue.value = listOf(song)
+        _index.value = 0
+    }
+
+    fun toggleShuffle() {
+        val queue = _queue.value
+        val current = _song.value
+        if (_shuffle.value) {
+            _shuffle.value = false
+            val original = unshuffled ?: return
+            unshuffled = null
+            // Songs added since shuffling stay, after the original list.
+            val restored = original + queue.filter { song -> original.none { it.videoId == song.videoId } }
+            _queue.value = restored
+            _index.value = restored.indexOfFirst { it.videoId == current?.videoId }.coerceAtLeast(0)
+        } else {
+            _shuffle.value = true
+            unshuffled = queue
+            val index = _index.value
+            if (index < 0) return
+            _queue.value = queue.take(index + 1) + queue.drop(index + 1).shuffled()
+        }
+    }
+
+    /** The phone's order: off, all, one. */
+    fun cycleRepeat() {
+        _repeatMode.value = when (_repeatMode.value) {
+            RepeatModes.OFF -> RepeatModes.ALL
+            RepeatModes.ALL -> RepeatModes.ONE
+            else -> RepeatModes.OFF
+        }
+    }
+
+    fun toggleAutoplay() {
+        _autoplay.value = !_autoplay.value
     }
 
     fun togglePlayPause() {
@@ -103,7 +194,39 @@ internal object IosPlayer {
 
     fun next() {
         val nextIndex = _index.value + 1
-        if (nextIndex in _queue.value.indices) playAt(nextIndex) else engine.pause()
+        when {
+            nextIndex in _queue.value.indices -> playAt(nextIndex)
+            _repeatMode.value == RepeatModes.ALL && _queue.value.isNotEmpty() -> playAt(0)
+            _autoplay.value -> extendWithRadio(playNext = true)
+            else -> engine.pause()
+        }
+    }
+
+    private fun onEnded() {
+        if (_repeatMode.value == RepeatModes.ONE) {
+            engine.seekTo(0)
+            engine.play()
+        } else {
+            next()
+        }
+    }
+
+    /** The last song's radio after the queue; played straight away when the queue has run out. */
+    private fun extendWithRadio(playNext: Boolean) {
+        val last = _queue.value.lastOrNull() ?: return
+        if (extending) return
+        extending = true
+        scope.launch {
+            YtMusicRepository.radio(last.videoId).onSuccess { radio ->
+                val known = _queue.value.map { it.videoId }.toSet()
+                val added = radio.filter { it.videoId !in known }
+                if (added.isEmpty()) return@onSuccess
+                val start = _queue.value.size
+                _queue.value = _queue.value + added
+                if (playNext && _index.value == start - 1) playAt(start)
+            }.onFailure { if (playNext) engine.pause() }
+            extending = false
+        }
     }
 
     fun previous() {
@@ -122,6 +245,11 @@ internal object IosPlayer {
         _index.value = index
         _song.value = song
         _error.value = null
+        // Fetched ahead, so the next song is already queued when this one ends. A queue of one is
+        // a radio still loading (see playRadio).
+        if (_autoplay.value && _queue.value.size > 1 && index >= _queue.value.size - 2) {
+            extendWithRadio(playNext = false)
+        }
         engine.stop()
         loadJob?.cancel()
         loadJob = scope.launch {

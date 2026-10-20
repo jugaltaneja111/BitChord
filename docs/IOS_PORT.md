@@ -1,13 +1,17 @@
 # BitChord for iOS — port plan
 
-Status: M2 in progress. On a booted iOS simulator, InnerTubeX resolves a public track to an AAC
+Status: M2 done, M3 in progress. On a booted iOS simulator, InnerTubeX resolves a public track to an AAC
 stream (`VISIONOS` client, no PoToken) and googlevideo serves it (`LiveStreamResolveTest`).
 `sharedUi` — every shared page and the player — now lives in `commonMain` and compiles for iOS,
 with iOS `actual`s for its platform hooks. The iOS app is `iosKit` (Kotlin: AVPlayer engine,
 queue, search wiring, entry point) plus `iosApp` (a SwiftUI shell, generated with XcodeGen). It
-has the shared Search page and a mini player; tapping a result plays it with its radio queued.
-The manual `iOS` workflow builds the unsigned IPA, then plays a track on the simulator with no
-taps (`BITCHORD_AUTOPLAY`) as a smoke test.
+has the phone's four tabs (shared Home, Explore and Search; Library signed out), Explore's
+category pages, album / playlist and artist pages (written for iOS, as each platform writes its
+own), a mini player and the shared full player with its queue, shuffle, repeat and autoplay.
+Back is a swipe from the left edge. Not yet: lyrics (the providers are JVM-only), accounts, song
+menus, settings. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
+each, as a smoke test.
 
 Building on Linux: Kotlin/Native compiles iOS klibs there (`:shared:compileKotlinIosArm64`),
 but linking frameworks and running tests needs macOS with Xcode. CI compiles on Linux for
@@ -25,8 +29,7 @@ Known iOS issues:
   Kotlin/Native), so its per-track export shows everything held.
 - Kotlin 2.4.10 is required (InnerTubeX's iOS klibs are built with it), and with it R8 9.5.26.
 - Status bar style and hiding (`StatusBarIcons`, `HideStatusBar`) are no-ops on iOS; the shell
-  fixes the bar light-on-dark in Info.plist. The player's back layers (`PlayerBack`) are not yet
-  driven by an iOS gesture.
+  fixes the bar light-on-dark in Info.plist.
 
 Building the IPA: the `iOS` workflow's `app` job (started by hand, or by pushing an `ios-v*` tag,
 which also attaches the IPA to a release). Locally on a Mac: `cd iosApp && xcodegen generate`,
