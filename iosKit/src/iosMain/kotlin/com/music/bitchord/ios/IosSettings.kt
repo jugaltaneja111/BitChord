@@ -116,6 +116,9 @@ internal object IosSettings {
     /** AutoPlay suggests nothing already played this session. */
     val dontRepeatSongs = BoolPref("${PREFIX}dont_repeat_songs", false)
 
+    /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
+    val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
+
     val syncedLyrics = BoolPref("${PREFIX}synced_lyrics", true)
     /** Blurs the lyric lines that aren't being sung. */
     val lyricsBlur = BoolPref("${PREFIX}lyrics_blur", true)
@@ -138,6 +141,7 @@ internal fun SettingsPage(
     topPadding: androidx.compose.ui.unit.Dp,
     onClearSearchHistory: () -> Unit,
     onOpenLyricsSources: () -> Unit,
+    onOpenDownloads: () -> Unit,
 ) {
     val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
     val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
@@ -226,10 +230,33 @@ internal fun SettingsPage(
             }
         }
         item {
+            val downloadKbps by IosSettings.downloadKbps.flow.collectAsState()
+            val downloaded by IosDownloads.tracks.collectAsState()
+            var confirmDelete by remember { mutableStateOf(false) }
             Group("Downloads") {
-                Soon("Download quality")
+                ActionRow("Download quality", value = if (downloadKbps >= 256) "High" else "Normal") {
+                    IosSettings.downloadKbps.set(if (downloadKbps >= 256) 128 else 320)
+                }
+                Divider()
+                ActionRow(
+                    "Downloaded songs",
+                    value = "${downloaded.size} · ${megabytes(downloaded.sumOf { it.bytes })}",
+                    onClick = onOpenDownloads,
+                )
                 Divider()
                 Soon("Download over Wi-Fi only")
+                if (downloaded.isNotEmpty()) {
+                    Divider()
+                    ActionRow(if (confirmDelete) "Tap again to delete every download" else "Delete all downloads", destructive = true) {
+                        if (confirmDelete) {
+                            IosDownloads.removeAll()
+                            confirmDelete = false
+                            IosPlayerHost.showMessage("Downloads deleted")
+                        } else {
+                            confirmDelete = true
+                        }
+                    }
+                }
             }
         }
         item {
@@ -439,6 +466,7 @@ private fun Soon(title: String, subtitle: String? = null) {
 }
 
 private fun megabytes(bytes: Long): String {
+    if (bytes <= 0) return "0 MB"
     val tenths = (bytes * 10 / (1024 * 1024)).coerceAtLeast(1)
     return "${tenths / 10}.${tenths % 10} MB"
 }

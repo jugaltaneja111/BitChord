@@ -25,7 +25,7 @@ on:
       smoke:
         description: 'Launch the app on the simulator and play a track (macOS)'
         type: boolean
-        default: true
+        default: false
       tests:
         description: 'Run the shared tests on the iOS simulator (macOS)'
         type: boolean

@@ -24,6 +24,8 @@ internal sealed interface IosPage {
     /** A Library shelf's Show all: every card on it, read live so an edit lands here too. */
     data class LibraryShelf(val title: String) : IosPage
     data object History : IosPage
+    /** The tracks kept on the phone. */
+    data object Downloads : IosPage
     data object Settings : IosPage
     data object LyricsSources : IosPage
 }
@@ -71,6 +73,7 @@ internal class IosNavigator {
         val videoId = item.videoId
         val browseId = item.browseId
         when {
+            browseId == DOWNLOADS_LINK -> open(IosPage.Downloads)
             videoId != null -> IosPlayer.playRadio(item.toSong(shelfTitle))
             browseId != null -> openBrowse(
                 BrowseItem(
@@ -84,6 +87,9 @@ internal class IosNavigator {
         }
     }
 }
+
+/** Library's Downloads entry, under the phone's own id for it. */
+internal const val DOWNLOADS_LINK = "local:downloads"
 
 /** What a browse id says it is, as the desktop reads it (DesktopSearchClient). */
 internal fun browseTypeOf(browseId: String): BrowseType = when {

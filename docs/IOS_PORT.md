@@ -20,8 +20,10 @@ the release's (play, queue, save, share, rename and delete an own playlist). Set
 phone's page group for group: what the iOS app can apply works (including the Liquid Glass app
 icons), the rest is listed as coming. Lyrics come from the phone's providers, now in
 commonMain on Ktor (TTML through a small common XML reader, Genius pages through a tag scanner on
-iOS and Jsoup on the JVM), with the sources' choice and order in Settings. Not yet: lyrics
-translation and romanisation, Replay, downloads, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+iOS and Jsoup on the JVM), with the sources' choice and order in Settings. Downloads keep tracks (and whole albums or
+playlists) in the app's Documents, out of backup, fetched in ranges as the phone does and played
+from the file with no connection; Library lists them. Not yet: lyrics
+translation and romanisation, Replay, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

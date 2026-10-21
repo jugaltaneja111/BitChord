@@ -288,6 +288,12 @@ internal object IosPlayer {
         loadJob = scope.launch {
             _resolving.value = true
             try {
+                // A download plays from the phone, connection or not.
+                IosDownloads.audioPath(song.videoId)?.let { path ->
+                    TrackLog.i(TAG, "${song.videoId}: from download")
+                    engine.load(path, emptyMap())
+                    return@launch
+                }
                 // AAC in MP4: AVFoundation cannot play the Opus/WebM streams the phone prefers.
                 val stream = InnerTubeXResolver.extract(song.videoId, maxKbps = 320, requireM4a = true)
                 if (stream == null) {

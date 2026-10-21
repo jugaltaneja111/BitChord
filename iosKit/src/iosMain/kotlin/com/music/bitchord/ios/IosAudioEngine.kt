@@ -65,9 +65,13 @@ internal class IosAudioEngine(
         }
     }
 
-    /** Plays [url], fetched with [headers] (googlevideo wants the resolving client's User-Agent). */
+    /**
+     * Plays [url], fetched with [headers] (googlevideo wants the resolving client's User-Agent),
+     * or the file at [url] when it is an absolute path — a download.
+     */
     fun load(url: String, headers: Map<String, String>) {
-        val nsUrl = NSURL.URLWithString(url) ?: return onFailed("bad stream URL")
+        val nsUrl = (if (url.startsWith("/")) NSURL.fileURLWithPath(url) else NSURL.URLWithString(url))
+            ?: return onFailed("bad stream URL")
         // AVURLAssetHTTPHeaderFieldsKey: long-standing, if undocumented, and what every
         // AVFoundation player with request headers uses.
         val asset = AVURLAsset(uRL = nsUrl, options = mapOf<Any?, Any?>("AVURLAssetHTTPHeaderFieldsKey" to headers))

@@ -29,6 +29,9 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LibraryAdd
@@ -342,6 +345,35 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
         MenuRow(Icons.Rounded.Radio, "Start radio", colors) { leave { IosPlayer.playRadio(song) } }
         MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next", colors) { leave { IosPlayer.playNext(listOf(song)) } }
         MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", colors) { leave { IosPlayer.addToQueue(listOf(song)) } }
+        val downloadedIds by IosDownloads.ids.collectAsState()
+        val downloadProgress by IosDownloads.progress.collectAsState()
+        when (val state = downloadProgress[song.videoId]) {
+            null -> if (song.videoId in downloadedIds) {
+                MenuRow(Icons.Rounded.DownloadDone, "Remove download", colors) {
+                    onDismiss()
+                    IosDownloads.remove(listOf(song.videoId))
+                    IosPlayerHost.showMessage("Download removed")
+                }
+            } else {
+                MenuRow(Icons.Rounded.Download, "Download", colors) {
+                    onDismiss()
+                    IosDownloads.download(listOf(song))
+                }
+            }
+            is DownloadProgress.Failed -> MenuRow(Icons.Rounded.Download, "Download again", colors) {
+                onDismiss()
+                IosDownloads.cancel(song.videoId)
+                IosDownloads.download(listOf(song))
+            }
+            else -> MenuRow(
+                Icons.Rounded.Close,
+                if (state is DownloadProgress.Running) "Cancel download (${(state.fraction * 100).toInt()}%)" else "Cancel download",
+                colors,
+            ) {
+                onDismiss()
+                IosDownloads.cancel(song.videoId)
+            }
+        }
         if (albumId != null || !linksLoaded) {
             MenuRow(Icons.Rounded.Album, "Go to album", colors, loading = albumId == null) {
                 albumId ?: return@MenuRow
@@ -442,6 +474,23 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
             }
             MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", colors, loading = loadingSongs == "queue") {
                 withSongs("queue") { IosPlayer.addToQueue(it) }
+            }
+            val savedReleases by IosDownloads.releases.collectAsState()
+            if (savedReleases.any { it.browseId == request.browseId }) {
+                MenuRow(Icons.Rounded.DownloadDone, "Remove download", colors) {
+                    onDismiss()
+                    IosDownloads.removeRelease(request.browseId)
+                    IosPlayerHost.showMessage("Download removed")
+                }
+            } else {
+                MenuRow(Icons.Rounded.Download, "Download", colors, loading = loadingSongs == "download") {
+                    withSongs("download") { songs ->
+                        IosDownloads.downloadRelease(
+                            DownloadedRelease(request.browseId, request.title, request.subtitle, request.thumbnailUrl, emptyList()),
+                            songs,
+                        )
+                    }
+                }
             }
         }
         if (!request.fromPage) {

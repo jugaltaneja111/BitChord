@@ -116,7 +116,8 @@ internal fun IosPageHost(
             is IosPage.Category -> CategoryPage(page, navigator, contentPadding, topInset)
             is IosPage.LibraryShelf -> LibraryShelfPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
-            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) })
+            IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
+            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) })
             IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
         }
         BackButton(onClick = { navigator.back() }, modifier = Modifier.padding(top = topInset + 4.dp, start = 8.dp))
@@ -167,7 +168,25 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                 PageCache.put(key, collection)
                 state = UiState.Success(collection)
             },
-            onFailure = { if (!shown) state = UiState.Error(it.message ?: "Could not open this page") },
+            onFailure = { error ->
+                if (shown) return@fold
+                // No connection, or no answer: a release saved whole still opens, from the phone.
+                val saved = IosDownloads.releases.value.firstOrNull { it.browseId == page.browseId }
+                val local = saved?.videoIds?.mapNotNull { id -> IosDownloads.tracks.value.firstOrNull { it.videoId == id } }
+                state = if (saved != null && !local.isNullOrEmpty()) {
+                    UiState.Success(
+                        LoadedCollection(
+                            title = saved.title,
+                            subtitle = saved.subtitle,
+                            thumbnailUrl = saved.thumbnailUrl,
+                            songs = local.map(IosDownloads::song),
+                            continuation = null,
+                        ),
+                    )
+                } else {
+                    UiState.Error(error.message ?: "Could not open this page")
+                }
+            },
         )
     }
     val listState = rememberLazyListState()
@@ -640,4 +659,96 @@ private fun LibraryShelfPage(page: IosPage.LibraryShelf, navigator: IosNavigator
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.padding(top = topInset + 10.dp, start = 60.dp, end = 16.dp),
     )
+}
+
+/** Every track kept on the phone, newest first, with whatever is still coming down above them. */
+@Composable
+private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
+    val tracks by IosDownloads.tracks.collectAsState()
+    val progress by IosDownloads.progress.collectAsState()
+    val current by IosPlayer.song.collectAsState()
+    val isPlaying by IosPlayer.isPlaying.collectAsState()
+    val songs = tracks.map { track ->
+        IosDownloads.song(track).copy(playbackSource = "Downloads", playbackSourceType = PlaybackSourceType.QUEUE)
+    }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
+    ) {
+        item(key = "title") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Downloads", style = MaterialTheme.typography.displayLarge, color = Color.White)
+                Text(
+                    "${songs.size} ${if (songs.size == 1) "song" else "songs"} · ${(tracks.sumOf { it.bytes } / (1024 * 1024))} MB on this iPhone",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (songs.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    PlayControls(
+                        onPlay = { IosPlayer.playQueue(songs, 0) },
+                        onShuffle = { IosPlayer.playShuffled(songs) },
+                    )
+                }
+            }
+        }
+        if (progress.isNotEmpty()) {
+            item(key = "pending:title") {
+                Text(
+                    "Downloading",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
+                )
+            }
+            progress.forEach { (videoId, state) ->
+                item(key = "pending:$videoId") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            IosDownloads.pendingTitle(videoId),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                        )
+                        Text(
+                            when (state) {
+                                DownloadProgress.Queued -> "Waiting"
+                                is DownloadProgress.Running -> "${(state.fraction * 100).toInt()}%"
+                                is DownloadProgress.Failed -> "Failed"
+                            },
+                            color = if (state is DownloadProgress.Failed) Color(0xFFFF6B6B) else Color.White,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            if (state is DownloadProgress.Failed) "Dismiss" else "Cancel",
+                            color = PlayingAccent,
+                            modifier = Modifier.clickable { IosDownloads.cancel(videoId) },
+                        )
+                    }
+                }
+            }
+        }
+        if (songs.isEmpty() && progress.isEmpty()) {
+            item(key = "empty") {
+                MessageState("Songs you download play here with no connection. Hold a song, or open an album’s ⋯, and choose Download.")
+            }
+        }
+        itemsIndexed(songs, key = { _, song -> song.videoId }) { index, song ->
+            val isCurrent = current?.videoId == song.videoId
+            SongRow(
+                song = song,
+                onClick = { IosPlayer.playQueue(songs, index) },
+                onLongPress = { IosMenus.song = SongMenuRequest(song) },
+                onSwipeToQueue = { IosPlayer.swipe(song) },
+                downloadedTint = null,
+                isCurrent = isCurrent,
+                isPlaying = isCurrent && isPlaying,
+                searchPlayingStyle = true,
+                activeTint = PlayingAccent,
+            )
+        }
+    }
 }

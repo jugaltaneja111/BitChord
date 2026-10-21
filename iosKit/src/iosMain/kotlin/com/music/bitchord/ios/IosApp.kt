@@ -68,6 +68,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import com.music.bitchord.data.model.ShelfItem
+import androidx.compose.material.icons.rounded.DownloadDone
+import com.music.bitchord.ui.screens.LibraryLink
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -318,6 +321,7 @@ private fun ExplorePage(feeds: IosFeeds, navigator: IosNavigator, contentPadding
 private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp) {
     val signedIn by IosAccount.signedIn.collectAsState()
     val state by IosAccount.library.collectAsState()
+    val releases by IosDownloads.releases.collectAsState()
     LibraryScreen(
         signedIn = signedIn,
         state = state,
@@ -333,8 +337,21 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
         onRefresh = IosAccount::loadLibrary,
         pullState = rememberPullToRefreshState(),
         contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
-        links = emptyList(),
-        deviceItems = emptyList(),
+        links = listOf(
+            LibraryLink(
+                item = ShelfItem(
+                    title = "Downloads",
+                    subtitle = "Songs on this iPhone",
+                    thumbnailUrl = null,
+                    videoId = null,
+                    browseId = DOWNLOADS_LINK,
+                ),
+                icon = Icons.Rounded.DownloadDone,
+            ),
+        ),
+        deviceItems = releases.map { release ->
+            ShelfItem(release.title, release.subtitle, release.thumbnailUrl, videoId = null, browseId = release.browseId)
+        },
     )
 }
 

@@ -12,6 +12,7 @@ import com.music.bitchord.ui.AppUi
 import com.music.bitchord.ui.AppUiHost
 import com.music.bitchord.ui.player.PlayerPlatform
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import platform.UIKit.UIViewController
@@ -41,12 +42,13 @@ private fun start() {
     PlayerPlatform.install(IosPlayerHost)
     // Before the first page asks for anything, so it is asked as the listener.
     IosAccount.restore()
+    IosDownloads.restore()
     startAutoplayIfAsked()
 }
 
 /** The shared pages' settings, at the phone's defaults until iOS has a settings screen. */
 private object IosAppUiHost : AppUiHost {
-    override val swipeToPlayNext: StateFlow<Boolean> = MutableStateFlow(false)
+    override val swipeToPlayNext: StateFlow<Boolean> = IosSettings.swipePlayNext.flow
     override val homeRecentsViewType = MutableStateFlow(LibraryViewType.LIST)
     override fun setHomeRecentsViewType(value: LibraryViewType) {
         homeRecentsViewType.value = value
@@ -55,5 +57,5 @@ private object IosAppUiHost : AppUiHost {
     override val librarySort: StateFlow<LibrarySort> = MutableStateFlow(LibrarySort.DEFAULT)
 
     @Composable
-    override fun downloadedIds(): Set<String> = emptySet()
+    override fun downloadedIds(): Set<String> = IosDownloads.ids.collectAsState().value
 }
