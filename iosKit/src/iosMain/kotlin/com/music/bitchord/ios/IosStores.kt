@@ -71,3 +71,35 @@ internal class CachesPlayerCache : InnerTubeXResolver.PlayerCache {
         const val KEPT_PLAYERS = 3
     }
 }
+
+/**
+ * Translated lyrics in `lyrics_translation` under Caches, one small JSON file each, the oldest let
+ * go past 2 MB as on the phone; the system may purge them, which only costs a request.
+ */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal object CachesTranslationStore : com.music.bitchord.data.lyrics.LyricsTranslationStore {
+    private val files = NSFileManager.defaultManager
+    private val dir: String by lazy {
+        val caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, true)
+            .first() as String
+        "$caches/lyrics_translation".also {
+            files.createDirectoryAtPath(it, withIntermediateDirectories = true, attributes = null, error = null)
+        }
+    }
+    private const val MAX_BYTES = 2L * 1024L * 1024L
+
+    override suspend fun read(key: String): String? =
+        NSString.stringWithContentsOfFile("$dir/$key.json", NSUTF8StringEncoding, null)
+
+    override suspend fun write(key: String, text: String) {
+        NSString.create(string = text).writeToFile("$dir/$key.json", atomically = true, encoding = NSUTF8StringEncoding, error = null)
+        val names = files.contentsOfDirectoryAtPath(dir, null).orEmpty().map { it as String }
+        var kept = 0L
+        names.map { name -> name to files.attributesOfItemAtPath("$dir/$name", null) }
+            .sortedByDescending { (_, attributes) -> (attributes?.get(NSFileModificationDate) as? NSDate)?.timeIntervalSince1970 ?: 0.0 }
+            .forEach { (name, attributes) ->
+                kept += (attributes?.get(platform.Foundation.NSFileSize) as? Number)?.toLong() ?: 0L
+                if (kept > MAX_BYTES) files.removeItemAtPath("$dir/$name", null)
+            }
+    }
+}

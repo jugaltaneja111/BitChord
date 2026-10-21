@@ -60,6 +60,7 @@ private fun start() {
     IosAccount.restore()
     IosDownloads.restore()
     IosArtistFacts.start()
+    com.music.bitchord.data.lyrics.LyricsTranslation.store = CachesTranslationStore
     IosSpotify.install()
     IosDiscord.start()
     IosNetwork.start()

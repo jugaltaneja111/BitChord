@@ -118,7 +118,7 @@ internal fun IosPageHost(
             is IosPage.Replay -> ReplayPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
-            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) }, onOpenListenTogether = { navigator.open(IosPage.ListenTogether()) })
+            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenTranslationLanguage = { navigator.open(IosPage.TranslationLanguage) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) }, onOpenListenTogether = { navigator.open(IosPage.ListenTogether()) })
             IosPage.Integrations -> IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) }, onOpenDiscord = { navigator.open(IosPage.Discord) })
             IosPage.Spotify -> SpotifyPage(navigator, contentPadding, underBack)
             IosPage.Discord -> DiscordPage(contentPadding, underBack)
@@ -136,6 +136,7 @@ internal fun IosPageHost(
             is IosPage.SpotifyPlaylist -> SpotifyPlaylistPage(page, contentPadding, underBack)
             IosPage.Equalizer -> EqualizerPage(contentPadding, underBack)
             IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
+            IosPage.TranslationLanguage -> TranslationLanguagePage(contentPadding, underBack)
         }
         BackButton(onClick = { navigator.back() }, modifier = Modifier.padding(top = topInset + 4.dp, start = 8.dp))
     }

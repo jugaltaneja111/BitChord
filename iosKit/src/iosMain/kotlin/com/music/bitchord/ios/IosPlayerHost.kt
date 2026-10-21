@@ -21,6 +21,7 @@ import com.music.bitchord.data.settings.SmartAnalysis
 import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.ui.player.AudioOutputDevice
 import com.music.bitchord.ui.player.CanvasVideoSpec
+import com.music.bitchord.data.lyrics.LyricsTranslation
 import com.music.bitchord.ui.player.LyricsRomanizationResult
 import com.music.bitchord.ui.player.LyricsTranslationResult
 import com.music.bitchord.ui.player.OutputFormatUi
@@ -77,13 +78,23 @@ internal object IosPlayerHost : PlayerHost {
         trackId: String,
         lines: List<LyricLine>,
         targetLanguageTag: String,
-    ): LyricsTranslationResult = LyricsTranslationResult.Unavailable
+    ): LyricsTranslationResult =
+        when (val result = LyricsTranslation.translate(trackId, lines, targetLanguageTag)) {
+            is LyricsTranslation.Result.Translated -> LyricsTranslationResult.Translated(result.lines)
+            is LyricsTranslation.Result.SameLanguage -> LyricsTranslationResult.SameLanguage(result.language)
+            LyricsTranslation.Result.Unavailable -> LyricsTranslationResult.Unavailable
+        }
 
     override suspend fun romanizeLyrics(
         trackId: String,
         lines: List<LyricLine>,
         targetLanguageTag: String,
-    ): LyricsRomanizationResult = LyricsRomanizationResult.Unavailable
+    ): LyricsRomanizationResult =
+        when (val result = LyricsTranslation.romanize(trackId, lines, targetLanguageTag)) {
+            is LyricsTranslation.RomanizationResult.Romanized -> LyricsRomanizationResult.Romanized(result.lines)
+            LyricsTranslation.RomanizationResult.AlreadyRomanized -> LyricsRomanizationResult.AlreadyRomanized
+            LyricsTranslation.RomanizationResult.Unavailable -> LyricsRomanizationResult.Unavailable
+        }
 
     override fun showMessage(message: String) {
         println("BitChord: $message")
@@ -127,7 +138,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
     override val spotifyCanvasAutoHide = IosSettings.spotifyCanvasAutoHide.flow
     override val syncedLyrics = IosSettings.syncedLyrics.flow
-    override val translationLanguage = MutableStateFlow("")
+    override val translationLanguage = IosSettings.translationLanguage.flow
     override val versionAlignmentInProgress = MutableStateFlow(false)
 
     override fun setLastPlayerScreen(value: LastPlayerScreen) {

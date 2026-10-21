@@ -1,5 +1,17 @@
 package com.music.bitchord.ios
 
+import platform.Foundation.NSLocale
+import platform.Foundation.preferredLanguages
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.music.bitchord.data.lyrics.TRANSLATION_LANGUAGES
+import com.music.bitchord.data.lyrics.translationLanguageName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -285,6 +297,17 @@ internal object IosSettings {
     val lyricsBlur = BoolPref("${PREFIX}lyrics_blur", true)
     /** A line-timed answer only stands in while the rest of the order is searched for word timing. */
     val prioritizeSyllableSync = BoolPref("${PREFIX}prioritize_syllable_sync", false)
+    /** The language the translate button turns lyrics into; blank follows the app's language. */
+    val translationLanguage = StringPref("${PREFIX}translation_language", "")
+    /** Unlocks PaxSenix's Spotify and Musixmatch routes. A credential, so in the Keychain. */
+    val paxSenixApiKey = SecretPref("paxsenix_api_key")
+        .also { com.music.bitchord.data.lyrics.PaxSenix.setApiKey(it.flow.value) }
+
+    fun setPaxSenixApiKey(value: String) {
+        val normalized = com.music.bitchord.data.lyrics.normalizePaxSenixApiKey(value)
+        paxSenixApiKey.set(normalized)
+        com.music.bitchord.data.lyrics.PaxSenix.setApiKey(normalized)
+    }
     val lyricsOffsetMs = IntPref("${PREFIX}lyrics_offset_ms", 0)
     /** The sources asked; every offered one unless the listener turned some off. */
     val lyricsSources = LyricsSourcesPref("${PREFIX}lyrics_sources") { LyricsSource.offered }
@@ -302,12 +325,14 @@ internal fun SettingsPage(
     topPadding: androidx.compose.ui.unit.Dp,
     onClearSearchHistory: () -> Unit,
     onOpenLyricsSources: () -> Unit,
+    onOpenTranslationLanguage: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenIntegrations: () -> Unit,
     onOpenReplay: () -> Unit,
     onOpenListenTogether: () -> Unit,
 ) {
+    val translationLanguage by IosSettings.translationLanguage.flow.collectAsState()
     val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
     val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
     val signedIn by IosAccount.signedIn.collectAsState()
@@ -480,6 +505,13 @@ internal fun SettingsPage(
                 Toggle("Prefer word-by-word timing", "Keeps looking past a line-timed answer for one timed by the word", IosSettings.prioritizeSyllableSync)
                 Divider()
                 ActionRow("Lyrics sources", value = "${lyricsSourceCount}", onClick = onOpenLyricsSources)
+                Divider()
+                ActionRow(
+                    "Translation language",
+                    value = translationLanguage.ifBlank { null }?.let { translationLanguageName(it, deviceLanguageTag()) }
+                        ?: "App language",
+                    onClick = onOpenTranslationLanguage,
+                )
             }
         }
         item {
@@ -559,6 +591,8 @@ internal fun SettingsPage(
  */
 @Composable
 internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androidx.compose.ui.unit.Dp) {
+    val paxSenixKey by IosSettings.paxSenixApiKey.flow.collectAsState()
+    var editingKey by remember { mutableStateOf(false) }
     val order by IosSettings.lyricsSourceOrder.flow.collectAsState()
     val enabled by IosSettings.lyricsSources.flow.collectAsState()
     LazyColumn(
@@ -621,14 +655,113 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
         }
         item {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 20.dp).clip(GroupShape).background(GroupColor)) {
+                ActionRow(
+                    "PaxSenix API key",
+                    value = if (paxSenixKey.isBlank()) "Optional" else "Configured",
+                    onClick = { editingKey = true },
+                )
+                Divider()
                 ActionRow("Reset to default") {
                     IosSettings.lyricsSourceOrder.set(LyricsSource.offered)
                     IosSettings.lyricsSources.set(LyricsSource.offered)
                 }
             }
+            Text(
+                "The key unlocks PaxSenix’s Spotify and Musixmatch sources. It stays on this iPhone, in the Keychain.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
+            )
+        }
+    }
+    if (editingKey) {
+        var input by remember(paxSenixKey) { mutableStateOf(paxSenixKey) }
+        AlertDialog(
+            onDismissRequest = { editingKey = false },
+            title = { Text("PaxSenix API key") },
+            text = {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    IosSettings.setPaxSenixApiKey(input)
+                    editingKey = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editingKey = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** The phone's Translation language picker as a page: the app's language first, then every one Translate offers. */
+@Composable
+internal fun TranslationLanguagePage(contentPadding: PaddingValues, topPadding: androidx.compose.ui.unit.Dp) {
+    val selected by IosSettings.translationLanguage.flow.collectAsState()
+    val locale = remember { deviceLanguageTag() }
+    var query by remember { mutableStateOf("") }
+    val named = remember(locale) { TRANSLATION_LANGUAGES.map { it.code to translationLanguageName(it.code, locale) } }
+    val shown = remember(named, query) {
+        val needle = query.trim()
+        if (needle.isEmpty()) named
+        else named.filter { (code, name) -> name.contains(needle, ignoreCase = true) || code.equals(needle, ignoreCase = true) }
+    }
+    LazyColumn(
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding() + 24.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item {
+            Text(
+                "Translation language",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            Text(
+                "The language the translate button turns lyrics into.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp),
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                placeholder = { Text("Search languages") },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            )
+        }
+        item {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp).clip(GroupShape).background(GroupColor)) {
+                if (query.isBlank()) {
+                    LanguageRow("App language", selected.isBlank()) { IosSettings.translationLanguage.set("") }
+                }
+                shown.forEach { (code, name) ->
+                    Divider()
+                    LanguageRow(name, selected.equals(code, ignoreCase = true)) { IosSettings.translationLanguage.set(code) }
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun LanguageRow(name: String, checked: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(name, color = Color.White, modifier = Modifier.weight(1f))
+        if (checked) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
+    }
+}
+
+/** The iPhone's first preferred language as a BCP 47 tag ("en-IN"), for naming languages in it. */
+internal fun deviceLanguageTag(): String =
+    (NSLocale.preferredLanguages.firstOrNull() as? String)?.ifBlank { null } ?: "en"
 
 private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
     if (to !in indices) return this
