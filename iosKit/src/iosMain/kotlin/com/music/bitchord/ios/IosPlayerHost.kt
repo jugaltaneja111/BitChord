@@ -111,8 +111,8 @@ internal object IosPlayerHost : PlayerHost {
  */
 internal object IosPlayerSettings : PlayerSettingsSource {
     override val animatedCanvas = IosSettings.animatedCanvas.flow
-    override val audioQualityCellular = MutableStateFlow(AudioQuality.LOSSLESS)
-    override val audioQualityWifi = MutableStateFlow(AudioQuality.LOSSLESS)
+    override val audioQualityCellular = IosSettings.audioQualityCellular.flow.asQuality()
+    override val audioQualityWifi = IosSettings.audioQualityWifi.flow.asQuality()
     override val canvasOverCellular = IosSettings.canvasOverCellular.flow
     override val fullBleedArtwork = IosSettings.fullBleedArtwork.flow
     override val hideSongStatus = IosSettings.hideSongStatus.flow
@@ -149,3 +149,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
         IosSettings.lyricsOffsetMs.set(value)
     }
 }
+
+private fun StateFlow<String>.asQuality(): StateFlow<AudioQuality> =
+    map { name -> AudioQuality.entries.firstOrNull { it.name == name } ?: AudioQuality.LOSSLESS }
+        .stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main), SharingStarted.Eagerly, AudioQuality.LOSSLESS)

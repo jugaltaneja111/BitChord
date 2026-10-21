@@ -31,6 +31,7 @@ internal sealed interface IosPage {
     data object Settings : IosPage
     data object LyricsSources : IosPage
     data object TranslationLanguage : IosPage
+    data object Sources : IosPage
     data object Equalizer : IosPage
     data object Integrations : IosPage
     data object Spotify : IosPage

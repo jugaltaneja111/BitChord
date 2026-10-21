@@ -1,5 +1,7 @@
 package com.music.bitchord.ios
 
+import com.music.bitchord.data.NerdStats
+import com.music.bitchord.data.TelemetryProvenance
 import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.innertube.InnerTubeXResolver
@@ -130,6 +132,45 @@ internal object IosPlayer {
 
     init {
         IosPartyKeepAlive.watch(scope, engine.isPlaying)
+        scope.launch { publishNerdStats() }
+    }
+
+    /** Where each track's audio came from and the bitrate it was picked at, for stats for nerds. */
+    private val servedBy = HashMap<String, Pair<String, Int?>>()
+
+    /**
+     * Stats for nerds, as the phone's player publishes them: what the deck being heard actually
+     * decodes, read off AVFoundation once its item is ready, beside where it came from. Cleared
+     * across a track change, so a gap shows nothing rather than the last track's figures.
+     */
+    private suspend fun publishNerdStats() {
+        while (true) {
+            kotlinx.coroutines.delay(500)
+            if (!IosSettings.showNerdStats.flow.value) continue
+            val format = engine.decodedFormat()
+            val key = format?.key
+            if (format == null || key == null) {
+                // Between tracks, or still loading: nothing, rather than the last track's figures.
+                if (NerdStats.current.value != null) NerdStats.current.value = null
+                continue
+            }
+            val (source, pickedKbps) = servedBy[key] ?: (null to null)
+            val snapshot = NerdStats.Snapshot(
+                mimeType = format.mimeType,
+                bitrateKbps = pickedKbps ?: format.estimatedKbps,
+                bitrateProvenance = if (pickedKbps != null) TelemetryProvenance.AUTHORITATIVE else TelemetryProvenance.DERIVED,
+                sampleRateHz = format.sampleRateHz,
+                channels = format.channels,
+                bitDepth = format.bitDepth,
+                sourceName = source,
+            )
+            val now = NerdStats.current.value
+            if (now == null || now.mimeType != snapshot.mimeType || now.bitrateKbps != snapshot.bitrateKbps ||
+                now.sampleRateHz != snapshot.sampleRateHz || now.channels != snapshot.channels || now.sourceName != snapshot.sourceName
+            ) {
+                NerdStats.current.value = snapshot
+            }
+        }
     }
 
     /** A queue row held mid-drag: the party hears the move once it is let go. */
@@ -472,10 +513,14 @@ internal object IosPlayer {
     }
 
     /** A copy of [videoId] on the phone — a download first, else the song cache — and its loudness. */
-    private fun onPhone(videoId: String): Pair<String, Double?>? =
+    private fun onPhone(videoId: String): Pair<String, Double?>? {
         IosDownloads.audioPath(videoId)?.let { path ->
-            path to IosDownloads.tracks.value.firstOrNull { it.videoId == videoId }?.loudnessDb
-        } ?: IosSongCache.audio(videoId)
+            val track = IosDownloads.tracks.value.firstOrNull { it.videoId == videoId }
+            servedBy[videoId] = "Downloaded" to track?.kbps?.takeIf { it > 0 }
+            return path to track?.loudnessDb
+        }
+        return IosSongCache.audio(videoId)?.also { servedBy[videoId] = "Song cache" to null }
+    }
 
     private fun prepare(song: Song) {
         prepareJob?.cancel()
@@ -503,6 +548,7 @@ internal object IosPlayer {
                 // The queue may have moved on while that resolved.
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
                 TrackLog.i(TAG, "${audio.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
+                servedBy[audio.videoId] = "YouTube" to stream.kbps.takeIf { it > 0 }
                 engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio))
                 IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -627,6 +673,7 @@ internal object IosPlayer {
                     return@launch
                 }
                 TrackLog.i(TAG, "${audio.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
+                servedBy[audio.videoId] = "YouTube" to stream.kbps.takeIf { it > 0 }
                 engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio), startMs, startPlaying)
                 IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
             } catch (e: kotlinx.coroutines.CancellationException) {

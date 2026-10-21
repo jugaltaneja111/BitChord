@@ -1,5 +1,6 @@
 package com.music.bitchord.ios
 
+import com.music.bitchord.data.settings.AudioQuality
 import platform.Foundation.NSLocale
 import platform.Foundation.preferredLanguages
 import androidx.compose.foundation.text.KeyboardOptions
@@ -234,6 +235,14 @@ internal object IosSettings {
 
     /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
+    /** The phone's per-connection ceilings, by name; Lossless by default, as there. */
+    val audioQualityWifi = StringPref("${PREFIX}audio_quality_wifi", AudioQuality.LOSSLESS.name)
+    val audioQualityCellular = StringPref("${PREFIX}audio_quality_cellular", AudioQuality.LOSSLESS.name)
+
+    /** The ceiling for the connection in hand: mobile data's when metered, else Wi-Fi's. */
+    val effectiveAudioQuality: AudioQuality
+        get() = (if (IosNetwork.metered.value == true) audioQualityCellular else audioQualityWifi).flow.value
+            .let { name -> AudioQuality.entries.firstOrNull { it.name == name } ?: AudioQuality.LOSSLESS }
     val downloadWifiOnly = BoolPref("${PREFIX}download_wifi_only", false)
     /** For a music video, play the catalogue's audio release in its place. */
     val preferMusicOnly = BoolPref("${PREFIX}prefer_music_only", false)
@@ -328,6 +337,7 @@ internal fun SettingsPage(
     onClearSearchHistory: () -> Unit,
     onOpenLyricsSources: () -> Unit,
     onOpenTranslationLanguage: () -> Unit,
+    onOpenSources: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenIntegrations: () -> Unit,
@@ -414,11 +424,11 @@ internal fun SettingsPage(
         }
         item {
             Group("Audio quality") {
-                Soon("Sources", "Where audio comes from and the order used")
+                ActionRow("Sources", value = "Where audio comes from", onClick = onOpenSources)
                 Divider()
-                Soon("On Wi-Fi", "iPhone plays YouTube’s best AAC stream; the choices come with Sources")
+                QualityRow("On Wi-Fi", IosSettings.audioQualityWifi)
                 Divider()
-                Soon("On mobile data")
+                QualityRow("On mobile data", IosSettings.audioQualityCellular)
             }
         }
         item {
@@ -774,6 +784,48 @@ internal fun deviceLanguageTag(): String =
 private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
     if (to !in indices) return this
     return toMutableList().apply { add(to, removeAt(from)) }
+}
+
+/**
+ * One connection's quality ceiling, chosen from the phone's four. On the iPhone YouTube serves AAC
+ * at about 128 kbps whatever is chosen; the higher rungs are what JioSaavn and add-ons are asked for.
+ */
+@Composable
+private fun QualityRow(title: String, pref: StringPref) {
+    val chosen by pref.flow.collectAsState()
+    var picking by remember { mutableStateOf(false) }
+    val quality = AudioQuality.entries.firstOrNull { it.name == chosen } ?: AudioQuality.LOSSLESS
+    ActionRow(title, value = quality.label) { picking = true }
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text(title) },
+            text = {
+                Column {
+                    AudioQuality.entries.reversed().forEach { option ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                pref.set(option.name)
+                                picking = false
+                            }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(option.label, color = Color.White)
+                                Text(
+                                    if (option == AudioQuality.MEDIUM) "Best available · ~128 kbps AAC" else option.detail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (option == quality) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("Done") } },
+        )
+    }
 }
 
 /** The phone's Song cache limit slider, with Off at the left. */

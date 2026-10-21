@@ -1,5 +1,15 @@
 package com.music.bitchord.ios
 
+import kotlinx.cinterop.pointed
+import platform.AVFoundation.AVMediaTypeAudio
+import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerItemTrack
+import platform.AVFoundation.estimatedDataRate
+import platform.AVFoundation.formatDescriptions
+import platform.AVFoundation.mediaType
+import platform.AVFoundation.tracks
+import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
+import platform.CoreMedia.CMAudioFormatDescriptionRef
 import com.music.bitchord.playback.PlaybackPosition
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
@@ -143,6 +153,60 @@ internal class IosAudioEngine(
 
     private var active = Deck()
     private var spare = Deck()
+
+    /** What the deck being heard decodes, once its item is ready; null before then. */
+    data class DecodedFormat(
+        /** As Media3 would name it, so the shared stats line reads it: `audio/mp4a-latm`, `audio/flac`… */
+        val mimeType: String?,
+        val sampleRateHz: Int?,
+        val channels: Int?,
+        val bitDepth: Int?,
+        /** AVFoundation's estimate of the encoded rate, when it has one. */
+        val estimatedKbps: Int?,
+        val key: String?,
+    )
+
+    fun decodedFormat(): DecodedFormat? {
+        val item = active.item ?: return null
+        if (item.status != AVPlayerItemStatusReadyToPlay) return null
+        val track = item.tracks.mapNotNull { (it as? AVPlayerItemTrack)?.assetTrack }
+            .firstOrNull { it.mediaType == AVMediaTypeAudio } ?: return null
+        val description = track.formatDescriptions.firstOrNull() ?: return null
+        @Suppress("UNCHECKED_CAST")
+        val basic = CMAudioFormatDescriptionGetStreamBasicDescription(description as CMAudioFormatDescriptionRef)?.pointed
+            ?: return null
+        val formatId = basic.mFormatID
+        val lossless = formatId == FOURCC_FLAC || formatId == FOURCC_ALAC || formatId == FOURCC_LPCM
+        return DecodedFormat(
+            mimeType = when (formatId) {
+                FOURCC_AAC, FOURCC_AAC_HE, FOURCC_AAC_HE2 -> "audio/mp4a-latm"
+                FOURCC_FLAC -> "audio/flac"
+                FOURCC_ALAC -> "audio/alac"
+                FOURCC_MP3 -> "audio/mpeg"
+                FOURCC_EAC3 -> "audio/eac3"
+                FOURCC_AC3 -> "audio/ac3"
+                FOURCC_OPUS -> "audio/opus"
+                FOURCC_LPCM -> "audio/raw"
+                else -> null
+            },
+            sampleRateHz = basic.mSampleRate.toInt().takeIf { it > 0 },
+            channels = basic.mChannelsPerFrame.toInt().takeIf { it > 0 },
+            // FLAC and ALAC state their depth in the flags rather than in mBitsPerChannel.
+            bitDepth = when {
+                formatId == FOURCC_LPCM -> basic.mBitsPerChannel.toInt().takeIf { it > 0 }
+                formatId == FOURCC_FLAC || formatId == FOURCC_ALAC -> when (basic.mFormatFlags.toInt()) {
+                    1 -> 16
+                    2 -> 20
+                    3 -> 24
+                    4 -> 32
+                    else -> null
+                }
+                else -> null
+            }.takeIf { lossless },
+            estimatedKbps = (track.estimatedDataRate / 1000f).toInt().takeIf { it > 0 },
+            key = active.key,
+        )
+    }
 
     /** The deck fading out under [active] during a crossfade, if one is. */
     private var outgoing: Deck? = null
@@ -342,5 +406,17 @@ internal class IosAudioEngine(
 
     private companion object {
         const val FADE_STEP_MS = 40L
+
+        private fun fourCc(code: String): UInt = code.fold(0u) { acc, c -> (acc shl 8) or c.code.toUInt() }
+        val FOURCC_AAC = fourCc("aac ")
+        val FOURCC_AAC_HE = fourCc("aach")
+        val FOURCC_AAC_HE2 = fourCc("aacp")
+        val FOURCC_FLAC = fourCc("flac")
+        val FOURCC_ALAC = fourCc("alac")
+        val FOURCC_MP3 = fourCc(".mp3")
+        val FOURCC_EAC3 = fourCc("ec-3")
+        val FOURCC_AC3 = fourCc("ac-3")
+        val FOURCC_OPUS = fourCc("opus")
+        val FOURCC_LPCM = fourCc("lpcm")
     }
 }
