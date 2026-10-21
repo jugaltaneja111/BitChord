@@ -47,6 +47,7 @@ private fun start() {
     IosSpotify.install()
     IosDiscord.start()
     IosNetwork.start()
+    com.music.bitchord.ios.canvas.IosCanvas.prioritizeSpotify = { IosSettings.prioritizeSpotifyCanvas.flow.value }
     startAutoplayIfAsked()
 }
 

@@ -3,6 +3,7 @@ package com.music.bitchord.ios
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.music.bitchord.data.canvas.CanvasArtwork
+import com.music.bitchord.ios.canvas.IosCanvas
 import com.music.bitchord.data.lyrics.LyricLine
 import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.data.model.Song
@@ -26,19 +27,19 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * What the shared pages and player take from the app, as iOS has it so far: the phone's default
- * settings, no Canvas clips, no output picker, no Listen Together. Each piece is filled in as the
+ * settings, no output picker, no Listen Together. Each piece is filled in as the
  * iOS app gains the feature behind it. Even the search rows read it (for artwork), so it is
  * installed before anything is drawn.
  */
 internal object IosPlayerHost : PlayerHost {
     override val settings: PlayerSettingsSource = IosPlayerSettings
 
-    override fun cachedCanvas(song: Song): CanvasArtwork? = null
+    override fun cachedCanvas(song: Song): CanvasArtwork? = IosCanvas.cached(song)
 
-    override suspend fun canvasFor(song: Song): CanvasArtwork? = null
+    override suspend fun canvasFor(song: Song): CanvasArtwork? = IosCanvas.canvasFor(song)
 
     @Composable
-    override fun CanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) = Unit
+    override fun CanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) = IosCanvasVideo(spec, modifier)
 
     // No remote files (WebDAV, SMB) on iOS yet: every cover is the song's own.
     @Composable
