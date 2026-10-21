@@ -1,11 +1,11 @@
 package com.music.bitchord.data.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import java.util.Base64
+import kotlin.io.encoding.Base64
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -47,8 +47,8 @@ object KuGou {
      * first result for a common title is as likely to be a cover or a remix
      * as the right recording — and ordered closest match first.
      */
-    private fun searchSongs(keyword: Keyword, seconds: Int): List<String>? {
-        val url = "https://mobileservice.kugou.com/api/v3/search/song".toHttpUrl().newBuilder()
+    private suspend fun searchSongs(keyword: Keyword, seconds: Int): List<String>? {
+        val url = "https://mobileservice.kugou.com/api/v3/search/song".toLyricsUrlBuilder()
             .addQueryParameter("version", "9108")
             .addQueryParameter("plat", "0")
             .addQueryParameter("pagesize", "8")
@@ -63,8 +63,8 @@ object KuGou {
             .map { it.hash }
     }
 
-    private fun searchLyrics(hash: String? = null, keyword: Keyword? = null, seconds: Int = -1): List<Candidate>? {
-        val builder = "https://lyrics.kugou.com/search".toHttpUrl().newBuilder()
+    private suspend fun searchLyrics(hash: String? = null, keyword: Keyword? = null, seconds: Int = -1): List<Candidate>? {
+        val builder = "https://lyrics.kugou.com/search".toLyricsUrlBuilder()
             .addQueryParameter("ver", "1")
             .addQueryParameter("man", "yes")
             .addQueryParameter("client", "pc")
@@ -81,8 +81,8 @@ object KuGou {
         return response?.candidates
     }
 
-    private fun download(id: String, accessKey: String): String? {
-        val url = "https://lyrics.kugou.com/download".toHttpUrl().newBuilder()
+    private suspend fun download(id: String, accessKey: String): String? {
+        val url = "https://lyrics.kugou.com/download".toLyricsUrlBuilder()
             .addQueryParameter("fmt", "lrc")
             .addQueryParameter("charset", "utf8")
             .addQueryParameter("client", "pc")
@@ -94,7 +94,7 @@ object KuGou {
         val response = runCatching { lyricsJson.decodeFromString<DownloadResponse>(body) }.getOrNull()
             ?: return null
         val decoded = runCatching {
-            Base64.getDecoder().decode(response.content).toString(Charsets.UTF_8)
+            Base64.Default.decode(response.content).decodeToString()
         }.getOrNull() ?: return null
         return decoded.stripCredits()
     }

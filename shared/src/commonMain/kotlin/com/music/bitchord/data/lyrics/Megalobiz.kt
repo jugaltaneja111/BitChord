@@ -1,15 +1,15 @@
 package com.music.bitchord.data.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** Line-synced community LRC scraped from Megalobiz. */
 object Megalobiz {
     private const val BASE = "https://www.megalobiz.com"
 
     suspend fun lyrics(title: String, artist: String): List<LyricLine>? = withContext(Dispatchers.IO) {
-        val search = "$BASE/searchall".toHttpUrl().newBuilder()
+        val search = "$BASE/searchall".toLyricsUrlBuilder()
             .addQueryParameter("qry", "$artist $title".trim()).build()
         val results = lyricsGet(search.toString()) ?: return@withContext null
         val path = LRC_LINK.find(results)?.groupValues?.get(1) ?: return@withContext null

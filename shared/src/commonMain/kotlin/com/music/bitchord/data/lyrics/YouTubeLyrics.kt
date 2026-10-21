@@ -2,6 +2,7 @@ package com.music.bitchord.data.lyrics
 
 import com.music.bitchord.data.innertube.Innertube
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

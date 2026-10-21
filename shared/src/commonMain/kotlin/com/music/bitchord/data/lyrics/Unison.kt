@@ -1,9 +1,9 @@
 package com.music.bitchord.data.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
  * A community-submitted lyrics database, and the only source here whose
@@ -35,7 +35,7 @@ object Unison {
         durationMs: Long,
         album: String? = null,
     ): List<LyricLine>? = withContext(Dispatchers.IO) {
-        val url = BASE.toHttpUrl().newBuilder()
+        val url = BASE.toLyricsUrlBuilder()
             .addQueryParameter("song", title)
             .addQueryParameter("artist", artist)
             .apply {

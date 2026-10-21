@@ -25,6 +25,7 @@ internal sealed interface IosPage {
     data class LibraryShelf(val title: String) : IosPage
     data object History : IosPage
     data object Settings : IosPage
+    data object LyricsSources : IosPage
 }
 
 /**

@@ -1,10 +1,10 @@
 package com.music.bitchord.data.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
  * Apple Music TTML again, from a third host — and the only one here that will
@@ -55,7 +55,7 @@ object BiniLyrics {
         album: String? = null,
         isrc: String? = null,
     ): Hit? = withContext(Dispatchers.IO) {
-        val url = BASE.toHttpUrl().newBuilder()
+        val url = BASE.toLyricsUrlBuilder()
             .apply {
                 if (!isrc.isNullOrBlank()) {
                     // Nothing else is worth sending: the recording is named, and

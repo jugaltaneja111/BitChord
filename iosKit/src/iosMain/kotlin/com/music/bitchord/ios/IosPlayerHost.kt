@@ -88,7 +88,7 @@ internal object IosPlayerHost : PlayerHost {
  * The phone's defaults (AppSettings). The ones the Settings page offers are the listener's,
  * kept in the app's defaults (see [IosSettings]); the rest are fixed until iOS has what they set.
  */
-private object IosPlayerSettings : PlayerSettingsSource {
+internal object IosPlayerSettings : PlayerSettingsSource {
     override val animatedCanvas = MutableStateFlow(true)
     override val audioQualityCellular = MutableStateFlow(AudioQuality.LOSSLESS)
     override val audioQualityWifi = MutableStateFlow(AudioQuality.LOSSLESS)
@@ -101,9 +101,9 @@ private object IosPlayerSettings : PlayerSettingsSource {
     override val hideStatusBar = MutableStateFlow(false)
     override val lastPlayerScreen = MutableStateFlow(LastPlayerScreen.MAIN)
     override val legacyMeshGradient = IosSettings.legacyMeshGradient.flow
-    override val lyricsBlur = MutableStateFlow(true)
-    override val lyricsOffsetMs = MutableStateFlow(0)
-    override val lyricsSourceOrder = MutableStateFlow<List<LyricsSource>>(LyricsSource.offered)
+    override val lyricsBlur = IosSettings.lyricsBlur.flow
+    override val lyricsOffsetMs = IosSettings.lyricsOffsetMs.flow
+    override val lyricsSourceOrder = IosSettings.lyricsSourceOrder.flow
     override val meteredConnection = MutableStateFlow<Boolean?>(null)
     override val preferUsbDac = MutableStateFlow(false)
     override val prioritizeSpotifyCanvas = MutableStateFlow(false)
@@ -116,7 +116,7 @@ private object IosPlayerSettings : PlayerSettingsSource {
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
     override val spotifyCanvasAutoHide = MutableStateFlow(true)
-    override val syncedLyrics = MutableStateFlow(true)
+    override val syncedLyrics = IosSettings.syncedLyrics.flow
     override val translationLanguage = MutableStateFlow("")
     override val versionAlignmentInProgress = MutableStateFlow(false)
 
@@ -125,6 +125,6 @@ private object IosPlayerSettings : PlayerSettingsSource {
     }
 
     override fun setLyricsOffsetMs(value: Int) {
-        lyricsOffsetMs.value = value
+        IosSettings.lyricsOffsetMs.set(value)
     }
 }

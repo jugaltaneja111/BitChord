@@ -1,10 +1,10 @@
 package com.music.bitchord.data.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import java.text.Normalizer
+import com.music.bitchord.data.decomposed
 import kotlin.math.abs
 
 /**
@@ -69,8 +69,8 @@ object LrcRed {
     private suspend fun document(url: String, get: suspend (String) -> String?): List<LyricLine>? =
         get(url)?.let(TtmlLyrics::parse)?.takeIf { it.isNotEmpty() }
 
-    private fun search(title: String, artist: String, durationMs: Long): Hit? {
-        val url = "${BASE}search.json".toHttpUrl().newBuilder()
+    private suspend fun search(title: String, artist: String, durationMs: Long): Hit? {
+        val url = "${BASE}search.json".toLyricsUrlBuilder()
             .addQueryParameter("q", "$title $artist".trim())
             .build()
         val body = lyricsGet(url.toString()) ?: return null
@@ -134,7 +134,7 @@ object LrcRed {
 
     /** Lower case, accents off ("ROSÉ" is "rose"), and only letters and digits. */
     private fun normalized(value: String): String =
-        Normalizer.normalize(value, Normalizer.Form.NFD)
+        decomposed(value)
             .replace(COMBINING_MARKS, "")
             .lowercase()
             .map { if (it.isLetterOrDigit()) it else ' ' }

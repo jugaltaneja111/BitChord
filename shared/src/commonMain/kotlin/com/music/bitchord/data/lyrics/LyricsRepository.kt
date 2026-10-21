@@ -4,11 +4,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * Where the player gets its lyrics.
@@ -117,7 +118,7 @@ object LyricsRepository {
         // Settled before anyone is asked for words, so every source that can
         // name the recording does. What the caller knows beats what we worked
         // out last time, and both beat asking again.
-        val known = isrc?.takeIf { it.isNotBlank() } ?: isrcs[videoId]
+        val known = isrc?.takeIf { it.isNotBlank() } ?: remembered(videoId)
         val hit = if (known == null) {
             identify(videoId, searchTitle, searchArtist, durationMs, album, sequence)
         } else {
@@ -273,15 +274,21 @@ object LyricsRepository {
      * did before any of this, and keeping it on disk would mean keeping a
      * wrong answer on disk too.
      */
-    private val isrcs: MutableMap<String, String> = Collections.synchronizedMap(
-        object : LinkedHashMap<String, String>(REMEMBERED, 0.75f, true) {
-            override fun removeEldestEntry(eldest: Map.Entry<String, String>) = size > REMEMBERED
-        },
-    )
+    private val isrcs = LinkedHashMap<String, String>()
+    private val isrcsLock = SynchronizedObject()
+
+    private fun remembered(videoId: String): String? = synchronized(isrcsLock) {
+        // Read as a use: moved to the young end, so it is the last to go.
+        isrcs.remove(videoId)?.also { isrcs[videoId] = it }
+    }
 
     private fun remember(videoId: String, isrc: String?) {
         if (isrc.isNullOrBlank() || videoId.isEmpty()) return
-        isrcs.put(videoId, isrc)
+        synchronized(isrcsLock) {
+            isrcs.remove(videoId)
+            isrcs[videoId] = isrc
+            while (isrcs.size > REMEMBERED) isrcs.remove(isrcs.keys.first())
+        }
     }
 
     /**
@@ -295,11 +302,13 @@ object LyricsRepository {
      * the other one's copy down with it; [cancel] ends whatever is left.
      */
     private class SharedDocuments(private val scope: CoroutineScope) {
-        private val inFlight = ConcurrentHashMap<String, Deferred<String?>>()
+        private val inFlight = HashMap<String, Deferred<String?>>()
+        private val lock = SynchronizedObject()
 
-        suspend fun get(url: String): String? =
-            inFlight.computeIfAbsent(url) { scope.async(Dispatchers.IO) { lyricsGet(url) } }.await()
+        suspend fun get(url: String): String? = synchronized(lock) {
+            inFlight.getOrPut(url) { scope.async(Dispatchers.IO) { lyricsGet(url) } }
+        }.await()
 
-        fun cancel() = inFlight.values.forEach { it.cancel() }
+        fun cancel() = synchronized(lock) { inFlight.values.toList() }.forEach { it.cancel() }
     }
 }

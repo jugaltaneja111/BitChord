@@ -1,6 +1,7 @@
 package com.music.bitchord.data.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.selects.select
@@ -13,8 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.Volatile
 
 /**
  * Syllable-timed lyrics from LyricsPlus, the open backend behind the YouLy+
@@ -39,7 +39,8 @@ object LyricsPlus {
         "https://lyrics-plus-backend.vercel.app",
     )
 
-    private val lastGood = AtomicReference<String?>(null)
+    @Volatile
+    private var lastGood: String? = null
 
     suspend fun lyrics(
         title: String,
@@ -48,7 +49,7 @@ object LyricsPlus {
         album: String? = null,
         isrc: String? = null,
     ): List<LyricLine>? = coroutineScope {
-        val hosts = lastGood.get()
+        val hosts = lastGood
             ?.let { listOf(it) + MIRRORS.filterNot { mirror -> mirror == it } }
             ?: MIRRORS
 
@@ -66,7 +67,7 @@ object LyricsPlus {
                 }
                 pending.removeAll { it.first == host }
                 if (!lines.isNullOrEmpty()) {
-                    lastGood.set(host)
+                    lastGood = host
                     return@coroutineScope lines
                 }
             }
@@ -84,7 +85,7 @@ object LyricsPlus {
         album: String?,
         isrc: String?,
     ): List<LyricLine>? = withContext(Dispatchers.IO) {
-        val url = "$host/v2/lyrics/get".toHttpUrl().newBuilder()
+        val url = "$host/v2/lyrics/get".toLyricsUrlBuilder()
             .addQueryParameter("title", title)
             .addQueryParameter("artist", artist)
             .apply {

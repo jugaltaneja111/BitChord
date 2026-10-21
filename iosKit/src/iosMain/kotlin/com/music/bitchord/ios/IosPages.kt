@@ -116,7 +116,8 @@ internal fun IosPageHost(
             is IosPage.Category -> CategoryPage(page, navigator, contentPadding, topInset)
             is IosPage.LibraryShelf -> LibraryShelfPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
-            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory)
+            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) })
+            IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
         }
         BackButton(onClick = { navigator.back() }, modifier = Modifier.padding(top = topInset + 4.dp, start = 8.dp))
     }

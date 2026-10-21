@@ -28,6 +28,7 @@ import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.UiState
+import com.music.bitchord.data.settings.LastPlayerScreen
 import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.ui.player.PlayerBack
 import com.music.bitchord.ui.screens.ExploreScreen
@@ -127,6 +128,15 @@ internal fun IosApp() {
         var playerOpen by remember { mutableStateOf(false) }
         val song by IosPlayer.song.collectAsState()
         val isPlaying by IosPlayer.isPlaying.collectAsState()
+        // Lyrics follow whatever is playing, player open or not, and look again when a lyrics
+        // setting changes so it applies to the track already playing.
+        val durationMs by IosPlayer.durationMs.collectAsState()
+        val syncedLyrics by IosSettings.syncedLyrics.flow.collectAsState()
+        val lyricsSources by IosSettings.lyricsSources.flow.collectAsState()
+        val lyricsOrder by IosSettings.lyricsSourceOrder.flow.collectAsState()
+        LaunchedEffect(song?.videoId, durationMs > 0, syncedLyrics, lyricsSources, lyricsOrder) {
+            song?.let { IosLyrics.load(it, durationMs) }
+        }
         val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val hazeState = remember { HazeState() }
         val density = LocalDensity.current
@@ -516,6 +526,15 @@ private suspend fun runTour(
     delay(TOUR_STEP_MS)
     IosMenus.song = null
     setPlayerOpen(false)
+    // The player reopens on the screen it was last left on, so this opens it on the lyrics.
+    IosPlayerSettings.setLastPlayerScreen(LastPlayerScreen.LYRICS)
+    delay(500)
+    setPlayerOpen(true)
+    step("lyrics ${IosLyrics.source.value?.label} ${IosLyrics.lyrics.value?.size} lines, checked=${IosLyrics.checked.value}")
+    delay(TOUR_STEP_MS)
+    println("tour: lyrics after wait ${IosLyrics.source.value?.label} ${IosLyrics.lyrics.value?.size} lines")
+    setPlayerOpen(false)
+    IosPlayerSettings.setLastPlayerScreen(LastPlayerScreen.MAIN)
     IosOverlays.login = true
     step("login")
     delay(TOUR_STEP_MS)

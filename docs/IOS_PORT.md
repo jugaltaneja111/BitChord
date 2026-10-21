@@ -18,8 +18,10 @@ the account's own. Holding a song, or its ⋮ in the player, opens the phone's m
 playlist, library, radio, play next, queue, album, artist, share); holding a card, or a page's ⋯,
 the release's (play, queue, save, share, rename and delete an own playlist). Settings follows the
 phone's page group for group: what the iOS app can apply works (including the Liquid Glass app
-icons), the rest is listed as coming. Not yet: lyrics (the providers are JVM-only), Replay,
-downloads, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+icons), the rest is listed as coming. Lyrics come from the phone's providers, now in
+commonMain on Ktor (TTML through a small common XML reader, Genius pages through a tag scanner on
+iOS and Jsoup on the JVM), with the sources' choice and order in Settings. Not yet: lyrics
+translation and romanisation, Replay, downloads, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 
@@ -118,7 +120,8 @@ portable first: models, queue (`QueueWindow`, `QueueTimeline`,
 ### Phase 3 — Network sources on Ktor
 
 - Lyrics providers (16 files) and Spotify/Discord HTTP from `okhttp3` to
-  Ktor (already a dependency).
+  Ktor (already a dependency). *Lyrics done; `LyricsTranslation` (on-device
+  model, file cache) stays JVM-only for now.*
 - Listen-together client: Ktor WebSockets work on Darwin unchanged.
 
 **Done when:** lyrics fetch for a known track succeeds from an iOS test.

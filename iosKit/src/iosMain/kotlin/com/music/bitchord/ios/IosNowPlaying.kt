@@ -32,7 +32,8 @@ import kotlin.math.roundToInt
  * The full player over everything, from the mini player. Dragged down past a quarter of the
  * screen it goes; the shared screen's own layers (lyrics, queue, sheets) take Back first.
  *
- * No lyrics yet: the lyrics providers are still JVM-only, and come with a later step of the port.
+ * Lyrics are looked up app-wide as the track changes ([IosLyrics], started in [IosApp]); this
+ * only draws them.
  */
 @Composable
 internal fun IosNowPlaying(
@@ -53,6 +54,10 @@ internal fun IosNowPlaying(
     val account by IosAccount.account.collectAsState()
     val likes by LikeState.overrides.collectAsState()
     val likeStatus = likes[song.videoId] ?: LikeStatus.INDIFFERENT
+    val lyrics by IosLyrics.lyrics.collectAsState()
+    val lyricsSource by IosLyrics.source.collectAsState()
+    val lyricsChecked by IosLyrics.checked.collectAsState()
+    val lyricsProviderStates by IosLyrics.providerStates.collectAsState()
 
     // Whatever started the track knew its title and artwork, rarely which album and artist pages
     // it belongs to. Asked while the player is up, as the phone does.
@@ -132,7 +137,7 @@ internal fun IosNowPlaying(
             onRemoveFromQueue = IosPlayer::removeAt,
             onMoveInQueue = IosPlayer::move,
             onClearQueue = IosPlayer::clearQueue,
-            onOpenMenu = { IosMenus.song = SongMenuRequest(playerSong) },
+            onOpenMenu = { IosMenus.song = SongMenuRequest(playerSong, fromPlayer = true) },
             onOpenAlbum = { id -> leaveTo { navigator.open(IosPage.Collection(id)) } },
             // The lead credit carries its channel id; anyone else on the line is found by name.
             onOpenArtist = { id, name ->
@@ -160,13 +165,13 @@ internal fun IosNowPlaying(
                 }
             },
             onListenTogether = {},
-            lyrics = null,
-            lyricsSource = null,
-            lyricsProviderStates = emptyMap(),
-            onSelectLyricsProvider = {},
-            lyricsUnavailable = true,
-            lyricsOffsetOpen = false,
-            onDismissLyricsOffset = {},
+            lyrics = lyrics,
+            lyricsSource = lyricsSource,
+            lyricsProviderStates = lyricsProviderStates,
+            onSelectLyricsProvider = IosLyrics::select,
+            lyricsUnavailable = lyricsChecked && lyrics.isNullOrEmpty(),
+            lyricsOffsetOpen = IosMenus.lyricsOffset,
+            onDismissLyricsOffset = { IosMenus.lyricsOffset = false },
             windowWidth = maxWidth,
             windowHeight = maxHeight,
         )

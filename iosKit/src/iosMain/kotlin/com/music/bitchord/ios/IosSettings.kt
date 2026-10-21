@@ -18,8 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -41,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.music.bitchord.data.lyrics.LyricsSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import platform.Foundation.NSBundle
 import platform.Foundation.NSUserDefaults
@@ -56,6 +60,37 @@ internal class BoolPref(private val key: String, default: Boolean) {
 
     fun set(value: Boolean) {
         defaults.setBool(value, key)
+        flow.value = value
+    }
+}
+
+internal class IntPref(private val key: String, default: Int) {
+    private val defaults = NSUserDefaults.standardUserDefaults
+
+    val flow = MutableStateFlow(
+        if (defaults.objectForKey(key) != null) defaults.integerForKey(key).toInt() else default,
+    )
+
+    fun set(value: Int) {
+        defaults.setInteger(value.toLong(), key)
+        flow.value = value
+    }
+}
+
+/**
+ * Lyrics sources kept by name, as the phone keeps them: a name a later build drops falls out, and
+ * nothing saved means the default.
+ */
+internal class LyricsSourcesPref(private val key: String, private val default: () -> List<LyricsSource>) {
+    private val defaults = NSUserDefaults.standardUserDefaults
+
+    val flow = MutableStateFlow(
+        defaults.stringForKey(key)?.split(",")?.mapNotNull { name -> LyricsSource.entries.firstOrNull { it.name == name } }
+            ?: default(),
+    )
+
+    fun set(value: List<LyricsSource>) {
+        defaults.setObject(value.joinToString(",") { it.name }, key)
         flow.value = value
     }
 }
@@ -80,6 +115,18 @@ internal object IosSettings {
     val swipePlayNext = BoolPref("${PREFIX}swipe_play_next", false)
     /** AutoPlay suggests nothing already played this session. */
     val dontRepeatSongs = BoolPref("${PREFIX}dont_repeat_songs", false)
+
+    val syncedLyrics = BoolPref("${PREFIX}synced_lyrics", true)
+    /** Blurs the lyric lines that aren't being sung. */
+    val lyricsBlur = BoolPref("${PREFIX}lyrics_blur", true)
+    /** A line-timed answer only stands in while the rest of the order is searched for word timing. */
+    val prioritizeSyllableSync = BoolPref("${PREFIX}prioritize_syllable_sync", false)
+    val lyricsOffsetMs = IntPref("${PREFIX}lyrics_offset_ms", 0)
+    /** The sources asked; every offered one unless the listener turned some off. */
+    val lyricsSources = LyricsSourcesPref("${PREFIX}lyrics_sources") { LyricsSource.offered }
+    /** The order they are asked in, brought up to date with this build's sources. */
+    val lyricsSourceOrder = LyricsSourcesPref("${PREFIX}lyrics_source_order") { LyricsSource.offered }
+        .also { it.flow.value = LyricsSource.ordered(it.flow.value) }
 }
 
 private val GroupShape = RoundedCornerShape(14.dp)
@@ -90,7 +137,10 @@ internal fun SettingsPage(
     contentPadding: PaddingValues,
     topPadding: androidx.compose.ui.unit.Dp,
     onClearSearchHistory: () -> Unit,
+    onOpenLyricsSources: () -> Unit,
 ) {
+    val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
+    val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
     val signedIn by IosAccount.signedIn.collectAsState()
     val account by IosAccount.account.collectAsState()
     val accounts by IosAccount.accounts.collectAsState()
@@ -213,9 +263,13 @@ internal fun SettingsPage(
                 Divider()
                 Soon("Animated cover art", "Plays the looping video some releases ship instead of a still sleeve")
                 Divider()
-                Soon("Synced lyrics", "Lights up the words on the player as they’re sung")
+                Toggle("Synced lyrics", "Lights up the words on the player as they’re sung", IosSettings.syncedLyrics)
                 Divider()
-                Soon("Lyrics sources")
+                Toggle("Blur other lines", "Softens the lyric lines that aren’t being sung", IosSettings.lyricsBlur)
+                Divider()
+                Toggle("Prefer word-by-word timing", "Keeps looking past a line-timed answer for one timed by the word", IosSettings.prioritizeSyllableSync)
+                Divider()
+                ActionRow("Lyrics sources", value = "${lyricsSourceCount}", onClick = onOpenLyricsSources)
             }
         }
         item {
@@ -285,6 +339,88 @@ internal fun SettingsPage(
             }
         }
     }
+}
+
+/**
+ * Which lyrics services are asked, and in what order: the phone's Lyrics sources dialog as a page.
+ * Every enabled source is asked at once, and the answers are taken top to bottom.
+ */
+@Composable
+internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androidx.compose.ui.unit.Dp) {
+    val order by IosSettings.lyricsSourceOrder.flow.collectAsState()
+    val enabled by IosSettings.lyricsSources.flow.collectAsState()
+    LazyColumn(
+        contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding() + 24.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item {
+            Text(
+                "Lyrics sources",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            Text(
+                "Every source that’s on is asked at the same time; the first one in this list to answer wins. Word-timed sources light up each word as it’s sung.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp),
+            )
+        }
+        item {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp).clip(GroupShape).background(GroupColor)) {
+                order.forEachIndexed { index, source ->
+                    if (index > 0) Divider()
+                    val on = source in enabled
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(source.label, color = if (on) Color.White else Color.White.copy(alpha = 0.45f))
+                            Text(
+                                (if (source.wordSynced) "Word by word · " else "Line by line · ") + source.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { IosSettings.lyricsSourceOrder.set(order.moved(index, index - 1)) }, enabled = index > 0) {
+                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = if (index > 0) Color.White else Color.White.copy(alpha = 0.2f))
+                        }
+                        IconButton(onClick = { IosSettings.lyricsSourceOrder.set(order.moved(index, index + 1)) }, enabled = index < order.lastIndex) {
+                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = if (index < order.lastIndex) Color.White else Color.White.copy(alpha = 0.2f))
+                        }
+                        Switch(
+                            checked = on,
+                            onCheckedChange = { checked ->
+                                IosSettings.lyricsSources.set(if (checked) enabled + source else enabled - source)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF34C759),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color(0xFF39393D),
+                                uncheckedBorderColor = Color.Transparent,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 20.dp).clip(GroupShape).background(GroupColor)) {
+                ActionRow("Reset to default") {
+                    IosSettings.lyricsSourceOrder.set(LyricsSource.offered)
+                    IosSettings.lyricsSources.set(LyricsSource.offered)
+                }
+            }
+        }
+    }
+}
+
+private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
+    if (to !in indices) return this
+    return toMutableList().apply { add(to, removeAt(from)) }
 }
 
 /** A setting the phone has and this app does not yet: shown, so the page reads the same. */

@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbDownOffAlt
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -85,7 +86,13 @@ import platform.UIKit.UIApplication
 import platform.UIKit.UIViewController
 
 /** A track's menu, and the playlist it was opened from when that playlist is the account's own. */
-internal data class SongMenuRequest(val song: Song, val fromPlaylistId: String? = null, val onRemoved: (() -> Unit)? = null)
+/** A track's menu. [fromPlayer] adds what only applies to the playing track, like lyrics timing. */
+internal data class SongMenuRequest(
+    val song: Song,
+    val fromPlaylistId: String? = null,
+    val onRemoved: (() -> Unit)? = null,
+    val fromPlayer: Boolean = false,
+)
 
 /** An album, playlist or artist card's menu. [fromPage] leaves off what the page's own header has. */
 internal data class BrowseMenuRequest(
@@ -107,6 +114,8 @@ internal object IosMenus {
     var addToPlaylist by mutableStateOf<List<Song>?>(null)
     /** A new playlist being named, holding these tracks (none from Library's tile). */
     var newPlaylist by mutableStateOf<List<Song>?>(null)
+    /** The player's lyrics timing sheet. */
+    var lyricsOffset by mutableStateOf(false)
 
     /** A held row: a track's menu, or a card's. */
     fun openShelfItem(item: ShelfItem, shelfTitle: String? = null) {
@@ -349,6 +358,12 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                     onLeavePlayer()
                     navigator.open(IosPage.Artist(artistId, song.artists.firstOrNull()?.name ?: song.artist))
                 }
+            }
+        }
+        if (request.fromPlayer && !IosLyrics.lyrics.value.isNullOrEmpty()) {
+            MenuRow(Icons.Rounded.Timer, "Adjust lyrics timing", colors) {
+                onDismiss()
+                IosMenus.lyricsOffset = true
             }
         }
         MenuRow(Icons.Rounded.Share, "Share", colors) { leave { shareLink(songLink(song.videoId)) } }
