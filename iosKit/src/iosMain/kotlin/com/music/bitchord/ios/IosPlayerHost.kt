@@ -89,10 +89,10 @@ internal object IosPlayerHost : PlayerHost {
  * kept in the app's defaults (see [IosSettings]); the rest are fixed until iOS has what they set.
  */
 internal object IosPlayerSettings : PlayerSettingsSource {
-    override val animatedCanvas = MutableStateFlow(true)
+    override val animatedCanvas = IosSettings.animatedCanvas.flow
     override val audioQualityCellular = MutableStateFlow(AudioQuality.LOSSLESS)
     override val audioQualityWifi = MutableStateFlow(AudioQuality.LOSSLESS)
-    override val canvasOverCellular = MutableStateFlow(false)
+    override val canvasOverCellular = IosSettings.canvasOverCellular.flow
     override val fullBleedArtwork = IosSettings.fullBleedArtwork.flow
     override val hideSongStatus = IosSettings.hideSongStatus.flow
     override val showQueueHistory = IosSettings.showQueueHistory.flow
@@ -104,9 +104,9 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val lyricsBlur = IosSettings.lyricsBlur.flow
     override val lyricsOffsetMs = IosSettings.lyricsOffsetMs.flow
     override val lyricsSourceOrder = IosSettings.lyricsSourceOrder.flow
-    override val meteredConnection = MutableStateFlow<Boolean?>(null)
+    override val meteredConnection = IosNetwork.metered
     override val preferUsbDac = MutableStateFlow(false)
-    override val prioritizeSpotifyCanvas = MutableStateFlow(false)
+    override val prioritizeSpotifyCanvas = IosSettings.prioritizeSpotifyCanvas.flow
     override val reduceAnimation = IosSettings.reduceAnimation.flow
     override val reduceDynamicBlur = IosSettings.reduceDynamicBlur.flow
     override val showNerdStats = IosSettings.showNerdStats.flow
@@ -115,7 +115,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val smartMixInProgress = MutableStateFlow(false)
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
-    override val spotifyCanvasAutoHide = MutableStateFlow(true)
+    override val spotifyCanvasAutoHide = IosSettings.spotifyCanvasAutoHide.flow
     override val syncedLyrics = IosSettings.syncedLyrics.flow
     override val translationLanguage = MutableStateFlow("")
     override val versionAlignmentInProgress = MutableStateFlow(false)

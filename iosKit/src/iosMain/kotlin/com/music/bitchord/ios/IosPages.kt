@@ -118,7 +118,7 @@ internal fun IosPageHost(
             is IosPage.Replay -> ReplayPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
-            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) })
+            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) })
             IosPage.Integrations -> IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) }, onOpenDiscord = { navigator.open(IosPage.Discord) })
             IosPage.Spotify -> SpotifyPage(navigator, contentPadding, underBack)
             IosPage.Discord -> DiscordPage(contentPadding, underBack)

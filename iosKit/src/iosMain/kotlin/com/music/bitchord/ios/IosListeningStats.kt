@@ -198,6 +198,28 @@ internal object IosListeningStats {
         return summary
     }
 
+    /** Every month held, the open one flushed first: what a backup carries. */
+    fun exportAll(): List<StoredBucket> {
+        flush()
+        return months().mapNotNull { read(it.toString()) }
+    }
+
+    /**
+     * Replaces everything held with [buckets], as the phone's import does: a restore, never a merge,
+     * since two copies of a month added together would double every number with no way to tell.
+     */
+    fun importAll(buckets: List<StoredBucket>) {
+        open = null
+        dirty = false
+        files.contentsOfDirectoryAtPath(directory, null).orEmpty().forEach { files.removeItemAtPath("$directory/$it", null) }
+        buckets.forEach { bucket ->
+            val key = MonthKey.parse(bucket.month)?.toString() ?: return@forEach
+            write(key, bucket)
+        }
+        version++
+        cached = null
+    }
+
     /** Every month with a file, oldest first. */
     fun months(): List<MonthKey> =
         files.contentsOfDirectoryAtPath(directory, null).orEmpty()

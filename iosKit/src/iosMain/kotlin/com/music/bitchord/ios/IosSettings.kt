@@ -52,6 +52,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import platform.Foundation.NSBundle
 import platform.Foundation.NSUserDefaults
 
+/**
+ * Every setting a backup carries, by its name without the app's prefix — the names the phone
+ * uses where the two share a setting, so a backup from either restores what both have. Each
+ * reads and writes its own type: a value is stored as text with its type beside it, and one
+ * that doesn't parse as that type is skipped rather than guessed at. Credentials ([SecretPref])
+ * are never listed.
+ */
+internal object IosPrefs {
+    class Entry(val type: String, val read: () -> String?, val write: (String) -> Unit)
+
+    val all = LinkedHashMap<String, Entry>()
+
+    fun register(key: String, type: String, read: () -> String?, write: (String) -> Unit) {
+        all[key.removePrefix(PREFIX)] = Entry(type, read, write)
+    }
+
+    const val PREFIX = "bitchord.settings."
+}
+
 /** One on/off setting, kept in the app's defaults under [key]. */
 internal class BoolPref(private val key: String, default: Boolean) {
     private val defaults = NSUserDefaults.standardUserDefaults
@@ -60,6 +79,10 @@ internal class BoolPref(private val key: String, default: Boolean) {
     val flow = MutableStateFlow(
         if (defaults.objectForKey(key) != null) defaults.boolForKey(key) else default,
     )
+
+    init {
+        IosPrefs.register(key, "bool", { flow.value.toString() }) { text -> text.toBooleanStrictOrNull()?.let(::set) }
+    }
 
     fun set(value: Boolean) {
         defaults.setBool(value, key)
@@ -74,6 +97,10 @@ internal class IntPref(private val key: String, default: Int) {
         if (defaults.objectForKey(key) != null) defaults.integerForKey(key).toInt() else default,
     )
 
+    init {
+        IosPrefs.register(key, "int", { flow.value.toString() }) { text -> text.toIntOrNull()?.let(::set) }
+    }
+
     fun set(value: Int) {
         defaults.setInteger(value.toLong(), key)
         flow.value = value
@@ -84,6 +111,10 @@ internal class StringPref(private val key: String, default: String) : StringPref
     private val defaults = NSUserDefaults.standardUserDefaults
 
     override val flow = MutableStateFlow(defaults.stringForKey(key) ?: default)
+
+    init {
+        IosPrefs.register(key, "string", { flow.value }) { set(it) }
+    }
 
     override fun set(value: String) {
         defaults.setObject(value, key)
@@ -113,6 +144,10 @@ internal class FloatPref(private val key: String, default: Float) {
         if (defaults.objectForKey(key) != null) defaults.floatForKey(key) else default,
     )
 
+    init {
+        IosPrefs.register(key, "float", { flow.value.toString() }) { text -> text.toFloatOrNull()?.let(::set) }
+    }
+
     fun set(value: Float) {
         defaults.setFloat(value, key)
         flow.value = value
@@ -127,6 +162,12 @@ internal class FloatListPref(private val key: String, private val default: List<
         defaults.stringForKey(key)?.split(",")?.mapNotNull { it.trim().toFloatOrNull() }?.takeIf { it.size == default.size }
             ?: default,
     )
+
+    init {
+        IosPrefs.register(key, "string", { flow.value.joinToString(",") }) { text ->
+            text.split(",").mapNotNull { it.trim().toFloatOrNull() }.takeIf { it.size == default.size }?.let(::set)
+        }
+    }
 
     fun set(value: List<Float>) {
         defaults.setObject(value.joinToString(","), key)
@@ -145,6 +186,12 @@ internal class LyricsSourcesPref(private val key: String, private val default: (
         defaults.stringForKey(key)?.split(",")?.mapNotNull { name -> LyricsSource.entries.firstOrNull { it.name == name } }
             ?: default(),
     )
+
+    init {
+        IosPrefs.register(key, "string", { flow.value.joinToString(",") { it.name } }) { text ->
+            set(text.split(",").mapNotNull { name -> LyricsSource.entries.firstOrNull { it.name == name } })
+        }
+    }
 
     fun set(value: List<LyricsSource>) {
         defaults.setObject(value.joinToString(",") { it.name }, key)
@@ -214,6 +261,12 @@ internal object IosSettings {
     val discordButton2Visible = BoolPref("${PREFIX}discord_button_2_visible", true)
     val listenBrainzPrimaryArtistOnly = BoolPref("${PREFIX}listenbrainz_primary_artist_only", false)
 
+    // Animated cover art, the phone's defaults.
+    val animatedCanvas = BoolPref("${PREFIX}animated_canvas", true)
+    val canvasOverCellular = BoolPref("${PREFIX}canvas_over_cellular", false)
+    val prioritizeSpotifyCanvas = BoolPref("${PREFIX}prioritize_spotify_canvas", false)
+    val spotifyCanvasAutoHide = BoolPref("${PREFIX}spotify_canvas_auto_hide", true)
+
     // Playback sound, the phone's defaults.
     val loudnessNormalization = BoolPref("${PREFIX}loudness_normalization", true)
     val loudnessOffOnSpeaker = BoolPref("${PREFIX}loudness_off_on_speaker", true)
@@ -252,6 +305,7 @@ internal fun SettingsPage(
     onOpenDownloads: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenIntegrations: () -> Unit,
+    onOpenReplay: () -> Unit,
 ) {
     val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
     val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
@@ -407,7 +461,16 @@ internal fun SettingsPage(
                 Divider()
                 Toggle("Legacy mesh gradient", "Brings back the drifting colour blobs behind the player from v1.5", IosSettings.legacyMeshGradient)
                 Divider()
-                Soon("Animated cover art", "Plays the looping video some releases ship instead of a still sleeve")
+                Toggle("Animated cover art", "Plays the looping video some releases ship instead of a still sleeve", IosSettings.animatedCanvas)
+                val animated by IosSettings.animatedCanvas.flow.collectAsState()
+                if (animated) {
+                    Divider()
+                    Toggle("Play animated cover over cellular", "Clips use data; off, they play on Wi-Fi only", IosSettings.canvasOverCellular)
+                    Divider()
+                    Toggle("Prioritize Spotify Canvas", "Try Spotify before Apple Music and other animated cover providers (needs Spotify connected)", IosSettings.prioritizeSpotifyCanvas)
+                    Divider()
+                    Toggle("Auto-hide player controls", "Collapse the half-player after 5 seconds while Spotify Canvas is playing", IosSettings.spotifyCanvasAutoHide)
+                }
                 Divider()
                 Toggle("Synced lyrics", "Lights up the words on the player as they’re sung", IosSettings.syncedLyrics)
                 Divider()
@@ -442,14 +505,16 @@ internal fun SettingsPage(
         }
         item {
             Group("Your data") {
-                Soon("Replay", "Your top songs, artists, albums and genres")
+                ActionRow("Replay", value = "Top songs, artists, albums", onClick = onOpenReplay)
                 Divider()
                 ActionRow("Clear search history") {
                     onClearSearchHistory()
                     IosPlayerHost.showMessage("Search history cleared")
                 }
                 Divider()
-                Soon("Export and import data")
+                ActionRow("Export data", value = "Settings and listening", onClick = IosBackup::export)
+                Divider()
+                ActionRow("Import data", onClick = IosBackup::import)
             }
         }
         item {
