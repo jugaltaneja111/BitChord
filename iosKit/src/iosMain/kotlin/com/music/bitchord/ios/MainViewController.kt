@@ -44,6 +44,7 @@ private fun start() {
     IosAccount.restore()
     IosDownloads.restore()
     IosArtistFacts.start()
+    IosSpotify.install()
     startAutoplayIfAsked()
 }
 

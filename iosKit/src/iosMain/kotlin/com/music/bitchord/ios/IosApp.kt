@@ -257,6 +257,14 @@ internal fun IosApp() {
                     if (IosAccount.signedIn.value && navigator.top == null) navigator.select(IosTab.LIBRARY)
                 })
             }
+            AnimatedVisibility(
+                visible = IosOverlays.spotifyLogin,
+                enter = slideInVertically(tween(320)) { it },
+                exit = slideOutVertically(tween(260)) { it },
+            ) {
+                IosSpotifyLoginScreen(onClose = { IosOverlays.spotifyLogin = false })
+            }
+            if (IosOverlays.spotifyImport) SpotifyImportDialog(onDismiss = { IosOverlays.spotifyImport = false })
             IosReplay.story?.let { (summary, start) ->
                 ReplayStories(
                     summary = summary,
@@ -337,6 +345,7 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
         onShelfItemClick = { navigator.openShelfItem(it, null) },
         onShelfItemLongPress = { IosMenus.openShelfItem(it) },
         onNewPlaylist = { if (signedIn) IosMenus.newPlaylist = emptyList() else IosOverlays.login = true },
+        onImportSpotifyPlaylist = { if (signedIn) IosOverlays.spotifyImport = true else IosOverlays.login = true },
         onShowAll = { navigator.open(IosPage.LibraryShelf(it.title)) },
         replay = { LibraryReplayCards(navigator) },
         onSignIn = { IosOverlays.login = true },

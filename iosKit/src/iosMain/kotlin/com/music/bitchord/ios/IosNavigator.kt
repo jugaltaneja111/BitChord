@@ -32,6 +32,8 @@ internal sealed interface IosPage {
     data object LyricsSources : IosPage
     data object Equalizer : IosPage
     data object Integrations : IosPage
+    data object Spotify : IosPage
+    data class SpotifyPlaylist(val id: String, val title: String, val imageUrl: String?) : IosPage
 }
 
 /**

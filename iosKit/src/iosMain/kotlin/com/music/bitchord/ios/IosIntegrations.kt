@@ -44,7 +44,7 @@ import kotlin.math.roundToInt
  * ListenBrainz, with the timing rules under them. Spotify and Discord join it as they arrive.
  */
 @Composable
-internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp) {
+internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onOpenSpotify: () -> Unit) {
     val lbEnabled by IosSettings.listenBrainzEnabled.flow.collectAsState()
     val lbToken by IosSettings.listenBrainzToken.flow.collectAsState()
     val lastfmEnabled by IosSettings.lastfmEnabled.flow.collectAsState()
@@ -66,7 +66,17 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp) {
             )
         }
         item {
-            Group("Spotify") { Soon("Spotify", "Sign in to load your playlists. Playback uses YouTube Music.") }
+            val spotify by IosSettings.spotifySpdc.flow.collectAsState()
+            Group("Spotify") {
+                ActionRow("Spotify", value = if (spotify.isNotBlank()) "Connected" else "Tap to connect", onClick = onOpenSpotify)
+                Divider()
+                ActionRow("Import a playlist link", onClick = { IosOverlays.spotifyImport = true })
+                if (spotify.isNotBlank()) {
+                    Divider()
+                    ActionRow("Disconnect Spotify", destructive = true, onClick = IosSpotify::disconnect)
+                }
+            }
+            Footer("Sign in to load your playlists. Playback uses YouTube Music.")
         }
         item {
             Group("Rich presence") { Soon("Discord", "Show what you are playing on your Discord profile.") }

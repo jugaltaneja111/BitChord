@@ -119,7 +119,9 @@ internal fun IosPageHost(
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
             IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) })
-            IosPage.Integrations -> IntegrationsPage(contentPadding, underBack)
+            IosPage.Integrations -> IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) })
+            IosPage.Spotify -> SpotifyPage(navigator, contentPadding, underBack)
+            is IosPage.SpotifyPlaylist -> SpotifyPlaylistPage(page, contentPadding, underBack)
             IosPage.Equalizer -> EqualizerPage(contentPadding, underBack)
             IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
         }
@@ -295,7 +297,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
 }
 
 @Composable
-private fun CollectionHeader(
+internal fun CollectionHeader(
     title: String,
     subtitle: String,
     thumbnailUrl: String?,

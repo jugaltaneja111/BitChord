@@ -161,6 +161,9 @@ internal object IosSettings {
     /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
 
+    /** Spotify's `sp_dc` session cookie, as the phone keeps it; blank when not connected. */
+    val spotifySpdc = StringPref("${PREFIX}spotify_sp_dc", "")
+
     // Scrobbling, the phone's defaults: everything off until signed in.
     val lastfmEnabled = BoolPref("${PREFIX}lastfm_enabled", false)
     val lastfmUsername = StringPref("${PREFIX}lastfm_username", "")

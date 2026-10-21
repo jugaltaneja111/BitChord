@@ -56,6 +56,8 @@ import dev.chrisbanes.haze.materials.HazeMaterials
 internal object IosOverlays {
     var login by mutableStateOf(false)
     var switcher by mutableStateOf(false)
+    var spotifyLogin by mutableStateOf(false)
+    var spotifyImport by mutableStateOf(false)
 }
 
 private val PillShape = RoundedCornerShape(50)
