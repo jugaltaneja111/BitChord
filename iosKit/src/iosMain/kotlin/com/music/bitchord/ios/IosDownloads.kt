@@ -72,6 +72,8 @@ internal data class DownloadedTrack(
     val bytes: Long = 0,
     val kbps: Int = 0,
     val addedAt: Long = 0,
+    /** YouTube's loudness figure for the track, so a download is levelled like the stream. */
+    val loudnessDb: Double? = null,
 )
 
 @Serializable
@@ -335,6 +337,7 @@ internal object IosDownloads {
             bytes = fileSize("$dir/$audioFile").takeIf { it > 0 } ?: total,
             kbps = stream.kbps,
             addedAt = wallClockMs(),
+            loudnessDb = stream.loudnessDb,
         )
     }
 

@@ -38,6 +38,9 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -73,6 +76,34 @@ internal class IntPref(private val key: String, default: Int) {
 
     fun set(value: Int) {
         defaults.setInteger(value.toLong(), key)
+        flow.value = value
+    }
+}
+
+internal class FloatPref(private val key: String, default: Float) {
+    private val defaults = NSUserDefaults.standardUserDefaults
+
+    val flow = MutableStateFlow(
+        if (defaults.objectForKey(key) != null) defaults.floatForKey(key) else default,
+    )
+
+    fun set(value: Float) {
+        defaults.setFloat(value, key)
+        flow.value = value
+    }
+}
+
+/** A list of numbers, comma-separated as the phone keeps its equaliser bands. */
+internal class FloatListPref(private val key: String, private val default: List<Float>) {
+    private val defaults = NSUserDefaults.standardUserDefaults
+
+    val flow = MutableStateFlow(
+        defaults.stringForKey(key)?.split(",")?.mapNotNull { it.trim().toFloatOrNull() }?.takeIf { it.size == default.size }
+            ?: default,
+    )
+
+    fun set(value: List<Float>) {
+        defaults.setObject(value.joinToString(","), key)
         flow.value = value
     }
 }
@@ -119,6 +150,19 @@ internal object IosSettings {
     /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
 
+    // Playback sound, the phone's defaults.
+    val loudnessNormalization = BoolPref("${PREFIX}loudness_normalization", true)
+    val loudnessOffOnSpeaker = BoolPref("${PREFIX}loudness_off_on_speaker", true)
+    val crossfadeSeconds = IntPref("${PREFIX}crossfade_seconds", 0)
+    val equalizerEnabled = BoolPref("${PREFIX}equalizer_enabled", false)
+    /** Which tab drives the sound: 0 the tone pad (Dynamic, the phone's default), 1 the bands. */
+    val equalizerMode = IntPref("${PREFIX}equalizer_mode", 0)
+    val equalizerToneX = IntPref("${PREFIX}equalizer_tone_x", 0)
+    val equalizerToneY = IntPref("${PREFIX}equalizer_tone_y", 0)
+    val equalizerFocused = BoolPref("${PREFIX}equalizer_focused", false)
+    val equalizerBalance = FloatPref("${PREFIX}equalizer_balance", 0f)
+    val equalizerBands = FloatListPref("${PREFIX}equalizer_bands", com.music.bitchord.playback.EqualizerPreset.FLAT.bands)
+
     val syncedLyrics = BoolPref("${PREFIX}synced_lyrics", true)
     /** Blurs the lyric lines that aren't being sung. */
     val lyricsBlur = BoolPref("${PREFIX}lyrics_blur", true)
@@ -132,8 +176,8 @@ internal object IosSettings {
         .also { it.flow.value = LyricsSource.ordered(it.flow.value) }
 }
 
-private val GroupShape = RoundedCornerShape(14.dp)
-private val GroupColor = Color(0xFF1C1C1E)
+internal val GroupShape = RoundedCornerShape(14.dp)
+internal val GroupColor = Color(0xFF1C1C1E)
 
 @Composable
 internal fun SettingsPage(
@@ -142,6 +186,7 @@ internal fun SettingsPage(
     onClearSearchHistory: () -> Unit,
     onOpenLyricsSources: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenEqualizer: () -> Unit,
 ) {
     val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
     val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
@@ -224,7 +269,7 @@ internal fun SettingsPage(
             Group("Audio quality") {
                 Soon("Sources", "Where audio comes from and the order used")
                 Divider()
-                Soon("On Wi-Fi")
+                Soon("On Wi-Fi", "iPhone plays YouTube’s best AAC stream; the choices come with Sources")
                 Divider()
                 Soon("On mobile data")
             }
@@ -265,15 +310,18 @@ internal fun SettingsPage(
                 Divider()
                 Soon("Prefer music-only version")
                 Divider()
-                Soon("Loudness normalization", "Levels every track to the same loudness")
+                Toggle("Loudness normalization", "Levels every track to the same loudness", IosSettings.loudnessNormalization)
                 Divider()
-                Soon("Crossfade", "Blends one track into the next")
+                Toggle("Disable on Phone Speaker", "The phone’s own speaker plays every track as it was mastered", IosSettings.loudnessOffOnSpeaker)
                 Divider()
-                Soon("Automix")
+                CrossfadeRow()
                 Divider()
-                Soon("Skip silence")
+                Soon("Automix", "Times and blends transitions automatically, without a slider")
                 Divider()
-                Soon("Equalizer", "Tone, seven bands and balance")
+                Soon("Skip silence", "Trim gaps longer than a second")
+                Divider()
+                val equalizerOn by IosSettings.equalizerEnabled.flow.collectAsState()
+                ActionRow("Equalizer", value = if (equalizerOn) "On" else "Off", onClick = onOpenEqualizer)
             }
         }
         item {
@@ -450,6 +498,34 @@ private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
     return toMutableList().apply { add(to, removeAt(from)) }
 }
 
+/** The phone's crossfade slider: off, or one to twelve seconds of blend. */
+@Composable
+private fun CrossfadeRow() {
+    val seconds by IosSettings.crossfadeSeconds.flow.collectAsState()
+    Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Crossfade", color = Color.White)
+                Text("Blends one track into the next", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(if (seconds == 0) "Off" else "${seconds}s", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Slider(
+            value = seconds.toFloat(),
+            onValueChange = { IosSettings.crossfadeSeconds.set(it.roundToInt()) },
+            valueRange = 0f..12f,
+            steps = 11,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Color.White,
+                inactiveTrackColor = Color.White.copy(alpha = 0.18f),
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
+        )
+    }
+}
+
 /** A setting the phone has and this app does not yet: shown, so the page reads the same. */
 @Composable
 private fun Soon(title: String, subtitle: String? = null) {
@@ -472,25 +548,27 @@ private fun megabytes(bytes: Long): String {
 }
 
 @Composable
-private fun Group(header: String, content: @Composable () -> Unit) {
+internal fun Group(header: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 20.dp)) {
-        Text(
-            header.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
-        )
+        if (header.isNotEmpty()) {
+            Text(
+                header.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+            )
+        }
         Column(Modifier.fillMaxWidth().clip(GroupShape).background(GroupColor)) { content() }
     }
 }
 
 @Composable
-private fun Divider() {
+internal fun Divider() {
     HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.5.dp, color = Color.White.copy(alpha = 0.10f))
 }
 
 @Composable
-private fun Toggle(title: String, subtitle: String, pref: BoolPref) {
+internal fun Toggle(title: String, subtitle: String, pref: BoolPref) {
     val checked by pref.flow.collectAsState()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { pref.set(!checked) }.padding(16.dp, 10.dp),
@@ -516,7 +594,7 @@ private fun Toggle(title: String, subtitle: String, pref: BoolPref) {
 }
 
 @Composable
-private fun ActionRow(title: String, destructive: Boolean = false, value: String? = null, onClick: () -> Unit) {
+internal fun ActionRow(title: String, destructive: Boolean = false, value: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp)) {
         Text(title, color = if (destructive) Color(0xFFFF6B6B) else Color.White, modifier = Modifier.weight(1f))
         value?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }

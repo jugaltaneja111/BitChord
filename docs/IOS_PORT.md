@@ -24,8 +24,12 @@ iOS and Jsoup on the JVM), with the sources' choice and order in Settings. Downl
 playlists) in the app's Documents, out of backup, fetched in ranges as the phone does and played
 from the file with no connection; Library lists them. Replay counts listening on the phone in the Android app's
 monthly files and format (iosKit's own copy, as the desktop has its own), and draws the phone's
-cards, charts and stories; genres wait for Last.fm, and the share picture is text for now. Not yet: lyrics
-translation and romanisation, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+cards, charts and stories; genres wait for Last.fm, and the share picture is text for now. Sound: two
+AVPlayers, the next track readied 30 s ahead in the second, so a change of track is instant or a
+crossfade (the phone's 0–12 s slider); each item carries an MTAudioProcessingTap running the phone's
+equaliser sections (tone pad, seven bands, balance), YouTube's loudness gain and the peak limiter.
+Not yet: Automix and skip silence (both need the track analysed ahead), quality choices (iOS only
+plays YouTube's AAC until Sources), lyrics translation and romanisation, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

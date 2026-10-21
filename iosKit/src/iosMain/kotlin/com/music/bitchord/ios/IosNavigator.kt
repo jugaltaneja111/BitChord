@@ -30,6 +30,7 @@ internal sealed interface IosPage {
     data object Downloads : IosPage
     data object Settings : IosPage
     data object LyricsSources : IosPage
+    data object Equalizer : IosPage
 }
 
 /**

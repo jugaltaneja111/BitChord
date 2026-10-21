@@ -39,6 +39,10 @@ import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 internal object IosPlayer {
     private const val TAG = "IosPlayer"
 
+    /** How long before a track ends the next one is fetched into the waiting player. */
+    private const val PREPARE_AHEAD_MS = 30_000L
+    private const val TRANSITION_POLL_MS = 250L
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loadJob: Job? = null
 
@@ -91,6 +95,13 @@ internal object IosPlayer {
             combine(_song, engine.isPlaying, engine.durationMs) { song, playing, duration ->
                 Triple(song, playing, duration)
             }.collect { (song, playing, duration) -> publishNowPlaying(song, playing, duration) }
+        }
+        // The next track, readied ahead and blended or cut in at the end of this one.
+        scope.launch {
+            while (true) {
+                delay(TRANSITION_POLL_MS)
+                watchTransition()
+            }
         }
         // Replay's listening, sampled while something actually plays.
         scope.launch {
@@ -258,6 +269,86 @@ internal object IosPlayer {
         }
     }
 
+    /** The queue position that plays after this one on its own, or null at the end. */
+    private fun upcomingIndex(): Int? {
+        if (_repeatMode.value == RepeatModes.ONE) return null
+        val queue = _queue.value
+        val next = _index.value + 1
+        return when {
+            next in queue.indices -> next
+            _repeatMode.value == RepeatModes.ALL && queue.isNotEmpty() -> 0
+            else -> null
+        }
+    }
+
+    private var prepareJob: Job? = null
+    private var preparing: String? = null
+
+    /**
+     * Readies the next track in the waiting player [PREPARE_AHEAD_MS] before this one ends, and
+     * with a crossfade set, starts the blend once the end is that close.
+     */
+    private fun watchTransition() {
+        val song = _song.value ?: return
+        if (_resolving.value || !engine.isPlaying.value || engine.isBlending) return
+        val duration = engine.durationMs.value
+        if (duration <= 0L) return
+        val remaining = duration - engine.position.positionMs
+        val nextIndex = upcomingIndex()
+        val next = nextIndex?.let { _queue.value.getOrNull(it) }
+        if (next == null || next.videoId == song.videoId) {
+            if (engine.preparedKey != null && preparing == null) engine.clearPrepared()
+            return
+        }
+        if (remaining <= PREPARE_AHEAD_MS && engine.preparedKey != next.videoId && preparing != next.videoId) {
+            prepare(next)
+        }
+        val fadeMs = (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
+        if (fadeMs > 0L && remaining in 1..fadeMs && engine.preparedFor(next.videoId)) {
+            transition(nextIndex, fadeMs)
+        }
+    }
+
+    private fun prepare(song: Song) {
+        prepareJob?.cancel()
+        preparing = song.videoId
+        prepareJob = scope.launch {
+            try {
+                IosDownloads.audioPath(song.videoId)?.let { path ->
+                    val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
+                    engine.prepareNext(path, emptyMap(), loudness, song.videoId)
+                    return@launch
+                }
+                val stream = InnerTubeXResolver.extract(song.videoId, maxKbps = 320, requireM4a = true) ?: return@launch
+                // The queue may have moved on while that resolved.
+                if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != song.videoId) return@launch
+                TrackLog.i(TAG, "${song.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
+                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, song.videoId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TrackLog.w(TAG, "${song.videoId}: could not ready: ${e.message}")
+            } finally {
+                if (preparing == song.videoId) preparing = null
+            }
+        }
+    }
+
+    /** Moves the queue on to [index], whose track the waiting player already holds. */
+    private fun transition(index: Int, fadeMs: Long) {
+        val song = _queue.value.getOrNull(index) ?: return
+        loadJob?.cancel()
+        _resolving.value = false
+        _index.value = index
+        playedThisSession += song.videoId
+        _song.value = song
+        _error.value = null
+        if (_autoplay.value && _queue.value.size > 1 && index >= _queue.value.size - 2) {
+            extendWithRadio(playNext = false)
+        }
+        engine.startNext(fadeMs)
+    }
+
     /** The last song's radio after the queue; played straight away when the queue has run out. */
     private fun extendWithRadio(playNext: Boolean) {
         val last = _queue.value.lastOrNull() ?: return
@@ -290,6 +381,11 @@ internal object IosPlayer {
 
     private fun playAt(index: Int) {
         val song = _queue.value.getOrNull(index) ?: return
+        // Already waiting in the second player: it starts at once.
+        if (song.videoId != _song.value?.videoId && engine.preparedFor(song.videoId)) {
+            transition(index, 0L)
+            return
+        }
         _index.value = index
         playedThisSession += song.videoId
         _song.value = song
@@ -307,7 +403,8 @@ internal object IosPlayer {
                 // A download plays from the phone, connection or not.
                 IosDownloads.audioPath(song.videoId)?.let { path ->
                     TrackLog.i(TAG, "${song.videoId}: from download")
-                    engine.load(path, emptyMap())
+                    val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
+                    engine.load(path, emptyMap(), loudness, song.videoId)
                     return@launch
                 }
                 // AAC in MP4: AVFoundation cannot play the Opus/WebM streams the phone prefers.
@@ -317,7 +414,7 @@ internal object IosPlayer {
                     return@launch
                 }
                 TrackLog.i(TAG, "${song.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                engine.load(stream.url, stream.headers)
+                engine.load(stream.url, stream.headers, stream.loudnessDb, song.videoId)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
