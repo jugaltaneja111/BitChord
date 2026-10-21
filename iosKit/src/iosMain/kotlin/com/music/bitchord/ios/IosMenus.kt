@@ -301,6 +301,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                                 .onSuccess {
                                     IosPlayerHost.showMessage("Removed from playlist")
                                     request.onRemoved?.invoke()
+                                    IosAccount.playlistChanged()
                                 }
                                 .onFailure { IosPlayerHost.showMessage("Could not remove it from the playlist") }
                         }
@@ -405,7 +406,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                     YtMusicRepository.renamePlaylist(playlistId, title)
                         .onSuccess {
                             IosPlayerHost.showMessage("Renamed")
-                            IosAccount.loadLibrary()
+                            IosAccount.playlistRenamed(playlistId, title)
                         }
                         .onFailure { IosPlayerHost.showMessage("Could not rename the playlist") }
                 }
@@ -462,7 +463,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                         YtMusicRepository.setSaved(state.playlistId, !state.saved)
                             .onSuccess {
                                 IosPlayerHost.showMessage(if (state.saved) "Removed from library" else "Saved to library")
-                                IosAccount.loadLibrary()
+                                IosAccount.loadLibrary(quietly = true)
                             }
                             .onFailure { IosPlayerHost.showMessage("Could not update your library") }
                     }
@@ -482,7 +483,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                         YtMusicRepository.deletePlaylist(playlistId)
                             .onSuccess {
                                 IosPlayerHost.showMessage("Playlist deleted")
-                                IosAccount.loadLibrary()
+                                IosAccount.playlistDeleted(playlistId)
                                 if (request.fromPage) navigator.back()
                             }
                             .onFailure { IosPlayerHost.showMessage("Could not delete the playlist") }
@@ -503,7 +504,7 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         YtMusicRepository.userPlaylists()
-            .onSuccess { playlists = it }
+            .onSuccess { playlists = IosAccount.withPlaylistEdits(it) }
             .onFailure { failed = true }
     }
     TintedSheet(songs.firstOrNull()?.thumbnailUrl, onDismiss) { colors ->
@@ -533,7 +534,10 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
                             onDismiss()
                             scope.launch {
                                 YtMusicRepository.addToPlaylist(playlist.playlistId, songs.map { it.videoId })
-                                    .onSuccess { IosPlayerHost.showMessage("Added to ${playlist.title}") }
+                                    .onSuccess {
+                                        IosPlayerHost.showMessage("Added to ${playlist.title}")
+                                        IosAccount.playlistChanged()
+                                    }
                                     .onFailure { IosPlayerHost.showMessage("Could not add to ${playlist.title}") }
                             }
                         }
@@ -583,9 +587,9 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
             saving = true
             scope.launch {
                 YtMusicRepository.createPlaylist(title.trim(), privacy, songs.map { it.videoId })
-                    .onSuccess {
+                    .onSuccess { playlistId ->
                         IosPlayerHost.showMessage(if (songs.isEmpty()) "Playlist created" else "Added to ${title.trim()}")
-                        IosAccount.loadLibrary()
+                        IosAccount.playlistCreated(playlistId, title.trim(), songs)
                         onDismiss()
                     }
                     .onFailure {

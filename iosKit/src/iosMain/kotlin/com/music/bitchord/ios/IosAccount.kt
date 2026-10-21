@@ -7,10 +7,13 @@ import com.music.bitchord.data.innertube.InnerTubeXResolver
 import com.music.bitchord.data.innertube.Innertube
 import com.music.bitchord.data.model.Account
 import com.music.bitchord.data.model.AccountChannel
+import com.music.bitchord.data.model.HomeShelf
 import com.music.bitchord.data.model.LibraryPage
 import com.music.bitchord.data.model.LikeStatus
+import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.UiState
+import com.music.bitchord.data.model.UserPlaylist
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -109,8 +112,21 @@ internal object IosAccount {
     private val _generation = MutableStateFlow(0)
     val generation: StateFlow<Int> = _generation.asStateFlow()
 
+    /** Raised on every playlist edit, so an open playlist page reads its tracks again. */
+    private val _playlistEdits = MutableStateFlow(0)
+    val playlistEdits: StateFlow<Int> = _playlistEdits.asStateFlow()
+
     private var likedSync: Job? = null
     private var channelsJob: Job? = null
+    private var libraryRefresh: Job? = null
+    /** The library as the feed last sent it, before this app's edits are laid over it. */
+    private var libraryFeed: LibraryPage? = null
+
+    // The library feed lags a playlist edit by a few seconds, so what this app just did is laid
+    // over each answer until the feed agrees with it.
+    private val createdPlaylists = mutableListOf<ShelfItem>()
+    private val renamedPlaylists = mutableMapOf<String, String>()
+    private val deletedPlaylists = mutableSetOf<String>()
 
     val activeAccount: IosGoogleAccount?
         get() = _accounts.value.firstOrNull { it.id == _activeAccountId.value }
@@ -239,6 +255,7 @@ internal object IosAccount {
         likedSync?.cancel()
         channelsJob?.cancel()
         LikeState.clear()
+        forgetPlaylistEdits()
         _accounts.value = emptyList()
         _activeAccountId.value = null
         _account.value = null
@@ -247,9 +264,13 @@ internal object IosAccount {
         _generation.value++
     }
 
-    fun loadLibrary() {
+    /**
+     * Reads the library again. [quietly] keeps what is on screen until the answer arrives, for a
+     * refresh behind an edit rather than one the listener asked for.
+     */
+    fun loadLibrary(quietly: Boolean = false) {
         if (!_signedIn.value) return
-        _library.value = UiState.Loading
+        if (!quietly || _library.value !is UiState.Success) _library.value = UiState.Loading
         val asked = _generation.value
         scope.launch {
             val result = YtMusicRepository.library()
@@ -257,13 +278,104 @@ internal object IosAccount {
             if (asked != _generation.value) return@launch
             result
                 .onSuccess { page ->
-                    _library.value = UiState.Success(page)
+                    libraryFeed = page
+                    _library.value = UiState.Success(withPlaylistEdits(page))
                     // Liked tracks past the first page still read as liked.
                     likedSync?.cancel()
                     likedSync = scope.launch { YtMusicRepository.syncLikedMusic(page.likedContinuation) }
                 }
-                .onFailure { _library.value = UiState.Error(it.message ?: "Could not load your library") }
+                .onFailure {
+                    if (!quietly || _library.value !is UiState.Success) {
+                        _library.value = UiState.Error(it.message ?: "Could not load your library")
+                    }
+                }
         }
+    }
+
+    /** A playlist this app just made, shown at the head of Playlists at once. */
+    fun playlistCreated(playlistId: String, title: String, songs: List<Song>) {
+        createdPlaylists.removeAll { it.browseId == "VL$playlistId" }
+        createdPlaylists.add(
+            0,
+            ShelfItem(
+                title = title,
+                subtitle = when (songs.size) {
+                    0 -> ""
+                    1 -> "1 song"
+                    else -> "${songs.size} songs"
+                },
+                thumbnailUrl = songs.firstOrNull()?.thumbnailUrl,
+                videoId = null,
+                browseId = "VL$playlistId",
+            ),
+        )
+        playlistChanged()
+    }
+
+    fun playlistRenamed(playlistId: String, title: String) {
+        renamedPlaylists["VL$playlistId"] = title
+        playlistChanged()
+    }
+
+    fun playlistDeleted(playlistId: String) {
+        deletedPlaylists += "VL$playlistId"
+        createdPlaylists.removeAll { it.browseId == "VL$playlistId" }
+        playlistChanged()
+    }
+
+    /** Tracks went into or out of a playlist: its page and its card's count are stale. */
+    fun playlistChanged() {
+        _playlistEdits.value++
+        libraryFeed?.let { _library.value = UiState.Success(withPlaylistEdits(it)) }
+        // Long enough for the feed to have caught up with the edit.
+        libraryRefresh?.cancel()
+        libraryRefresh = scope.launch {
+            delay(3_000)
+            loadLibrary(quietly = true)
+        }
+    }
+
+    /** The account's playlists as Add to playlist lists them, with this app's edits the feed lacks. */
+    fun withPlaylistEdits(playlists: List<UserPlaylist>): List<UserPlaylist> {
+        val ids = playlists.map { it.browseId }.toSet()
+        val created = createdPlaylists.filter { it.browseId !in ids }.mapNotNull { item ->
+            val browseId = item.browseId ?: return@mapNotNull null
+            UserPlaylist(browseId.removePrefix("VL"), item.title, item.subtitle, item.thumbnailUrl)
+        }
+        return (created + playlists)
+            .filter { it.browseId !in deletedPlaylists }
+            .map { playlist -> renamedPlaylists[playlist.browseId]?.let { playlist.copy(title = it) } ?: playlist }
+    }
+
+    private fun forgetPlaylistEdits() {
+        libraryRefresh?.cancel()
+        libraryFeed = null
+        createdPlaylists.clear()
+        renamedPlaylists.clear()
+        deletedPlaylists.clear()
+    }
+
+    /** [page] with this app's own edits laid over it; each is dropped once the feed shows it. */
+    private fun withPlaylistEdits(page: LibraryPage): LibraryPage {
+        val feed = page.shelves.firstOrNull { it.title == YtMusicRepository.PLAYLISTS_SHELF }?.items.orEmpty()
+        val feedIds = feed.mapNotNull { it.browseId }.toSet()
+        createdPlaylists.removeAll { it.browseId in feedIds }
+        deletedPlaylists.retainAll(feedIds)
+        renamedPlaylists.entries.removeAll { (id, title) ->
+            feed.any { it.browseId == id && it.title == title } ||
+                (id !in feedIds && createdPlaylists.none { it.browseId == id })
+        }
+        if (createdPlaylists.isEmpty() && renamedPlaylists.isEmpty() && deletedPlaylists.isEmpty()) return page
+        val created = createdPlaylists.map { item -> renamedPlaylists[item.browseId]?.let { item.copy(title = it) } ?: item }
+        val items = created + feed
+            .filter { it.browseId !in deletedPlaylists }
+            .map { item -> renamedPlaylists[item.browseId]?.let { item.copy(title = it) } ?: item }
+        val shelves = if (page.shelves.any { it.title == YtMusicRepository.PLAYLISTS_SHELF }) {
+            page.shelves.map { if (it.title == YtMusicRepository.PLAYLISTS_SHELF) it.copy(items = items) else it }
+        } else {
+            listOf(HomeShelf(YtMusicRepository.PLAYLISTS_SHELF, items)) + page.shelves
+        }
+        return page.copy(shelves = shelves)
     }
 
     /** Like, or take a like back, painted at once and put back if YouTube Music refuses it. */
@@ -365,6 +477,7 @@ internal object IosAccount {
     private fun listenerChanged() {
         likedSync?.cancel()
         LikeState.clear()
+        forgetPlaylistEdits()
         _generation.value++
         loadAccountData()
     }

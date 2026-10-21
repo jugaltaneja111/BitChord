@@ -21,6 +21,8 @@ internal sealed interface IosPage {
     data class Artist(val browseId: String, val name: String) : IosPage
     data class Category(val item: MoodGenre) : IosPage
     /** What the signed-in account has been listening to, most recent first. */
+    /** A Library shelf's Show all: every card on it, read live so an edit lands here too. */
+    data class LibraryShelf(val title: String) : IosPage
     data object History : IosPage
     data object Settings : IosPage
 }

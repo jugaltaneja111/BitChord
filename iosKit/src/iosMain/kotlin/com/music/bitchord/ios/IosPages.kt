@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +57,7 @@ import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.ArtistPage
 import com.music.bitchord.data.model.BrowseType
 import com.music.bitchord.data.model.HomeShelf
+import com.music.bitchord.ui.screens.LibraryGridPage
 import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.UiState
@@ -112,6 +114,7 @@ internal fun IosPageHost(
             is IosPage.Collection -> CollectionPage(page, contentPadding, topInset)
             is IosPage.Artist -> ArtistPageView(page, navigator, contentPadding, topInset)
             is IosPage.Category -> CategoryPage(page, navigator, contentPadding, topInset)
+            is IosPage.LibraryShelf -> LibraryShelfPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory)
         }
@@ -141,9 +144,15 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
         mutableStateOf<UiState<LoadedCollection>>(PageCache.get<LoadedCollection>(key)?.let { UiState.Success(it) } ?: UiState.Loading)
     }
     var loadingMore by remember(page.browseId) { mutableStateOf(false) }
-    LaunchedEffect(page.browseId, reloads) {
-        if (state is UiState.Success) return@LaunchedEffect
-        state = UiState.Loading
+    val type = page.fallback?.type?.takeIf { it != BrowseType.OTHER } ?: browseTypeOf(page.browseId)
+    // A playlist can change under its cached copy — from this app or any other — so it is read
+    // again on every visit and after every edit, the cached tracks showing meanwhile.
+    val playlistEdits by IosAccount.playlistEdits.collectAsState()
+    val edits = if (type == BrowseType.PLAYLIST) playlistEdits else 0
+    LaunchedEffect(page.browseId, reloads, edits) {
+        val shown = state is UiState.Success
+        if (shown && type != BrowseType.PLAYLIST) return@LaunchedEffect
+        if (!shown) state = UiState.Loading
         YtMusicRepository.browseSongs(page.browseId).fold(
             onSuccess = { loaded ->
                 val header = loaded.header
@@ -157,7 +166,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                 PageCache.put(key, collection)
                 state = UiState.Success(collection)
             },
-            onFailure = { state = UiState.Error(it.message ?: "Could not open this page") },
+            onFailure = { if (!shown) state = UiState.Error(it.message ?: "Could not open this page") },
         )
     }
     val listState = rememberLazyListState()
@@ -179,7 +188,6 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
         }
     }
 
-    val type = page.fallback?.type?.takeIf { it != BrowseType.OTHER } ?: browseTypeOf(page.browseId)
     val title = loaded?.title ?: page.fallback?.title.orEmpty()
     val songs = loaded?.songs.orEmpty().map { song ->
         song.copy(
@@ -596,4 +604,39 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
             }
         }
     }
+}
+
+/** A Library shelf laid out as a grid, its name beside the back button. */
+@Composable
+private fun LibraryShelfPage(page: IosPage.LibraryShelf, navigator: IosNavigator, contentPadding: PaddingValues, topInset: Dp) {
+    val state by IosAccount.library.collectAsState()
+    val shelf = (state as? UiState.Success)?.data?.shelves?.firstOrNull { it.title == page.title }
+        ?: HomeShelf(page.title, emptyList())
+    val isPlaylists = page.title == YtMusicRepository.PLAYLISTS_SHELF
+    LibraryGridPage(
+        shelf = shelf,
+        gridState = rememberLazyGridState(),
+        onItemClick = { navigator.openShelfItem(it, null) },
+        onItemLongPress = { IosMenus.openShelfItem(it) },
+        contentPadding = PaddingValues(top = topInset + 60.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp),
+        onNewPlaylist = if (isPlaylists) {
+            { IosMenus.newPlaylist = emptyList() }
+        } else {
+            null
+        },
+    )
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(topInset + 52.dp)
+            .background(Brush.verticalGradient(0.7f to Color.Black, 1f to Color.Transparent)),
+    )
+    Text(
+        page.title,
+        style = MaterialTheme.typography.titleLarge,
+        color = Color.White,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = topInset + 10.dp, start = 60.dp, end = 16.dp),
+    )
 }
