@@ -1258,7 +1258,9 @@ internal object IosListenTogether {
     }
 
     private const val TAG = "IosListenTogether"
-    private const val BUILT_IN_SERVER = "https://bitchord-listen-together.onrender.com"
+    // The server the released phone and desktop apps are built against (their LISTEN_TOGETHER_SERVER),
+    // not the source's placeholder: a party only reaches the devices that share its server.
+    private const val BUILT_IN_SERVER = "https://api.bitchord.kushagrasingh.in"
     private const val PLIST_SERVER_KEY = "BitChordListenTogetherServer"
     private const val PREFIX = "bitchord.party."
     private const val KEY_SERVER = "${PREFIX}server_url"
