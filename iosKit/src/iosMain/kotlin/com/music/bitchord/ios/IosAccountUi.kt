@@ -65,11 +65,12 @@ private val PillShape = RoundedCornerShape(50)
 private val PillColor = Color(0xFF1C1C1E).copy(alpha = 0.92f)
 
 /**
- * The phone's top-right pill: History, then the listener's photo (the account switcher), or a
- * Sign in button before there is anyone to switch between.
+ * The phone's top-right pill: History, then the listener's photo (the account switcher), or,
+ * before there is anyone to switch between, Settings — where signing in is one row among the rest,
+ * as on the phone, and everything else stays reachable signed out.
  */
 @Composable
-internal fun TopActions(onOpenHistory: () -> Unit, modifier: Modifier = Modifier) {
+internal fun TopActions(onOpenHistory: () -> Unit, onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
     val signedIn by IosAccount.signedIn.collectAsState()
     val account by IosAccount.account.collectAsState()
     Row(
@@ -93,7 +94,7 @@ internal fun TopActions(onOpenHistory: () -> Unit, modifier: Modifier = Modifier
             Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .clickable { if (signedIn) IosOverlays.switcher = true else IosOverlays.login = true },
+                .clickable { if (signedIn) IosOverlays.switcher = true else onOpenSettings() },
             contentAlignment = Alignment.Center,
         ) {
             val avatar = account?.thumbnailUrl
@@ -107,7 +108,7 @@ internal fun TopActions(onOpenHistory: () -> Unit, modifier: Modifier = Modifier
             } else {
                 Icon(
                     Icons.Rounded.Person,
-                    contentDescription = if (signedIn) "Switch account" else "Sign in",
+                    contentDescription = if (signedIn) "Switch account" else "Settings",
                     tint = Color.White,
                     modifier = Modifier.size(22.dp),
                 )

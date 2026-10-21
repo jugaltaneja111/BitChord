@@ -200,6 +200,7 @@ internal fun IosApp() {
             if (navigator.top == null && navigator.tab != IosTab.SEARCH) {
                 TopActions(
                     onOpenHistory = { navigator.open(IosPage.History) },
+                    onOpenSettings = { navigator.open(IosPage.Settings) },
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = statusBar + (TOP_BAR_HEIGHT - 46.dp) / 2, end = 16.dp),

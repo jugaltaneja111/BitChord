@@ -8,6 +8,7 @@ import com.music.bitchord.data.model.durationMillis
 import com.music.bitchord.ui.player.RepeatModes
 import com.music.bitchord.ios.party.IosListenTogether
 import com.music.bitchord.ios.party.IosPartyPlayer
+import com.music.bitchord.ios.party.IosPartyKeepAlive
 import com.music.bitchord.ios.party.IosPartySync
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
@@ -126,6 +127,10 @@ internal object IosPlayer {
             if (songs.isNotEmpty()) applying { _queue.value = songs; playAt(index.coerceIn(songs.indices), positionMs, startPlaying = false) }
         },
     )
+
+    init {
+        IosPartyKeepAlive.watch(scope, engine.isPlaying)
+    }
 
     /** A queue row held mid-drag: the party hears the move once it is let go. */
     fun queueDrag(active: Boolean) = if (active) partySync.beginQueueDrag() else partySync.endQueueDrag()

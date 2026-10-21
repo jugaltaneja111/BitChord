@@ -37,7 +37,9 @@ signs in on its own page, its token caught in a hidden web view, with `SpotifyLi
 commonMain too). Credentials live in the Keychain. Listen Together is the desktop's port (iosKit/…/party): the same
 server protocol, clock sync and reconcile rules, with the player's user actions reported as
 intents and the sync's own commands kept apart; crossfade and the music-only swap are off in a
-party, and `bitchord://party/CODE` opens an invite. Animated covers ask the phone's four sources
+party, and `bitchord://party/CODE` opens an invite. iOS suspends a backgrounded app that isn't
+playing, which would let the server reap the party, so a silent loop holds the app awake while it
+is in a party and paused (`IosPartyKeepAlive`). Animated covers ask the phone's four sources
 (iosKit/…/canvas) and loop muted in an AVPlayerLayer. Backups are the phone's file format, so
 the Replay moves between the two apps. Not yet: Automix and skip silence (both need
 the track analysed ahead), quality choices (iOS only plays YouTube's AAC until Sources), lyrics
