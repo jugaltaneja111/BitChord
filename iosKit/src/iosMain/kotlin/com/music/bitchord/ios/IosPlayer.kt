@@ -342,23 +342,36 @@ internal object IosPlayer {
         prepareJob?.cancel()
         preparing = song.videoId
         prepareJob = scope.launch {
+            // What this job is readying: the queued track, or its audio release once swapped in.
+            var readying = song.videoId
             try {
                 IosDownloads.audioPath(song.videoId)?.let { path ->
                     val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
                     engine.prepareNext(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
                     return@launch
                 }
-                val stream = InnerTubeXResolver.extract(song.videoId, maxKbps = 320, requireM4a = true) ?: return@launch
+                val audio = musicOnly(song)
+                if (audio.videoId != song.videoId) {
+                    val at = upcomingIndex()?.takeIf { _queue.value.getOrNull(it)?.videoId == song.videoId } ?: return@launch
+                    _queue.value = _queue.value.toMutableList().also { it[at] = audio }
+                    preparing = audio.videoId
+                    readying = audio.videoId
+                    IosDownloads.audioPath(audio.videoId)?.let { path ->
+                        engine.prepareNext(path, emptyMap(), null, audio.videoId, trackLength(null, audio))
+                        return@launch
+                    }
+                }
+                val stream = InnerTubeXResolver.extract(audio.videoId, maxKbps = 320, requireM4a = true) ?: return@launch
                 // The queue may have moved on while that resolved.
-                if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != song.videoId) return@launch
-                TrackLog.i(TAG, "${song.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, song.videoId, trackLength(stream.url, song))
+                if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
+                TrackLog.i(TAG, "${audio.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
+                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 TrackLog.w(TAG, "${song.videoId}: could not ready: ${e.message}")
             } finally {
-                if (preparing == song.videoId) preparing = null
+                if (preparing == readying) preparing = null
             }
         }
     }
@@ -444,14 +457,28 @@ internal object IosPlayer {
                     engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
                     return@launch
                 }
+                val audio = musicOnly(song)
+                if (audio.videoId != song.videoId) {
+                    // The video's details stood in while its audio release was found; now the
+                    // queue and the player name the track that is actually heard.
+                    if (_queue.value.getOrNull(index)?.videoId == song.videoId) {
+                        _queue.value = _queue.value.toMutableList().also { it[index] = audio }
+                    }
+                    playedThisSession += audio.videoId
+                    _song.value = audio
+                    IosDownloads.audioPath(audio.videoId)?.let { path ->
+                        engine.load(path, emptyMap(), null, audio.videoId, trackLength(null, audio))
+                        return@launch
+                    }
+                }
                 // AAC in MP4: AVFoundation cannot play the Opus/WebM streams the phone prefers.
-                val stream = InnerTubeXResolver.extract(song.videoId, maxKbps = 320, requireM4a = true)
+                val stream = InnerTubeXResolver.extract(audio.videoId, maxKbps = 320, requireM4a = true)
                 if (stream == null) {
                     fail("No playable stream for this track")
                     return@launch
                 }
-                TrackLog.i(TAG, "${song.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                engine.load(stream.url, stream.headers, stream.loudnessDb, song.videoId, trackLength(stream.url, song))
+                TrackLog.i(TAG, "${audio.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
+                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -460,6 +487,21 @@ internal object IosPlayer {
                 _resolving.value = false
             }
         }
+    }
+
+    /**
+     * "Prefer music-only version": a music video's catalogue audio release, carrying the video's
+     * place in the queue; the video itself when the setting is off or nothing matches.
+     */
+    private suspend fun musicOnly(song: Song): Song {
+        if (!IosSettings.preferMusicOnly.flow.value || !song.isVideo) return song
+        val match = runCatching { YtMusicRepository.resolveAudio(song) }.getOrDefault(song)
+        if (match.videoId == song.videoId) return song
+        return match.copy(
+            playbackSource = song.playbackSource,
+            playbackSourceType = song.playbackSourceType,
+            playbackSourceId = song.playbackSourceId,
+        )
     }
 
     /**

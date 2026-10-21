@@ -26,6 +26,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -254,6 +256,10 @@ internal object IosDownloads {
 
     private suspend fun drain() {
         while (true) {
+            // "Download over Wi-Fi only": the queue waits, as the phone's does, until there is Wi-Fi
+            // or the setting is switched off.
+            combine(IosSettings.downloadWifiOnly.flow, IosNetwork.metered) { wifiOnly, metered -> !wifiOnly || metered == false }
+                .first { it }
             val song = waiting.removeFirstOrNull() ?: break
             current = song.videoId
             try {

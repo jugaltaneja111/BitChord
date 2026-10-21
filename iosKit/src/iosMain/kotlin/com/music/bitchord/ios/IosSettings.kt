@@ -175,6 +175,9 @@ internal object IosSettings {
 
     /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
+    val downloadWifiOnly = BoolPref("${PREFIX}download_wifi_only", false)
+    /** For a music video, play the catalogue's audio release in its place. */
+    val preferMusicOnly = BoolPref("${PREFIX}prefer_music_only", false)
 
     /** Spotify's `sp_dc` session cookie, as the phone keeps it; blank when not connected. */
     val spotifySpdc = SecretPref("spotify_sp_dc")
@@ -351,7 +354,13 @@ internal fun SettingsPage(
                     onClick = onOpenDownloads,
                 )
                 Divider()
-                Soon("Download over Wi-Fi only")
+                val wifiOnly by IosSettings.downloadWifiOnly.flow.collectAsState()
+                val metered by IosNetwork.metered.collectAsState()
+                Toggle(
+                    "Download over Wi-Fi only",
+                    if (wifiOnly && metered == true) "Blocking: downloads wait for Wi-Fi" else "Downloads wait for Wi-Fi instead of using mobile data",
+                    IosSettings.downloadWifiOnly,
+                )
                 if (downloaded.isNotEmpty()) {
                     Divider()
                     ActionRow(if (confirmDelete) "Tap again to delete every download" else "Delete all downloads", destructive = true) {
@@ -370,7 +379,7 @@ internal fun SettingsPage(
             Group("Playback") {
                 Toggle("Autoplay", "Keep playing similar songs when the queue ends", IosSettings.autoplay)
                 Divider()
-                Soon("Prefer music-only version")
+                Toggle("Prefer music-only version", "For music videos, show the video details while finding and loading the catalogue audio version", IosSettings.preferMusicOnly)
                 Divider()
                 Toggle("Loudness normalization", "Levels every track to the same loudness", IosSettings.loudnessNormalization)
                 Divider()

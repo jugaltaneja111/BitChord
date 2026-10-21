@@ -46,6 +46,7 @@ private fun start() {
     IosArtistFacts.start()
     IosSpotify.install()
     IosDiscord.start()
+    IosNetwork.start()
     startAutoplayIfAsked()
 }
 
