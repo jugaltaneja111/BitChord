@@ -16,6 +16,8 @@ import com.music.bitchord.data.sources.StreamFormat
 internal data class SourceStream(
     val url: String,
     val format: StreamFormat = StreamFormat(),
+    /** A DASH manifest rather than a file: AVPlayer can't open one, so the FFmpeg player does. */
+    val dash: Boolean = false,
     val headers: Map<String, String> = emptyMap(),
     /**
      * Whether this is less than was asked for, taken because nothing better

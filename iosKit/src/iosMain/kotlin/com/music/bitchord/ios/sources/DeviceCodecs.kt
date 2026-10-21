@@ -28,14 +28,13 @@ import platform.AVFAudio.currentRoute
  * [SourceResolver] step to the next candidate, the next source, and finally to
  * YouTube without the listener hearing anything go wrong.
  *
- * ### What AVPlayer plays
+ * ### What plays
  *
- * AAC and HE-AAC (in MP4/M4A, or ADTS), ALAC, FLAC, MP3, WAV and AIFF, and
- * E-AC-3 including the JOC extension that carries Atmos, in MP4 or HLS. It does
- * not play Opus or Vorbis in any container, nor WebM or Ogg at all, nor APE,
- * WavPack or DSD. It also cannot open a DASH manifest — which is a transport,
- * not a codec, and is refused separately in [AddonSource] — so a Tidal Hi-Res
- * FLAC that an addon serves as DASH is not something this phone can be given.
+ * AVPlayer: AAC and HE-AAC (in MP4/M4A, or ADTS), ALAC, FLAC, MP3, WAV and
+ * AIFF, and E-AC-3 including the JOC extension that carries Atmos, in MP4 or
+ * HLS. The FFmpeg player (iosKit/…/ffmpeg) takes what AVPlayer doesn't: Opus
+ * and Vorbis, WebM and Ogg, and DASH manifests (marked by [AddonSource], not
+ * refused). What neither decodes — APE, WavPack, DSD — is refused here.
  */
 internal object DeviceCodecs {
 
@@ -64,7 +63,7 @@ internal object DeviceCodecs {
     fun decodes(format: StreamFormat): Boolean {
         val codec = format.codec?.lowercase() ?: return true
         if (codec in UNDECODABLE) return false
-        if (codec in DECODABLE) return true
+        if (codec in DECODABLE || codec in FFMPEG) return true
         // A spelling nobody listed. Recognisable Opus/Vorbis/WebM in a longer
         // string ("audio/webm; codecs=opus") is still a no; anything else is
         // given the benefit of the doubt, like a null.
@@ -81,10 +80,11 @@ internal object DeviceCodecs {
         "eac3", "ec3", "eac3-joc", "ec3-joc", "dolby-atmos",
     )
 
-    /** What it does not, by name. */
-    private val UNDECODABLE = setOf(
-        "opus", "vorbis", "ogg", "oga", "webm", "ape", "wv", "dsf", "dff", "mka",
-    )
+    /** What the FFmpeg player decodes and AVPlayer doesn't. */
+    private val FFMPEG = setOf("opus", "vorbis", "ogg", "oga", "webm", "mka")
+
+    /** What neither player decodes, by name. */
+    private val UNDECODABLE = setOf("ape", "wv", "wavpack", "dsf", "dff", "dsd")
 }
 
 /**

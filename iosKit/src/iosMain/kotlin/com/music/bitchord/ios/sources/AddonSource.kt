@@ -314,13 +314,12 @@ internal class AddonSource(
      *  - **Encrypted.** The spec forbids an addon sending a protected rendition
      *    unless the request asked for one, and this app never does. Handing the
      *    player bytes it has no key for fails later and less clearly.
-     *  - **DASH.** AVPlayer has no DASH parser — HLS is its only manifest — so a
-     *    stream the addon declares as DASH (Tidal's Hi-Res, through the
-     *    reference addon) is one it would fail as an unopenable file. The phone
-     *    plays these through `DashMediaSource`; here there is no such thing, and
-     *    refusing lets the next row or source be heard.
+     *  - **DASH** is not refused but marked: AVPlayer has no DASH parser, so a
+     *    stream the addon declares as one (Tidal's Hi-Res, through the reference
+     *    addon) is played by the FFmpeg player, which reads the manifest itself —
+     *    the phone's `DashMediaSource`.
      *  - **Undecodable, or immersive when switched off.** [StreamChecks.unplayable]:
-     *    an Opus or Vorbis answer AVPlayer cannot decode, or an Atmos rendition
+     *    an APE, WavPack or DSD answer no player here decodes, or an Atmos rendition
      *    the listener has not asked for. Either is routinely the *only* one
      *    offered for a track, so there is no lower sibling to fall back to and
      *    refusing is what lets another source be heard.
@@ -337,21 +336,14 @@ internal class AddonSource(
             )
             return null
         }
-        if (answer.transport == AddonStream.DASH || url.substringBefore('?').endsWith(".mpd", ignoreCase = true)) {
-            TrackLog.w(
-                TAG,
-                "${config.displayName}: answered a $tier request for $trackId with a DASH manifest, " +
-                    "which AVPlayer cannot open — passing",
-            )
-            return null
-        }
+        val dash = answer.transport == AddonStream.DASH || url.substringBefore('?').endsWith(".mpd", ignoreCase = true)
 
         val format = formatOf(answer, url, tier)
         if (StreamChecks.unplayable(format, atmosAllowed = SourcePrefs.atmosWanted)) {
             val why = if (format.isDolbyAtmos) {
                 "which is switched off in Settings"
             } else {
-                "which AVPlayer has no decoder for"
+                "which no player here has a decoder for"
             }
             TrackLog.w(TAG, "${config.displayName}: answered a $tier request with ${format.summary}, $why — passing")
             return null
@@ -360,6 +352,7 @@ internal class AddonSource(
         return SourceStream(
             url = url,
             format = format,
+            dash = dash,
             durationSec = row(trackId)?.durationSec,
         )
     }

@@ -158,6 +158,11 @@ jobs:
 
       - run: chmod +x gradlew
 
+      # FFmpegBuild's prebuilt frameworks (Opus, Vorbis and DASH playback), for the app to embed;
+      # the Kotlin side loads them at runtime, so the Linux job needs none of it.
+      - name: Fetch FFmpeg
+        run: bash scripts/fetch-ffmpeg.sh
+
       - name: Generate the Xcode project
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen

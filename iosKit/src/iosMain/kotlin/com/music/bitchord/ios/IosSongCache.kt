@@ -90,6 +90,8 @@ internal object IosSongCache {
     /** What the cache holds on disk now, for the Settings row. */
     val bytes: StateFlow<Long> = _bytes.asStateFlow()
 
+    /** Kept as `.webm`, so the engine hands the copy to the FFmpeg player by its name. */
+    private val webmIds = mutableSetOf<String>()
     private val waiting = ArrayDeque<Triple<String, String, Pair<Map<String, String>, Double?>>>()
     private var worker: Job? = null
 
@@ -126,11 +128,12 @@ internal object IosSongCache {
      * A track has started from the network: keep a copy, unless the cache is off, it is already
      * kept, it is a download, or this is mobile data.
      */
-    fun remember(videoId: String, url: String, headers: Map<String, String>, loudnessDb: Double?) {
+    fun remember(videoId: String, url: String, headers: Map<String, String>, loudnessDb: Double?, webm: Boolean = false) {
         if (limitBytes == 0L || IosNetwork.metered.value == true) return
         if (entries.any { it.videoId == videoId } || IosDownloads.isDownloaded(videoId)) return
         if (waiting.any { it.first == videoId }) return
         waiting.addLast(Triple(videoId, url, headers to loudnessDb))
+        if (webm) webmIds += videoId
         // A skip-happy listener queues more than is worth fetching; only the latest few are.
         while (waiting.size > 3) waiting.removeFirst()
         if (worker?.isActive != true) worker = scope.launch { drain() }
@@ -143,7 +146,7 @@ internal object IosSongCache {
             val part = "$dir/$videoId.part"
             try {
                 val size = fetch(url, rest.first, part)
-                val file = "$videoId.m4a"
+                val file = if (webmIds.remove(videoId)) "$videoId.webm" else "$videoId.m4a"
                 files.removeItemAtPath("$dir/$file", null)
                 files.moveItemAtPath(part, "$dir/$file", null)
                 publish(listOf(Entry(videoId, file, size, wallClockMs(), rest.second)) + entries.filterNot { it.videoId == videoId })

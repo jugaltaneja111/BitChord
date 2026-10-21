@@ -235,6 +235,11 @@ internal object IosSettings {
 
     /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
+    /**
+     * YouTube's Opus (about 160 kbps, through the FFmpeg player) over its 128 kbps AAC. Off until
+     * the FFmpeg path has been heard on a phone; AAC is what every YouTube track played before it.
+     */
+    val youtubeOpus = BoolPref("${PREFIX}youtube_opus", false)
     /** The phone's per-connection ceilings, by name; Lossless by default, as there. */
     val audioQualityWifi = StringPref("${PREFIX}audio_quality_wifi", AudioQuality.LOSSLESS.name)
     val audioQualityCellular = StringPref("${PREFIX}audio_quality_cellular", AudioQuality.LOSSLESS.name)
@@ -429,6 +434,12 @@ internal fun SettingsPage(
                 QualityRow("On Wi-Fi", IosSettings.audioQualityWifi)
                 Divider()
                 QualityRow("On mobile data", IosSettings.audioQualityCellular)
+                Divider()
+                Toggle(
+                    "YouTube in Opus",
+                    "About 160 kbps instead of 128 kbps AAC, decoded with FFmpeg; a track that won’t play falls back to AAC",
+                    IosSettings.youtubeOpus,
+                )
             }
         }
         item {

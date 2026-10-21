@@ -178,6 +178,7 @@ internal object IosSources {
             url = stream.url,
             headers = stream.headers,
             format = stream.format,
+            dash = stream.dash,
             sourceName = source.displayName,
             durationMs = stream.durationSec?.let { it * 1000L },
         )
@@ -191,6 +192,8 @@ internal data class ResolvedStream(
     val url: String,
     val headers: Map<String, String>,
     val format: StreamFormat,
+    /** A DASH manifest; see [SourceStream.dash]. */
+    val dash: Boolean = false,
     val sourceName: String,      // display name of the source that served it, for "stats for nerds"
     val durationMs: Long?,
 )

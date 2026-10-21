@@ -55,6 +55,22 @@ targets:
         OTHER_LDFLAGS: [$(inherited), -framework, BitChordKit]
         # The Gradle build reads and writes outside the sandboxed script inputs.
         ENABLE_USER_SCRIPT_SANDBOXING: false
+    # FFmpegBuild's decoders for what AVPlayer can't play (scripts/fetch-ffmpeg.sh fetches them);
+    # dynamic frameworks, so they are embedded beside the app.
+    dependencies:
+      - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibavcodec.xcframework
+        embed: true
+      - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibavformat.xcframework
+        embed: true
+      - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibavutil.xcframework
+        embed: true
+      - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibswresample.xcframework
+        embed: true
+      # Not called by the app, but libavcodec loads them, so they have to be there.
+      - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibdav1d.xcframework
+        embed: true
+      - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibzvbi.xcframework
+        embed: true
     preBuildScripts:
       - name: Build the Kotlin framework
         basedOnDependencyAnalysis: false

@@ -47,8 +47,12 @@ Caches; AVPlayer shares nothing it streamed, so a played track is fetched again 
 off mobile data only. Album pages loop the animated cover, and artist pages Apple Music's artist
 clip (`AppleArtistVideo`). Sources (iosKit/…/sources) are the phone's add-ons, JioSaavn and
 YouTube, resolved under the On Wi-Fi / On mobile data ceilings; a substitute for a YouTube track
-races YouTube's own stream for six seconds. Streams AVPlayer can't open (Opus, Vorbis, DASH) are
-passed over, the legacy JS modules are not ported, and Dolby Atmos is off by default. Stats for
+races YouTube's own stream for six seconds. Streams AVPlayer can't open (Opus, Vorbis, WebM, Ogg, DASH)
+go to a second player (iosKit/…/ffmpeg): FFmpegBuild 3.9.0's prebuilt frameworks, fetched by
+`scripts/fetch-ffmpeg.sh` and embedded by the app, loaded with dlopen (cinterop would stop the
+Linux job cross-compiling iOS), decoding into AVAudioEngine through the same TapDsp; a track it
+fails is retried on YouTube's AAC. YouTube's own Opus is behind a switch, off by default. APE,
+WavPack and DSD are still passed over, the legacy JS modules are not ported, and Dolby Atmos is off by default. Stats for
 nerds read the decoded format off the AVPlayerItem's track. Not yet: Automix and skip silence (both need the track analysed ahead), local playlists for imports when
 signed out, https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting

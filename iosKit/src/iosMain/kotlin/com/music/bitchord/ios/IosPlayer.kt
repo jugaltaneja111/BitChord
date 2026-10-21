@@ -51,6 +51,7 @@ import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 internal object IosPlayer {
     private const val TAG = "IosPlayer"
     private const val SUBSTITUTE_WAIT_MS = 6_000L
+    private const val LOW_KBPS = 64
 
     /** How long before a track ends the next one is fetched into the waiting player. */
     private const val PREPARE_AHEAD_MS = 30_000L
@@ -59,7 +60,30 @@ internal object IosPlayer {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loadJob: Job? = null
 
-    private val engine = IosAudioEngine(onEnded = ::onEnded, onFailed = ::fail)
+    private val engine = IosAudioEngine(onEnded = ::onEnded, onFailed = ::engineFailed)
+
+    /** Tracks whose stream the FFmpeg player could not play this session: YouTube's AAC for them. */
+    private val avPlayerOnly = mutableSetOf<String>()
+
+    /**
+     * A track that failed in the FFmpeg player is played again from YouTube's AAC, where it has
+     * one, from where it stopped — the phone's last-rung YouTube fallback, for a path this app
+     * has only just grown. Anything else, or a second failure, is a failure.
+     */
+    private fun engineFailed(message: String) {
+        val song = _song.value
+        val key = song?.videoId
+        if (key != null && servedByFfmpeg[key] == true && key !in avPlayerOnly) {
+            TrackLog.w(TAG, "$key: FFmpeg could not play it ($message); trying YouTube's AAC")
+            avPlayerOnly += key
+            playAt(_index.value, startMs = engine.position.positionMs, startPlaying = true)
+            return
+        }
+        fail(message)
+    }
+
+    /** Which tracks the FFmpeg player is holding, for [engineFailed]. */
+    private val servedByFfmpeg = HashMap<String, Boolean>()
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
@@ -557,8 +581,9 @@ internal object IosPlayer {
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
                 TrackLog.i(TAG, "${audio.videoId}: readied from ${stream.source}, ${stream.kbps} kbps")
                 servedBy[audio.videoId] = stream.source to stream.kbps
-                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs)
-                if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
+                servedByFfmpeg[audio.videoId] = stream.route.ffmpeg
+                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, stream.route)
+                if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -681,8 +706,9 @@ internal object IosPlayer {
                 }
                 TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.kbps} kbps")
                 servedBy[audio.videoId] = stream.source to stream.kbps
-                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, startPlaying)
-                if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
+                servedByFfmpeg[audio.videoId] = stream.route.ffmpeg
+                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, startPlaying, stream.route)
+                if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -718,6 +744,8 @@ internal object IosPlayer {
         val source: String,
         val kbps: Int?,
         val fromYouTube: Boolean,
+        /** Which player opens it: FFmpeg for Opus, Vorbis, WebM, Ogg and DASH. */
+        val route: IosAudioEngine.Route,
     )
 
     /**
@@ -735,9 +763,9 @@ internal object IosPlayer {
         if (IosSources.isSourceTrack(audio)) {
             IosSources.resolve(audio, request)?.let { return@coroutineScope it.picked(audio) }
             val id = IosSources.youtubeFallback(audio) ?: return@coroutineScope null
-            return@coroutineScope youtube(id, audio, cap)
+            return@coroutineScope youtube(id, audio, cap, opusAllowed(request, audio.videoId))
         }
-        val fromYouTube = async { youtube(audio.videoId, audio, cap) }
+        val fromYouTube = async { youtube(audio.videoId, audio, cap, opusAllowed(request, audio.videoId)) }
         if (!audio.isVideo && IosSources.canSubstituteForYouTube(request)) {
             val substitute = kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_WAIT_MS) {
                 runCatching { IosSources.substituteForYouTube(audio, request) }.getOrNull()
@@ -750,8 +778,32 @@ internal object IosPlayer {
         fromYouTube.await()
     }
 
-    /** YouTube's AAC in MP4 — AVFoundation can't play the Opus/WebM the phone prefers. */
-    private suspend fun youtube(videoId: String, song: Song, capKbps: Int): Picked? {
+    /**
+     * Whether YouTube may be asked for its best rendition — Opus at about 160 kbps, which the
+     * FFmpeg player plays — rather than the 128 kbps AAC AVPlayer can: above Low, with the
+     * setting on, and not for a track whose Opus already failed this session.
+     */
+    private fun opusAllowed(request: StreamRequest, key: String): Boolean =
+        IosSettings.youtubeOpus.flow.value && key !in avPlayerOnly &&
+            !(request is StreamRequest.Capped && request.maxKbps <= LOW_KBPS)
+
+    /** YouTube's stream: its best (usually Opus in WebM) when [opus], else AAC in MP4. */
+    private suspend fun youtube(videoId: String, song: Song, capKbps: Int, opus: Boolean = false): Picked? {
+        if (opus) {
+            val best = runCatching { InnerTubeXResolver.extract(videoId, maxKbps = 320) }.getOrNull()
+            if (best != null) {
+                return Picked(
+                    url = best.url,
+                    headers = best.headers,
+                    loudnessDb = best.loudnessDb,
+                    durationMs = trackLength(best.url, song),
+                    source = "YouTube",
+                    kbps = best.kbps.takeIf { it > 0 },
+                    fromYouTube = true,
+                    route = IosAudioEngine.Route.of(best.url, best.mimeType),
+                )
+            }
+        }
         val stream = InnerTubeXResolver.extract(videoId, maxKbps = capKbps, requireM4a = true)
             // Low asks for less than most tracks have in AAC; the smallest there is beats nothing.
             ?: (if (capKbps < 320) InnerTubeXResolver.extract(videoId, maxKbps = 320, requireM4a = true) else null)
@@ -764,6 +816,7 @@ internal object IosPlayer {
             source = "YouTube",
             kbps = stream.kbps.takeIf { it > 0 },
             fromYouTube = true,
+            route = IosAudioEngine.Route.AVPLAYER,
         )
     }
 
@@ -775,6 +828,7 @@ internal object IosPlayer {
         source = sourceName,
         kbps = format.kbps,
         fromYouTube = false,
+        route = if (dash) IosAudioEngine.Route(ffmpeg = true, dash = true) else IosAudioEngine.Route.of(url, format.codec),
     )
 
     /**

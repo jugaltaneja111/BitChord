@@ -12,6 +12,7 @@ import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
 import kotlinx.cinterop.reinterpret
 import platform.CoreFoundation.CFRelease
 import platform.Foundation.CFBridgingRetain
+import com.music.bitchord.ios.ffmpeg.IosFfmpegPlayer
 import com.music.bitchord.playback.PlaybackPosition
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
@@ -84,6 +85,8 @@ internal class IosAudioEngine(
         /** The crossfade's share of this deck's volume. */
         var fade = 1f
         val observers = mutableListOf<NSObjectProtocol>()
+        /** The FFmpeg player holding this deck's track instead of [player], for what AVPlayer can't open. */
+        var ff: IosFfmpegPlayer? = null
 
         init {
             player.addPeriodicTimeObserverForInterval(CMTimeMakeWithSeconds(0.25, 600), queue = null) { time ->
@@ -91,7 +94,27 @@ internal class IosAudioEngine(
             }
         }
 
-        fun hold(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String?, durationMs: Long): Boolean {
+        fun hold(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String?, durationMs: Long, route: Route): Boolean {
+            if (route.ffmpeg) {
+                clearObservers()
+                releaseFfmpeg()
+                player.pause()
+                player.replaceCurrentItemWithPlayerItem(null)
+                item = null
+                val dsp = TapDsp()
+                this.dsp = dsp
+                this.loudnessDb = loudnessDb
+                this.key = key
+                knownDurationMs = durationMs
+                ff = IosFfmpegPlayer(
+                    dsp = dsp,
+                    onEnded = { if (this === active) onEnded() },
+                    onFailed = { message -> if (this === active) onFailed(message) },
+                ).also { it.open(url, headers, dash = route.dash) }
+                applyGain()
+                return true
+            }
+            releaseFfmpeg()
             val nsUrl = (if (url.startsWith("/")) NSURL.fileURLWithPath(url) else NSURL.URLWithString(url))
                 ?: return false
             // AVURLAssetHTTPHeaderFieldsKey: long-standing, if undocumented, and what every
@@ -117,7 +140,24 @@ internal class IosAudioEngine(
             val dsp = dsp
             dsp?.targetGain = gain
             val levelled = if (dsp?.attached == true) 1f else min(gain, 1f)
-            player.setVolume(fade * levelled)
+            ff?.let { it.volume = fade * levelled } ?: player.setVolume(fade * levelled)
+        }
+
+        fun play() = ff?.play() ?: player.play()
+
+        fun pause() = ff?.pause() ?: player.pause()
+
+        fun seekTo(positionMs: Long) {
+            ff?.seekTo(positionMs) ?: player.seekToTime(CMTimeMakeWithSeconds(positionMs / 1000.0, 1000))
+        }
+
+        /** The playhead in seconds, NaN when there is none yet. */
+        val seconds: Double
+            get() = ff?.let { it.positionMs / 1000.0 } ?: CMTimeGetSeconds(player.currentTime())
+
+        fun releaseFfmpeg() {
+            ff?.release()
+            ff = null
         }
 
         /** Ends and starts are reported only for the deck being heard. */
@@ -133,10 +173,14 @@ internal class IosAudioEngine(
             ) { _ -> if (this === active) onFailed(item.error?.localizedDescription ?: "playback failed") }
         }
 
-        fun failed(): Boolean = item?.status == AVPlayerItemStatusFailed
+        fun failed(): Boolean = ff?.failure != null || item?.status == AVPlayerItemStatusFailed
+
+        /** Whether this deck has a track at all, on either player. */
+        val holding: Boolean get() = ff != null || item != null
 
         fun clear() {
             clearObservers()
+            releaseFfmpeg()
             player.pause()
             player.replaceCurrentItemWithPlayerItem(null)
             item = null
@@ -169,6 +213,11 @@ internal class IosAudioEngine(
     )
 
     fun decodedFormat(): DecodedFormat? {
+        active.ff?.let { ff ->
+            if (!ff.isReady) return null
+            val info = ff.format ?: return null
+            return DecodedFormat(info.mimeType, info.sampleRateHz, info.channels, info.bitDepth, info.kbps, active.key)
+        }
         val item = active.item ?: return null
         if (item.status != AVPlayerItemStatusReadyToPlay) return null
         val track = item.tracks.mapNotNull { (it as? AVPlayerItemTrack)?.assetTrack }
@@ -248,6 +297,13 @@ internal class IosAudioEngine(
                 refreshGains()
             }
         }
+        // An FFmpeg deck has no periodic time observer; this is its clock, at the same rate.
+        scope.launch {
+            while (true) {
+                delay(250)
+                active.ff?.let { tickFfmpeg(it) }
+            }
+        }
     }
 
     /**
@@ -264,24 +320,33 @@ internal class IosAudioEngine(
         startMs: Long = 0L,
         /** False loads it paused, for a party that starts it on its own schedule. */
         startPlaying: Boolean = true,
+        /** Which player opens it; see [Route]. */
+        route: Route = Route.of(url),
     ) {
         finishFade()
-        if (!active.hold(url, headers, loudnessDb, key, durationMs)) return onFailed("bad stream URL")
+        if (!active.hold(url, headers, loudnessDb, key, durationMs, route)) return onFailed("bad stream URL")
         active.listen()
         AVAudioSession.sharedInstance().setActive(true, error = null)
         _durationMs.value = 0L
-        if (startMs > 0L) active.player.seekToTime(CMTimeMakeWithSeconds(startMs / 1000.0, 1000))
+        if (startMs > 0L) active.seekTo(startMs)
         position.report(startMs)
         position.seeks++
         if (startPlaying) play() else _isPlaying.value = false
     }
 
     /** Hands the waiting player the next track, paused and silent, so it is ready when wanted. */
-    fun prepareNext(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String, durationMs: Long = 0L) {
+    fun prepareNext(
+        url: String,
+        headers: Map<String, String>,
+        loudnessDb: Double?,
+        key: String,
+        durationMs: Long = 0L,
+        route: Route = Route.of(url),
+    ) {
         if (spare === outgoing) finishFade()
         spare.fade = 0f
-        if (!spare.hold(url, headers, loudnessDb, key, durationMs)) spare.clear()
-        spare.player.pause()
+        if (!spare.hold(url, headers, loudnessDb, key, durationMs, route)) spare.clear()
+        spare.pause()
     }
 
     /** Whether a crossfade is under way; the waiting player is the one fading out until it ends. */
@@ -289,7 +354,7 @@ internal class IosAudioEngine(
 
     /** Whether the waiting player holds [key] and has not failed to load it. */
     fun preparedFor(key: String): Boolean =
-        !isBlending && spare.key == key && spare.item != null && !spare.failed()
+        !isBlending && spare.key == key && spare.holding && !spare.failed()
 
     /** What the waiting player holds, prepared or still loading. */
     val preparedKey: String? get() = if (isBlending) null else spare.key
@@ -358,21 +423,21 @@ internal class IosAudioEngine(
     }
 
     fun play() {
-        active.player.play()
-        outgoing?.player?.play()
+        active.play()
+        outgoing?.play()
         _isPlaying.value = true
     }
 
     fun pause() {
-        active.player.pause()
-        outgoing?.player?.pause()
+        active.pause()
+        outgoing?.pause()
         _isPlaying.value = false
-        tick(CMTimeGetSeconds(active.player.currentTime()))
+        tick(active.seconds)
     }
 
     fun seekTo(positionMs: Long) {
         finishFade()
-        active.player.seekToTime(CMTimeMakeWithSeconds(positionMs / 1000.0, 1000))
+        active.seekTo(positionMs)
         position.report(positionMs)
         position.seeks++
     }
@@ -391,6 +456,10 @@ internal class IosAudioEngine(
     }
 
     private fun tick(seconds: Double) {
+        active.ff?.let { ff ->
+            tickFfmpeg(ff)
+            return
+        }
         val item = active.player.currentItem ?: return
         if (item.status == AVPlayerItemStatusFailed) {
             onFailed(item.error?.localizedDescription ?: "playback failed")
@@ -412,6 +481,41 @@ internal class IosAudioEngine(
         _isBuffering.value = _isPlaying.value && waiting
         position.advancing = player.timeControlStatus == AVPlayerTimeControlStatusPlaying
         if (!seconds.isNaN()) position.report((seconds * 1000).toLong())
+    }
+
+    /** The FFmpeg deck's counterpart of [tick]; it has no time observer of its own, so it is polled. */
+    private fun tickFfmpeg(ff: IosFfmpegPlayer) {
+        if (ff.failure != null) return
+        val known = active.knownDurationMs
+        _durationMs.value = if (known > 0L) known else ff.durationMs
+        _isBuffering.value = _isPlaying.value && (ff.isBuffering || !ff.isReady)
+        position.advancing = ff.isPlaying
+        position.report(ff.positionMs)
+    }
+
+    /**
+     * Which player opens a stream. AVPlayer for everything it can — it is the one the lock screen,
+     * AirPlay and the equaliser tap were built around — and FFmpeg for the rest: Opus and Vorbis,
+     * WebM and Ogg, and DASH manifests, which AVPlayer has no parser for.
+     */
+    data class Route(val ffmpeg: Boolean, val dash: Boolean = false) {
+        companion object {
+            val AVPLAYER = Route(ffmpeg = false)
+
+            /** By what the URL or file name says: a local `.webm`, a `.mpd`, a googlevideo `mime=audio/webm`. */
+            fun of(url: String, mimeType: String? = null): Route {
+                val path = url.substringBefore('?').lowercase()
+                val mime = mimeType?.lowercase().orEmpty()
+                val dash = path.endsWith(".mpd") || "dash" in mime
+                val foreign = dash || FFMPEG_EXTENSIONS.any { path.endsWith(".$it") } ||
+                    FFMPEG_CODECS.any { it in mime } ||
+                    Regex("[?&]mime=audio%2F(webm|ogg)", RegexOption.IGNORE_CASE).containsMatchIn(url)
+                return Route(ffmpeg = foreign, dash = dash)
+            }
+
+            private val FFMPEG_EXTENSIONS = listOf("webm", "weba", "opus", "ogg", "oga", "mka", "mpd")
+            private val FFMPEG_CODECS = listOf("opus", "vorbis", "webm", "ogg")
+        }
     }
 
     private companion object {

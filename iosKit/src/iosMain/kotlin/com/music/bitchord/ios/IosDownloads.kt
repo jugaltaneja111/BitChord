@@ -329,6 +329,8 @@ internal object IosDownloads {
         val extension = when {
             stream.mimeType.endsWith("flac") -> "flac"
             stream.mimeType.endsWith("mpeg") || stream.mimeType.endsWith("mp3") -> "mp3"
+            // Opus and Vorbis go to the FFmpeg player, which the engine picks by this name.
+            listOf("opus", "vorbis", "ogg", "webm").any { it in stream.mimeType } -> "webm"
             else -> "m4a"
         }
         val audioFile = "${song.videoId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.$extension"
