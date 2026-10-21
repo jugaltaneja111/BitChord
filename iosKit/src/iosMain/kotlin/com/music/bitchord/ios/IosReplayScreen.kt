@@ -296,8 +296,10 @@ private fun PeriodPicker(selected: ReplayPeriod, onSelect: (ReplayPeriod) -> Uni
                 label = "periodChip",
             )
             Text(
-                text = period.localizedChip(),
+                text = period.chipLabel(),
                 style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
                 fontWeight = FontWeight.W700,
                 color = if (active) if (dark) Color.Black else Color.White else textColor.copy(alpha = 0.75f),
                 modifier = Modifier

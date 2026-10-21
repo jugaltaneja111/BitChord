@@ -174,6 +174,14 @@ internal fun ReplayPeriod.localizedChip(): String = when (this) {
     ReplayPeriod.ALL_TIME -> "All time"
 }
 
+/** The period picker's short names, as the phone's current build words them. */
+internal fun ReplayPeriod.chipLabel(): String = when (this) {
+    ReplayPeriod.THIS_WEEK -> "Weekly"
+    ReplayPeriod.THIS_MONTH -> "Monthly"
+    ReplayPeriod.THIS_YEAR -> "Yearly"
+    ReplayPeriod.ALL_TIME -> "Lifetime"
+}
+
 internal fun ReplaySummary.localizedLabel(): String = when (period) {
     ReplayPeriod.THIS_WEEK -> "This week"
     ReplayPeriod.THIS_MONTH -> Day.today().let { "${it.monthKey.name} ${it.year}" }
