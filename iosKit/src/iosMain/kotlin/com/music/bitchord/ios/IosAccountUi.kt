@@ -58,6 +58,7 @@ internal object IosOverlays {
     var switcher by mutableStateOf(false)
     var spotifyLogin by mutableStateOf(false)
     var spotifyImport by mutableStateOf(false)
+    var discordLogin by mutableStateOf(false)
 }
 
 private val PillShape = RoundedCornerShape(50)

@@ -80,15 +80,30 @@ internal class IntPref(private val key: String, default: Int) {
     }
 }
 
-internal class StringPref(private val key: String, default: String) {
+internal class StringPref(private val key: String, default: String) : StringPrefLike {
     private val defaults = NSUserDefaults.standardUserDefaults
 
-    val flow = MutableStateFlow(defaults.stringForKey(key) ?: default)
+    override val flow = MutableStateFlow(defaults.stringForKey(key) ?: default)
 
-    fun set(value: String) {
+    override fun set(value: String) {
         defaults.setObject(value, key)
         flow.value = value
     }
+}
+
+/** A credential: kept in the Keychain (see [IosKeychain]), read and written like any setting. */
+internal class SecretPref(private val key: String) : StringPrefLike {
+    override val flow = MutableStateFlow(IosKeychain.get(key).orEmpty())
+
+    override fun set(value: String) {
+        if (value.isEmpty()) IosKeychain.remove(key) else IosKeychain.set(key, value)
+        flow.value = value
+    }
+}
+
+internal interface StringPrefLike {
+    val flow: MutableStateFlow<String>
+    fun set(value: String)
 }
 
 internal class FloatPref(private val key: String, default: Float) {
@@ -162,15 +177,15 @@ internal object IosSettings {
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
 
     /** Spotify's `sp_dc` session cookie, as the phone keeps it; blank when not connected. */
-    val spotifySpdc = StringPref("${PREFIX}spotify_sp_dc", "")
+    val spotifySpdc = SecretPref("spotify_sp_dc")
 
     // Scrobbling, the phone's defaults: everything off until signed in.
     val lastfmEnabled = BoolPref("${PREFIX}lastfm_enabled", false)
     val lastfmUsername = StringPref("${PREFIX}lastfm_username", "")
-    val lastfmSessionKey = StringPref("${PREFIX}lastfm_session_key", "")
+    val lastfmSessionKey = SecretPref("lastfm_session_key")
     /** The listener's own key and secret, asked for only when the build carries none. */
     val lastfmApiKey = StringPref("${PREFIX}lastfm_api_key", "")
-    val lastfmSecret = StringPref("${PREFIX}lastfm_secret", "")
+    val lastfmSecret = SecretPref("lastfm_secret")
     val lastfmScrobbleEnabled = BoolPref("${PREFIX}lastfm_scrobble_enabled", false)
     val lastfmNowPlaying = BoolPref("${PREFIX}lastfm_now_playing", false)
     val lastfmPrimaryArtistOnly = BoolPref("${PREFIX}lastfm_primary_artist_only", false)
@@ -178,7 +193,22 @@ internal object IosSettings {
     val scrobbleDelayPercent = FloatPref("${PREFIX}scrobble_delay_percent", 0.5f)
     val scrobbleDelaySeconds = IntPref("${PREFIX}scrobble_delay_seconds", 180)
     val listenBrainzEnabled = BoolPref("${PREFIX}listenbrainz_enabled", false)
-    val listenBrainzToken = StringPref("${PREFIX}listenbrainz_token", "")
+    val listenBrainzToken = SecretPref("listenbrainz_token")
+
+    // Discord rich presence, the phone's defaults.
+    val discordToken = SecretPref("discord_token")
+    val discordUsername = StringPref("${PREFIX}discord_username", "")
+    val discordName = StringPref("${PREFIX}discord_name", "")
+    val discordAvatar = StringPref("${PREFIX}discord_avatar", "")
+    val discordRpcEnabled = BoolPref("${PREFIX}discord_rpc_enabled", true)
+    val discordUseDetails = BoolPref("${PREFIX}discord_use_details", false)
+    val discordStatus = StringPref("${PREFIX}discord_status", "online")
+    val discordActivityType = StringPref("${PREFIX}discord_activity_type", "listening")
+    val discordActivityName = StringPref("${PREFIX}discord_activity_name", "")
+    val discordButton1Text = StringPref("${PREFIX}discord_button_1_text", "")
+    val discordButton1Visible = BoolPref("${PREFIX}discord_button_1_visible", true)
+    val discordButton2Text = StringPref("${PREFIX}discord_button_2_text", "")
+    val discordButton2Visible = BoolPref("${PREFIX}discord_button_2_visible", true)
     val listenBrainzPrimaryArtistOnly = BoolPref("${PREFIX}listenbrainz_primary_artist_only", false)
 
     // Playback sound, the phone's defaults.

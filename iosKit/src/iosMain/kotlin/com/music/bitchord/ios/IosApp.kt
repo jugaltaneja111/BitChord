@@ -264,6 +264,13 @@ internal fun IosApp() {
             ) {
                 IosSpotifyLoginScreen(onClose = { IosOverlays.spotifyLogin = false })
             }
+            AnimatedVisibility(
+                visible = IosOverlays.discordLogin,
+                enter = slideInVertically(tween(320)) { it },
+                exit = slideOutVertically(tween(260)) { it },
+            ) {
+                IosDiscordLoginScreen(onClose = { IosOverlays.discordLogin = false })
+            }
             if (IosOverlays.spotifyImport) SpotifyImportDialog(onDismiss = { IosOverlays.spotifyImport = false })
             IosReplay.story?.let { (summary, start) ->
                 ReplayStories(

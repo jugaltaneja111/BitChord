@@ -46,7 +46,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
-import java.util.logging.Logger
+import com.my.kizzy.KizzyLogger
+import com.my.kizzy.elapsedRealtimeMs
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -83,7 +86,7 @@ open class DiscordWebSocket(
     private val browser: String = "Discord Android",
     private val device: String = "Generic Android Device",
 ) : CoroutineScope {
-    private val logger = Logger.getLogger(DiscordWebSocket::class.java.name)
+    private val logger = KizzyLogger("DiscordWebSocket")
     private val gatewayUrl = "wss://gateway.discord.gg/?v=9&encoding=json"
     private var websocket: DefaultClientWebSocketSession? = null
     private var sequence = 0
@@ -121,7 +124,7 @@ open class DiscordWebSocket(
      */
     private var connectionLoop: Job? = null
 
-    private val loopLock = Any()
+    private val loopLock = SynchronizedObject()
 
     /** Set by [close]. Stops the loop retrying an intentionally closed socket. */
     @Volatile
@@ -590,20 +593,3 @@ open class DiscordWebSocket(
         private val CLOSE_TIMEOUT = 2.seconds
     }
 }
-
-/**
- * Milliseconds since boot, counting time the device spent asleep.
- *
- * `System.nanoTime` is not that on Android — it can stop during deep sleep,
- * which is exactly when this reading matters: the point of it is to notice that
- * a lot of wall time has passed with nothing heard from Discord. So Android's
- * own clock is used where there is one, found reflectively because this module
- * is shared with the desktop and cannot import it.
- */
-private val androidElapsedRealtime: java.lang.reflect.Method? = runCatching {
-    Class.forName("android.os.SystemClock").getMethod("elapsedRealtime")
-}.getOrNull()
-
-internal fun elapsedRealtimeMs(): Long =
-    androidElapsedRealtime?.let { runCatching { it.invoke(null) as Long }.getOrNull() }
-        ?: (System.nanoTime() / 1_000_000L)

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -110,6 +111,13 @@ internal object IosPlayer {
                 .collect { IosScrobbler.onPlaying(it, engine.position.positionMs) }
         }
         scope.launch { engine.durationMs.collect(IosScrobbler::onDuration) }
+        // Discord's card: up while playing, down on pause, re-sent on a new track.
+        scope.launch {
+            // The length lands a beat after the track; the card's countdown needs it.
+            combine(_song, engine.isPlaying, _resolving, engine.durationMs) { song, playing, resolving, duration ->
+                Triple(song?.videoId, playing && !resolving, duration > 0)
+            }.distinctUntilChanged().collect { IosDiscord.refresh() }
+        }
         // Replay's listening, sampled while something actually plays.
         scope.launch {
             var wasPlaying = false
@@ -401,7 +409,11 @@ internal object IosPlayer {
         }
     }
 
-    fun seekTo(positionMs: Long) = engine.seekTo(positionMs)
+    fun seekTo(positionMs: Long) {
+        engine.seekTo(positionMs)
+        // The card counts down from instants; a seek moves them.
+        IosDiscord.refresh()
+    }
 
     private fun playAt(index: Int) {
         val song = _queue.value.getOrNull(index) ?: return

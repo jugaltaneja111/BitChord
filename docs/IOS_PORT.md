@@ -28,8 +28,15 @@ cards, charts and stories; genres wait for Last.fm, and the share picture is tex
 AVPlayers, the next track readied 30 s ahead in the second, so a change of track is instant or a
 crossfade (the phone's 0–12 s slider); each item carries an MTAudioProcessingTap running the phone's
 equaliser sections (tone pad, seven bands, balance), YouTube's loudness gain and the peak limiter.
-Not yet: Automix and skip silence (both need the track analysed ahead), quality choices (iOS only
-plays YouTube's AAC until Sources), lyrics translation and romanisation, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+A track's length is googlevideo's `dur` or the catalogue's, never AVPlayer's estimate (YouTube's
+fragmented MP4 has no total, and the guess can double). Account & integrations: Last.fm (the
+build's key from the repository's `LASTFM_API_KEY`/`LASTFM_SECRET` secrets, or the listener's own)
+and ListenBrainz scrobble on the phone's rules, and Last.fm's tags give Replay its genres; Spotify
+signs in on its own page, its token caught in a hidden web view, with `SpotifyLibrary` /
+`SpotifyImporter` now in commonMain on Ktor; Discord presence runs the shared Kizzy gateway (now
+commonMain too). Credentials live in the Keychain. Not yet: Automix and skip silence (both need
+the track analysed ahead), quality choices (iOS only plays YouTube's AAC until Sources), lyrics
+translation and romanisation, local playlists for imports when signed out. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 
