@@ -4,6 +4,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.ios.canvas.IosCanvas
+import com.music.bitchord.ios.party.IosListenTogether
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import com.music.bitchord.data.lyrics.LyricLine
 import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.data.model.Song
@@ -27,7 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * What the shared pages and player take from the app, as iOS has it so far: the phone's default
- * settings, no output picker, no Listen Together. Each piece is filled in as the
+ * settings, and no output picker. Each piece is filled in as the
  * iOS app gains the feature behind it. Even the search rows read it (for artwork), so it is
  * installed before anything is drawn.
  */
@@ -62,7 +69,9 @@ internal object IosPlayerHost : PlayerHost {
 
     override val outputFormat: StateFlow<OutputFormatUi> = MutableStateFlow(OutputFormatUi())
 
-    override val party: StateFlow<PartyUi> = MutableStateFlow(PartyUi())
+    override val party: StateFlow<PartyUi> = IosListenTogether.state
+        .map { PartyUi(inParty = it.inParty, controlsLocked = it.controlsLocked, members = it.members, you = it.you, code = it.code) }
+        .stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main), SharingStarted.Eagerly, PartyUi())
 
     override suspend fun translateLyrics(
         trackId: String,

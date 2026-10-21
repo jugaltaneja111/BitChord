@@ -32,6 +32,10 @@ targets:
         UIViewControllerBasedStatusBarAppearance: false
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Listen Together invites: bitchord://party/CODE, as the phone's intent filter takes them.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.music.bitchord.party
+            CFBundleURLSchemes: [bitchord]
         # Last.fm's key and secret, from the repository's secrets when it has them (see ios.yml);
         # empty otherwise, and the app asks the listener for their own.
         BitChordLastfmApiKey: $(BITCHORD_LASTFM_API_KEY)

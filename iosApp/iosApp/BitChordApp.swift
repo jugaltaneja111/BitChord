@@ -10,6 +10,8 @@ struct BitChordApp: App {
             ComposeView()
                 // Compose lays itself out around the safe area.
                 .ignoresSafeArea()
+                // bitchord://party/CODE — a Listen Together invite.
+                .onOpenURL { url in MainViewControllerKt.handleOpenUrl(url: url.absoluteString) }
         }
     }
 }

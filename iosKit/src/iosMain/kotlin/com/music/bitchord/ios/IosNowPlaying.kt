@@ -23,6 +23,7 @@ import com.music.bitchord.data.LikeState
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaybackSourceType
+import com.music.bitchord.ios.party.IosListenTogether
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.ui.player.NowPlayingScreen
 import kotlinx.coroutines.launch
@@ -43,7 +44,10 @@ internal fun IosNowPlaying(
     val current by IosPlayer.song.collectAsState()
     val song = current ?: return
     val isPlaying by IosPlayer.isPlaying.collectAsState()
-    val isLoading by IosPlayer.isLoading.collectAsState()
+    val playerLoading by IosPlayer.isLoading.collectAsState()
+    val party by IosListenTogether.state.collectAsState()
+    // A party play waits for the server's start: the spinner covers that wait.
+    val isLoading = playerLoading || party.awaitingStart
     val durationMs by IosPlayer.durationMs.collectAsState()
     val queue by IosPlayer.queue.collectAsState()
     val index by IosPlayer.index.collectAsState()
@@ -124,7 +128,7 @@ internal fun IosNowPlaying(
             onPlayPause = IosPlayer::togglePlayPause,
             onNext = IosPlayer::next,
             onPrevious = IosPlayer::previous,
-            onBlockedControl = {},
+            onBlockedControl = { IosPlayerHost.showMessage("Only the host can change what’s playing") },
             onSeek = IosPlayer::seekTo,
             onSeekFraction = { fraction ->
                 val duration = IosPlayer.durationMs.value
@@ -164,7 +168,11 @@ internal fun IosNowPlaying(
                     }
                 }
             },
-            onListenTogether = {},
+            onListenTogether = { leaveTo { navigator.open(IosPage.ListenTogether()) } },
+            onQueueDragActiveChange = IosPlayer::queueDrag,
+            playedBy = party.playback?.takeIf { it.track?.videoId == song.videoId }?.let { playback ->
+                playback.startedByName ?: party.members.firstOrNull { it.memberId == playback.startedBy }?.displayName
+            },
             lyrics = lyrics,
             lyricsSource = lyricsSource,
             lyricsProviderStates = lyricsProviderStates,

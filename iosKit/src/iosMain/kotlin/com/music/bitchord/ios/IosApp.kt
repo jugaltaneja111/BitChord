@@ -213,10 +213,13 @@ internal fun IosApp() {
             ) {
                 song?.let { current ->
                     val loading by IosPlayer.isLoading.collectAsState()
+                    val party by com.music.bitchord.ios.party.IosListenTogether.state.collectAsState()
                     MiniPlayer(
                         song = current,
                         isPlaying = isPlaying,
-                        isLoading = loading,
+                        isLoading = loading || party.awaitingStart,
+                        controlsLocked = party.controlsLocked,
+                        onBlockedControl = { IosPlayerHost.showMessage("Only the host can change what’s playing") },
                         hazeState = hazeState,
                         onPlayPause = IosPlayer::togglePlayPause,
                         onNext = IosPlayer::next,
@@ -256,6 +259,13 @@ internal fun IosApp() {
                     IosOverlays.login = false
                     if (IosAccount.signedIn.value && navigator.top == null) navigator.select(IosTab.LIBRARY)
                 })
+            }
+            IosDeepLink.invite?.let { invite ->
+                LaunchedEffect(invite) {
+                    playerOpen = false
+                    navigator.open(IosPage.ListenTogether(invite.code, invite.serverUrl))
+                    IosDeepLink.invite = null
+                }
             }
             AnimatedVisibility(
                 visible = IosOverlays.spotifyLogin,

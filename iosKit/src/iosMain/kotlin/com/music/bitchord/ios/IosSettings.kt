@@ -306,6 +306,7 @@ internal fun SettingsPage(
     onOpenEqualizer: () -> Unit,
     onOpenIntegrations: () -> Unit,
     onOpenReplay: () -> Unit,
+    onOpenListenTogether: () -> Unit,
 ) {
     val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
     val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
@@ -381,7 +382,7 @@ internal fun SettingsPage(
                 Divider()
                 ActionRow("Spotify, Last.fm, ListenBrainz, Discord", onClick = onOpenIntegrations)
                 Divider()
-                Soon("Listen together")
+                ActionRow("Listen together", onClick = onOpenListenTogether)
             }
         }
         item {

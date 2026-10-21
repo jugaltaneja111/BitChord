@@ -180,15 +180,26 @@ internal class IosAudioEngine(
      * Plays [url], fetched with [headers] (googlevideo wants the resolving client's User-Agent),
      * or the file at [url] when it is an absolute path — a download.
      */
-    fun load(url: String, headers: Map<String, String>, loudnessDb: Double? = null, key: String? = null, durationMs: Long = 0L) {
+    fun load(
+        url: String,
+        headers: Map<String, String>,
+        loudnessDb: Double? = null,
+        key: String? = null,
+        durationMs: Long = 0L,
+        /** Where to begin: a party joins its track part-way through. */
+        startMs: Long = 0L,
+        /** False loads it paused, for a party that starts it on its own schedule. */
+        startPlaying: Boolean = true,
+    ) {
         finishFade()
         if (!active.hold(url, headers, loudnessDb, key, durationMs)) return onFailed("bad stream URL")
         active.listen()
         AVAudioSession.sharedInstance().setActive(true, error = null)
         _durationMs.value = 0L
-        position.report(0L)
+        if (startMs > 0L) active.player.seekToTime(CMTimeMakeWithSeconds(startMs / 1000.0, 1000))
+        position.report(startMs)
         position.seeks++
-        play()
+        if (startPlaying) play() else _isPlaying.value = false
     }
 
     /** Hands the waiting player the next track, paused and silent, so it is ready when wanted. */

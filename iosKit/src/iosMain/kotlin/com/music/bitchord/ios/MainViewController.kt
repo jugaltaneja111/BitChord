@@ -1,5 +1,7 @@
 package com.music.bitchord.ios
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.ComposeUIViewController
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
@@ -16,6 +18,20 @@ import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import platform.UIKit.UIViewController
+
+/**
+ * A link the system handed the app: `bitchord://party/CODE` (or `?code=`), with the invite's
+ * server if it carries one. Opens Listen Together on that invite.
+ */
+@Suppress("unused")
+fun handleOpenUrl(url: String) {
+    com.music.bitchord.ios.party.IosListenTogether.parseInvite(url)?.let { IosDeepLink.invite = it }
+}
+
+/** An invite waiting for the app to show it; [IosApp] takes it once the pages are up. */
+internal object IosDeepLink {
+    var invite by androidx.compose.runtime.mutableStateOf<com.music.bitchord.ios.party.IosListenTogether.ParsedInvite?>(null)
+}
 
 /** What the Swift shell shows: the whole app, drawn by Compose. Called once, at launch. */
 @Suppress("FunctionName", "unused")
@@ -47,6 +63,8 @@ private fun start() {
     IosSpotify.install()
     IosDiscord.start()
     IosNetwork.start()
+    // Releases a party slot left from last time and runs the first server check.
+    com.music.bitchord.ios.party.IosListenTogether.state
     com.music.bitchord.ios.canvas.IosCanvas.prioritizeSpotify = { IosSettings.prioritizeSpotifyCanvas.flow.value }
     startAutoplayIfAsked()
 }

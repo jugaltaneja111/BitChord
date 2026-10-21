@@ -34,9 +34,15 @@ build's key from the repository's `LASTFM_API_KEY`/`LASTFM_SECRET` secrets, or t
 and ListenBrainz scrobble on the phone's rules, and Last.fm's tags give Replay its genres; Spotify
 signs in on its own page, its token caught in a hidden web view, with `SpotifyLibrary` /
 `SpotifyImporter` now in commonMain on Ktor; Discord presence runs the shared Kizzy gateway (now
-commonMain too). Credentials live in the Keychain. Not yet: Automix and skip silence (both need
+commonMain too). Credentials live in the Keychain. Listen Together is the desktop's port (iosKit/…/party): the same
+server protocol, clock sync and reconcile rules, with the player's user actions reported as
+intents and the sync's own commands kept apart; crossfade and the music-only swap are off in a
+party, and `bitchord://party/CODE` opens an invite. Animated covers ask the phone's four sources
+(iosKit/…/canvas) and loop muted in an AVPlayerLayer. Backups are the phone's file format, so
+the Replay moves between the two apps. Not yet: Automix and skip silence (both need
 the track analysed ahead), quality choices (iOS only plays YouTube's AAC until Sources), lyrics
-translation and romanisation, local playlists for imports when signed out. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+translation and romanisation, local playlists for imports when signed out, https invite links
+(they need the invite site's associated-domains file), the album and artist page videos. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

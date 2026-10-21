@@ -6,6 +6,9 @@ import com.music.bitchord.data.innertube.InnerTubeXResolver
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.durationMillis
 import com.music.bitchord.ui.player.RepeatModes
+import com.music.bitchord.ios.party.IosListenTogether
+import com.music.bitchord.ios.party.IosPartyPlayer
+import com.music.bitchord.ios.party.IosPartySync
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +82,14 @@ internal object IosPlayer {
 
     /** Keep playing the last song's radio once the queue runs out, as the phone does by default. */
     private val _autoplay = IosSettings.autoplay.flow
-    val autoplay: StateFlow<Boolean> = _autoplay.asStateFlow()
+
+    /** The party's own AutoPlay switch while in one; null outside a party. */
+    private val partyAutoplay = MutableStateFlow<Boolean?>(null)
+    private val autoplayOn: Boolean get() = partyAutoplay.value ?: _autoplay.value
+
+    /** AutoPlay as the player shows it: the party's while in one, the listener's setting otherwise. */
+    val autoplay: StateFlow<Boolean> = combine(partyAutoplay, _autoplay) { party, own -> party ?: own }
+        .stateIn(scope, SharingStarted.Eagerly, _autoplay.value)
 
     /** The queue as it was before shuffling, so turning shuffle off puts it back. */
     private var unshuffled: List<Song>? = null
@@ -91,7 +101,90 @@ internal object IosPlayer {
     /** Why the last track would not play, until the next one starts. */
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    // ── Listen Together ─────────────────────────────────────────────────────
+
+    /**
+     * Set while the party itself drives the player ([PartyBridge]), so nothing it does comes back
+     * round as something the listener did and is republished — the phone's SessionPlayer split.
+     */
+    private var applyingParty = false
+
+
+    private val inParty: Boolean get() = IosListenTogether.state.value.inParty
+
+    /** The listener's own queue, kept while a party plays and put back on leaving. */
+    private var personalQueue: Triple<List<Song>, Int, Long>? = null
+
+    private val partySync = IosPartySync(
+        scope = scope,
+        player = PartyBridge,
+        onEnteredParty = { personalQueue = Triple(_queue.value, _index.value, engine.position.positionMs) },
+        onLeftParty = {
+            partyAutoplay.value = null
+            val (songs, index, positionMs) = personalQueue ?: return@IosPartySync
+            personalQueue = null
+            if (songs.isNotEmpty()) applying { _queue.value = songs; playAt(index.coerceIn(songs.indices), positionMs, startPlaying = false) }
+        },
+    )
+
+    /** A queue row held mid-drag: the party hears the move once it is let go. */
+    fun queueDrag(active: Boolean) = if (active) partySync.beginQueueDrag() else partySync.endQueueDrag()
+
+    /** Something the listener did here: the party is told. */
+    private fun intent(expectedVideoId: String? = null) {
+        if (!applyingParty) partySync.onLocalIntent(expectedVideoId)
+    }
+
+    /** A guest in a party whose host keeps the controls: refused, and told why. */
+    private fun refusedByHost(): Boolean {
+        if (applyingParty || !IosListenTogether.state.value.controlsLocked) return false
+        IosPlayerHost.showMessage("Only the host can change what’s playing")
+        return true
+    }
+
+    private inline fun applying(block: () -> Unit) {
+        val was = applyingParty
+        applyingParty = true
+        try {
+            block()
+        } finally {
+            applyingParty = was
+        }
+    }
+
+    /** What the party sync reads and drives; nothing done through it is reported back. */
+    private object PartyBridge : IosPartyPlayer {
+        override val song: StateFlow<Song?> get() = _song
+        override val isPlaying: StateFlow<Boolean> get() = engine.isPlaying
+        override val isReady: Boolean get() = _song.value != null && !_resolving.value && !engine.isBuffering.value
+        override val positionMs: Long get() = engine.position.positionMs
+        override val durationMs: Long get() = engine.durationMs.value
+        override val queue: StateFlow<List<Song>> get() = _queue
+        override val index: StateFlow<Int> get() = _index
+        override fun play() = applying { engine.play() }
+        override fun pause() = applying { engine.pause() }
+        override fun seekTo(positionMs: Long) = applying {
+            engine.seekTo(positionMs)
+            IosDiscord.refresh()
+        }
+        override fun loadParty(songs: List<Song>, index: Int, positionMs: Long, play: Boolean) = applying {
+            if (songs.isEmpty()) return@applying
+            unshuffled = null
+            _shuffle.value = false
+            _queue.value = songs
+            playAt(index.coerceIn(songs.indices), positionMs, play)
+        }
+        override fun replaceUpcoming(songs: List<Song>) = applying {
+            val index = _index.value
+            _queue.value = _queue.value.take(index + 1) + songs
+        }
+        override fun setAutoplay(enabled: Boolean) {
+            partyAutoplay.value = enabled
+        }
+    }
+
     init {
+        partySync.start()
         wireRemoteCommands()
         scope.launch {
             combine(_song, engine.isPlaying, engine.durationMs) { song, playing, duration ->
@@ -137,22 +230,26 @@ internal object IosPlayer {
 
     /** Plays [song] now and queues its radio after it. */
     fun playRadio(song: Song) {
+        if (refusedByHost()) return
         playQueue(listOf(song), 0)
         scope.launch {
             YtMusicRepository.radio(song.videoId).onSuccess { radio ->
                 // Still the same session: the user may have moved on while it loaded.
                 if (_queue.value.firstOrNull()?.videoId != song.videoId) return@onSuccess
                 _queue.value = listOf(song) + radio.filter { it.videoId != song.videoId }
+                intent()
             }
         }
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int) {
-        if (songs.isEmpty()) return
+        if (songs.isEmpty() || refusedByHost()) return
         unshuffled = null
         _shuffle.value = false
         _queue.value = songs
-        playAt(startIndex.coerceIn(songs.indices))
+        val index = startIndex.coerceIn(songs.indices)
+        playAt(index)
+        intent(songs[index].videoId)
     }
 
     /** A whole list in random order, from its first song. */
@@ -165,7 +262,7 @@ internal object IosPlayer {
 
     /** [songs] straight after the one playing; they start now if nothing is. */
     fun playNext(songs: List<Song>) {
-        if (songs.isEmpty()) return
+        if (songs.isEmpty() || refusedByHost()) return
         val index = _index.value
         if (_song.value == null || index < 0) {
             playQueue(songs, 0)
@@ -174,18 +271,20 @@ internal object IosPlayer {
         val queue = _queue.value
         _queue.value = queue.take(index + 1) + songs + queue.drop(index + 1)
         unshuffled = unshuffled?.plus(songs)
+        intent()
         IosPlayerHost.showMessage(if (songs.size == 1) "Playing next" else "${songs.size} songs playing next")
     }
 
     /** [songs] at the end of the queue; they start now if nothing is playing. */
     fun addToQueue(songs: List<Song>) {
-        if (songs.isEmpty()) return
+        if (songs.isEmpty() || refusedByHost()) return
         if (_song.value == null || _index.value < 0) {
             playQueue(songs, 0)
             return
         }
         _queue.value = _queue.value + songs
         unshuffled = unshuffled?.plus(songs)
+        intent()
         IosPlayerHost.showMessage(if (songs.size == 1) "Added to queue" else "${songs.size} songs added to queue")
     }
 
@@ -193,19 +292,22 @@ internal object IosPlayer {
     fun swipe(song: Song) = if (IosSettings.swipePlayNext.flow.value) playNext(listOf(song)) else addToQueue(listOf(song))
 
     fun jumpTo(index: Int) {
-        if (index in _queue.value.indices) playAt(index)
+        if (index !in _queue.value.indices || refusedByHost()) return
+        playAt(index)
+        intent(_queue.value[index].videoId)
     }
 
     fun removeAt(index: Int) {
         val queue = _queue.value
-        if (index !in queue.indices || index == _index.value) return
+        if (index !in queue.indices || index == _index.value || refusedByHost()) return
         _queue.value = queue.toMutableList().apply { removeAt(index) }
         if (index < _index.value) _index.value -= 1
+        intent()
     }
 
     fun move(from: Int, to: Int) {
         val queue = _queue.value
-        if (from !in queue.indices || to !in queue.indices || from == to) return
+        if (from !in queue.indices || to !in queue.indices || from == to || refusedByHost()) return
         _queue.value = queue.toMutableList().apply { add(to, removeAt(from)) }
         val current = _index.value
         _index.value = when {
@@ -214,17 +316,21 @@ internal object IosPlayer {
             from > current && to <= current -> current + 1
             else -> current
         }
+        intent()
     }
 
     /** Everything but the song playing. */
     fun clearQueue() {
         val song = _song.value ?: return
+        if (refusedByHost()) return
         unshuffled = null
         _queue.value = listOf(song)
         _index.value = 0
+        intent()
     }
 
     fun toggleShuffle() {
+        if (refusedByHost()) return
         val queue = _queue.value
         val current = _song.value
         if (_shuffle.value) {
@@ -242,6 +348,7 @@ internal object IosPlayer {
             if (index < 0) return
             _queue.value = queue.take(index + 1) + queue.drop(index + 1).shuffled()
         }
+        intent()
     }
 
     /** The phone's order: off, all, one. */
@@ -254,23 +361,43 @@ internal object IosPlayer {
     }
 
     fun toggleAutoplay() {
-        IosSettings.autoplay.set(!_autoplay.value)
+        // In a party AutoPlay is the party's, and everyone's switch is the same switch.
+        if (inParty) IosListenTogether.setAutoplay(!autoplayOn) else IosSettings.autoplay.set(!_autoplay.value)
     }
 
     fun togglePlayPause() {
-        when {
-            _song.value == null -> Unit
-            engine.isPlaying.value -> engine.pause()
-            else -> engine.play()
+        if (_song.value == null) return
+        val play = !engine.isPlaying.value
+        // A guest under a host's lock plays or pauses only this phone.
+        if (partySync.onLockedTransport(play)) return
+        if (!play) {
+            engine.pause()
+        } else if (!partySync.shouldDeferPlay()) {
+            // In a live party the play is the party's: it starts when the server says, everywhere.
+            engine.play()
         }
+        intent()
+    }
+
+    /** Lock-screen play and pause, which say which they mean. */
+    private fun setPlaying(play: Boolean) {
+        if (play == engine.isPlaying.value) return
+        togglePlayPause()
     }
 
     fun next() {
+        if (!advancingFromEnd && refusedByHost()) return
         val nextIndex = _index.value + 1
         when {
-            nextIndex in _queue.value.indices -> playAt(nextIndex)
-            _repeatMode.value == RepeatModes.ALL && _queue.value.isNotEmpty() -> playAt(0)
-            _autoplay.value -> extendWithRadio(playNext = true)
+            nextIndex in _queue.value.indices -> {
+                playAt(nextIndex)
+                intent(_queue.value[nextIndex].videoId)
+            }
+            _repeatMode.value == RepeatModes.ALL && _queue.value.isNotEmpty() -> {
+                playAt(0)
+                intent(_queue.value[0].videoId)
+            }
+            autoplayOn -> extendWithRadio(playNext = true)
             else -> {
                 // The queue ran out: nothing follows to close the last listen out.
                 if (advancingFromEnd) _song.value?.let { IosScrobbler.onSongChanged(it, ended = true, song = it) }
@@ -330,7 +457,8 @@ internal object IosPlayer {
         if (remaining <= PREPARE_AHEAD_MS && engine.preparedKey != next.videoId && preparing != next.videoId) {
             prepare(next)
         }
-        val fadeMs = (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
+        // A party keeps every device on one timeline: a blend would put this one ahead of it.
+        val fadeMs = if (inParty) 0L else (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
         if (fadeMs > 0L && remaining in 1..fadeMs && engine.preparedFor(next.videoId)) {
             advancingFromEnd = true
             transition(nextIndex, fadeMs)
@@ -386,7 +514,7 @@ internal object IosPlayer {
         IosScrobbler.onSongChanged(_song.value, advancingFromEnd, song)
         _song.value = song
         _error.value = null
-        if (_autoplay.value && _queue.value.size > 1 && index >= _queue.value.size - 2) {
+        if (autoplayOn && _queue.value.size > 1 && index >= _queue.value.size - 2) {
             extendWithRadio(playNext = false)
         }
         engine.startNext(fadeMs)
@@ -398,6 +526,9 @@ internal object IosPlayer {
     private fun extendWithRadio(playNext: Boolean) {
         val last = _queue.value.lastOrNull() ?: return
         if (extending) return
+        // One supplier per party, as the phone has it: the host tops the queue up for everyone.
+        val party = IosListenTogether.state.value
+        if (party.inParty && party.you?.isHost != true) return
         extending = true
         scope.launch {
             YtMusicRepository.radio(last.videoId).onSuccess { radio ->
@@ -408,31 +539,39 @@ internal object IosPlayer {
                 val start = _queue.value.size
                 _queue.value = _queue.value + added
                 if (playNext && _index.value == start - 1) playAt(start)
+                intent(if (playNext) added.first().videoId else null)
             }.onFailure { if (playNext) engine.pause() }
             extending = false
         }
     }
 
     fun previous() {
+        if (refusedByHost()) return
         // Back to the start first, as every player does a few seconds in.
         if (engine.position.positionMs > 3_000 || _index.value <= 0) {
             engine.seekTo(0)
+            intent()
         } else {
             playAt(_index.value - 1)
+            intent(_queue.value[_index.value].videoId)
         }
     }
 
     fun seekTo(positionMs: Long) {
+        if (refusedByHost()) return
         engine.seekTo(positionMs)
+        intent()
         // The card counts down from instants; a seek moves them.
         IosDiscord.refresh()
     }
 
-    private fun playAt(index: Int) {
+    private fun playAt(index: Int, startMs: Long = 0L, startPlaying: Boolean = true) {
         val song = _queue.value.getOrNull(index) ?: return
         // Already waiting in the second player: it starts at once.
         if (song.videoId != _song.value?.videoId && engine.preparedFor(song.videoId)) {
             transition(index, 0L)
+            if (startMs > 0L) engine.seekTo(startMs)
+            if (!startPlaying) engine.pause()
             return
         }
         _index.value = index
@@ -442,7 +581,7 @@ internal object IosPlayer {
         _error.value = null
         // Fetched ahead, so the next song is already queued when this one ends. A queue of one is
         // a radio still loading (see playRadio).
-        if (_autoplay.value && _queue.value.size > 1 && index >= _queue.value.size - 2) {
+        if (autoplayOn && _queue.value.size > 1 && index >= _queue.value.size - 2) {
             extendWithRadio(playNext = false)
         }
         engine.stop()
@@ -454,7 +593,7 @@ internal object IosPlayer {
                 IosDownloads.audioPath(song.videoId)?.let { path ->
                     TrackLog.i(TAG, "${song.videoId}: from download")
                     val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
-                    engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
+                    engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song), startMs, startPlaying)
                     return@launch
                 }
                 val audio = musicOnly(song)
@@ -467,7 +606,7 @@ internal object IosPlayer {
                     playedThisSession += audio.videoId
                     _song.value = audio
                     IosDownloads.audioPath(audio.videoId)?.let { path ->
-                        engine.load(path, emptyMap(), null, audio.videoId, trackLength(null, audio))
+                        engine.load(path, emptyMap(), null, audio.videoId, trackLength(null, audio), startMs, startPlaying)
                         return@launch
                     }
                 }
@@ -478,7 +617,7 @@ internal object IosPlayer {
                     return@launch
                 }
                 TrackLog.i(TAG, "${audio.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio))
+                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio), startMs, startPlaying)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -494,7 +633,8 @@ internal object IosPlayer {
      * place in the queue; the video itself when the setting is off or nothing matches.
      */
     private suspend fun musicOnly(song: Song): Song {
-        if (!IosSettings.preferMusicOnly.flow.value || !song.isVideo) return song
+        // A party plays one cut of a song for everyone, so no device swaps its own.
+        if (!IosSettings.preferMusicOnly.flow.value || !song.isVideo || inParty) return song
         val match = runCatching { YtMusicRepository.resolveAudio(song) }.getOrDefault(song)
         if (match.videoId == song.videoId) return song
         return match.copy(
@@ -541,8 +681,8 @@ internal object IosPlayer {
             action()
             return MPRemoteCommandHandlerStatusSuccess
         }
-        commands.playCommand.addTargetWithHandler { _ -> handled { if (!engine.isPlaying.value) engine.play() } }
-        commands.pauseCommand.addTargetWithHandler { _ -> handled { engine.pause() } }
+        commands.playCommand.addTargetWithHandler { _ -> handled { setPlaying(true) } }
+        commands.pauseCommand.addTargetWithHandler { _ -> handled { setPlaying(false) } }
         commands.togglePlayPauseCommand.addTargetWithHandler { _ -> handled(::togglePlayPause) }
         commands.nextTrackCommand.addTargetWithHandler { _ -> handled(::next) }
         commands.previousTrackCommand.addTargetWithHandler { _ -> handled(::previous) }
