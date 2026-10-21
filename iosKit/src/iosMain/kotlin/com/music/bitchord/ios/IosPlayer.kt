@@ -152,7 +152,10 @@ internal object IosPlayer {
         while (true) {
             kotlinx.coroutines.delay(500)
             if (!IosSettings.showNerdStats.flow.value) continue
-            val format = engine.decodedFormat()
+            // Decoration: a format AVFoundation describes oddly costs the stats line, never the app.
+            val format = runCatching { engine.decodedFormat() }
+                .onFailure { TrackLog.w(TAG, "stats for nerds: ${it.message}") }
+                .getOrNull()
             val key = format?.key
             if (format == null || key == null) {
                 // Between tracks, or still loading: nothing, rather than the last track's figures.

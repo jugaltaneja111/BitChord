@@ -9,7 +9,9 @@ import platform.AVFoundation.formatDescriptions
 import platform.AVFoundation.mediaType
 import platform.AVFoundation.tracks
 import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
-import platform.CoreMedia.CMAudioFormatDescriptionRef
+import kotlinx.cinterop.reinterpret
+import platform.CoreFoundation.CFRelease
+import platform.Foundation.CFBridgingRetain
 import com.music.bitchord.playback.PlaybackPosition
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
@@ -172,10 +174,18 @@ internal class IosAudioEngine(
         val track = item.tracks.mapNotNull { (it as? AVPlayerItemTrack)?.assetTrack }
             .firstOrNull { it.mediaType == AVMediaTypeAudio } ?: return null
         val description = track.formatDescriptions.firstOrNull() ?: return null
-        @Suppress("UNCHECKED_CAST")
-        val basic = CMAudioFormatDescriptionGetStreamBasicDescription(description as CMAudioFormatDescriptionRef)?.pointed
-            ?: return null
-        val formatId = basic.mFormatID
+        // The array holds the CMFormatDescription as an Objective-C object; a Kotlin cast to the
+        // CoreMedia pointer type throws, so the pointer is taken across the bridge, and let go of.
+        val ref = CFBridgingRetain(description) ?: return null
+        val basic = try {
+            CMAudioFormatDescriptionGetStreamBasicDescription(ref.reinterpret())?.pointed?.let {
+                Triple(it.mFormatID, it.mSampleRate, Triple(it.mChannelsPerFrame, it.mBitsPerChannel, it.mFormatFlags))
+            }
+        } finally {
+            CFRelease(ref)
+        } ?: return null
+        val (formatId, sampleRate, rest) = basic
+        val (channelsPerFrame, bitsPerChannel, formatFlags) = rest
         val lossless = formatId == FOURCC_FLAC || formatId == FOURCC_ALAC || formatId == FOURCC_LPCM
         return DecodedFormat(
             mimeType = when (formatId) {
@@ -189,12 +199,12 @@ internal class IosAudioEngine(
                 FOURCC_LPCM -> "audio/raw"
                 else -> null
             },
-            sampleRateHz = basic.mSampleRate.toInt().takeIf { it > 0 },
-            channels = basic.mChannelsPerFrame.toInt().takeIf { it > 0 },
+            sampleRateHz = sampleRate.toInt().takeIf { it > 0 },
+            channels = channelsPerFrame.toInt().takeIf { it > 0 },
             // FLAC and ALAC state their depth in the flags rather than in mBitsPerChannel.
             bitDepth = when {
-                formatId == FOURCC_LPCM -> basic.mBitsPerChannel.toInt().takeIf { it > 0 }
-                formatId == FOURCC_FLAC || formatId == FOURCC_ALAC -> when (basic.mFormatFlags.toInt()) {
+                formatId == FOURCC_LPCM -> bitsPerChannel.toInt().takeIf { it > 0 }
+                formatId == FOURCC_FLAC || formatId == FOURCC_ALAC -> when (formatFlags.toInt()) {
                     1 -> 16
                     2 -> 20
                     3 -> 24
