@@ -1,5 +1,9 @@
 package com.music.bitchord.ios
 
+import com.music.bitchord.ios.sources.IosSources
+import com.music.bitchord.ios.sources.ResolvedStream
+import com.music.bitchord.ios.sources.StreamRequest
+import kotlinx.coroutines.async
 import com.music.bitchord.data.NerdStats
 import com.music.bitchord.data.TelemetryProvenance
 import com.music.bitchord.data.TrackLog
@@ -46,6 +50,7 @@ import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 @OptIn(ExperimentalForeignApi::class)
 internal object IosPlayer {
     private const val TAG = "IosPlayer"
+    private const val SUBSTITUTE_WAIT_MS = 6_000L
 
     /** How long before a track ends the next one is fetched into the waiting player. */
     private const val PREPARE_AHEAD_MS = 30_000L
@@ -544,13 +549,13 @@ internal object IosPlayer {
                         return@launch
                     }
                 }
-                val stream = InnerTubeXResolver.extract(audio.videoId, maxKbps = 320, requireM4a = true) ?: return@launch
+                val stream = networkStream(audio) ?: return@launch
                 // The queue may have moved on while that resolved.
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
-                TrackLog.i(TAG, "${audio.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                servedBy[audio.videoId] = "YouTube" to stream.kbps.takeIf { it > 0 }
-                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio))
-                IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
+                TrackLog.i(TAG, "${audio.videoId}: readied from ${stream.source}, ${stream.kbps} kbps")
+                servedBy[audio.videoId] = stream.source to stream.kbps
+                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs)
+                if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -666,16 +671,15 @@ internal object IosPlayer {
                         return@launch
                     }
                 }
-                // AAC in MP4: AVFoundation cannot play the Opus/WebM streams the phone prefers.
-                val stream = InnerTubeXResolver.extract(audio.videoId, maxKbps = 320, requireM4a = true)
+                val stream = networkStream(audio)
                 if (stream == null) {
                     fail("No playable stream for this track")
                     return@launch
                 }
-                TrackLog.i(TAG, "${audio.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                servedBy[audio.videoId] = "YouTube" to stream.kbps.takeIf { it > 0 }
-                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio), startMs, startPlaying)
-                IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
+                TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.kbps} kbps")
+                servedBy[audio.videoId] = stream.source to stream.kbps
+                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, startPlaying)
+                if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -701,6 +705,74 @@ internal object IosPlayer {
             playbackSourceId = song.playbackSourceId,
         )
     }
+
+    /** A stream to open over the network, and where it came from. */
+    private class Picked(
+        val url: String,
+        val headers: Map<String, String>,
+        val loudnessDb: Double?,
+        val durationMs: Long,
+        val source: String,
+        val kbps: Int?,
+        val fromYouTube: Boolean,
+    )
+
+    /**
+     * The stream for [audio], as the phone's resolver picks it, under the ceiling for the
+     * connection in hand (Settings › On Wi-Fi / On mobile data).
+     *
+     * A row from an add-on or JioSaavn plays from its own source, falling back to the next one and
+     * last to YouTube's match. A YouTube track is offered to the sources the listener ranked above
+     * YouTube while YouTube's own stream resolves beside it; a substitute that hasn't answered in
+     * [SUBSTITUTE_WAIT_MS] loses to YouTube, so a slow add-on delays a track rather than stalls it.
+     */
+    private suspend fun networkStream(audio: Song): Picked? = kotlinx.coroutines.coroutineScope {
+        val request = IosSources.requestFor(IosSettings.effectiveAudioQuality)
+        val cap = (request as? StreamRequest.Capped)?.maxKbps?.coerceAtMost(320) ?: 320
+        if (IosSources.isSourceTrack(audio)) {
+            IosSources.resolve(audio, request)?.let { return@coroutineScope it.picked(audio) }
+            val id = IosSources.youtubeFallback(audio) ?: return@coroutineScope null
+            return@coroutineScope youtube(id, audio, cap)
+        }
+        val fromYouTube = async { youtube(audio.videoId, audio, cap) }
+        if (!audio.isVideo && IosSources.canSubstituteForYouTube(request)) {
+            val substitute = kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_WAIT_MS) {
+                runCatching { IosSources.substituteForYouTube(audio, request) }.getOrNull()
+            }
+            if (substitute != null) {
+                fromYouTube.cancel()
+                return@coroutineScope substitute.picked(audio)
+            }
+        }
+        fromYouTube.await()
+    }
+
+    /** YouTube's AAC in MP4 — AVFoundation can't play the Opus/WebM the phone prefers. */
+    private suspend fun youtube(videoId: String, song: Song, capKbps: Int): Picked? {
+        val stream = InnerTubeXResolver.extract(videoId, maxKbps = capKbps, requireM4a = true)
+            // Low asks for less than most tracks have in AAC; the smallest there is beats nothing.
+            ?: (if (capKbps < 320) InnerTubeXResolver.extract(videoId, maxKbps = 320, requireM4a = true) else null)
+            ?: return null
+        return Picked(
+            url = stream.url,
+            headers = stream.headers,
+            loudnessDb = stream.loudnessDb,
+            durationMs = trackLength(stream.url, song),
+            source = "YouTube",
+            kbps = stream.kbps.takeIf { it > 0 },
+            fromYouTube = true,
+        )
+    }
+
+    private fun ResolvedStream.picked(song: Song) = Picked(
+        url = url,
+        headers = headers,
+        loudnessDb = null,
+        durationMs = durationMs?.takeIf { it > 0 } ?: trackLength(null, song),
+        source = sourceName,
+        kbps = format.kbps,
+        fromYouTube = false,
+    )
 
     /**
      * How long the track really is: googlevideo's `dur` parameter (seconds, exact), else the

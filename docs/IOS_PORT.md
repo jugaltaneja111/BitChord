@@ -45,8 +45,11 @@ the Replay moves between the two apps. Lyrics translation is the phone's (now co
 cache behind `LyricsTranslationStore`). The song cache (`IosSongCache`) keeps played tracks under
 Caches; AVPlayer shares nothing it streamed, so a played track is fetched again in the background,
 off mobile data only. Album pages loop the animated cover, and artist pages Apple Music's artist
-clip (`AppleArtistVideo`). Not yet: Sources and quality choices (iOS only plays YouTube's AAC),
-Automix and skip silence (both need the track analysed ahead), local playlists for imports when
+clip (`AppleArtistVideo`). Sources (iosKit/…/sources) are the phone's add-ons, JioSaavn and
+YouTube, resolved under the On Wi-Fi / On mobile data ceilings; a substitute for a YouTube track
+races YouTube's own stream for six seconds. Streams AVPlayer can't open (Opus, Vorbis, DASH) are
+passed over, the legacy JS modules are not ported, and Dolby Atmos is off by default. Stats for
+nerds read the decoded format off the AVPlayerItem's track. Not yet: Automix and skip silence (both need the track analysed ahead), local playlists for imports when
 signed out, https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.

@@ -60,6 +60,7 @@ private fun start() {
     IosAccount.restore()
     IosDownloads.restore()
     IosSongCache.restore()
+    com.music.bitchord.ios.sources.IosSources.init()
     IosArtistFacts.start()
     com.music.bitchord.data.lyrics.LyricsTranslation.store = CachesTranslationStore
     IosSpotify.install()

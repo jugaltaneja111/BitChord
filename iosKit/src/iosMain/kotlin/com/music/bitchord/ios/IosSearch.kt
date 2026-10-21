@@ -4,7 +4,9 @@ import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchHistoryEntity
 import com.music.bitchord.data.model.SearchResult
+import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.UiState
+import com.music.bitchord.ios.sources.IosSources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,6 +45,37 @@ internal class IosSearch {
     private val _typeahead = MutableStateFlow<List<SearchResult>>(emptyList())
     val typeahead: StateFlow<List<SearchResult>> = _typeahead.asStateFlow()
 
+    private val _addons = MutableStateFlow(false)
+    /** Whether the page asks the enabled add-ons instead of YouTube Music — the phone's Addons tab. */
+    val addons: StateFlow<Boolean> = _addons.asStateFlow()
+
+    private val _addonResults = MutableStateFlow<UiState<List<Song>>?>(null)
+    val addonResults: StateFlow<UiState<List<Song>>?> = _addonResults.asStateFlow()
+
+    private val _addonHistory = MutableStateFlow<List<String>>(emptyList())
+    /** Words searched in the Addons tab, newest first, for the session. */
+    val addonHistory: StateFlow<List<String>> = _addonHistory.asStateFlow()
+
+    /** Flips the page between YouTube Music and the add-ons; whatever is typed is asked again. */
+    fun setAddons(value: Boolean) {
+        if (_addons.value == value) return
+        _addons.value = value
+        _suggestions.value = emptyList()
+        _typeahead.value = emptyList()
+        val hadResults = _results.value != null || _addonResults.value != null
+        _results.value = null
+        _addonResults.value = null
+        if (hadResults) submit()
+    }
+
+    fun removeAddonSearch(term: String) {
+        _addonHistory.value = _addonHistory.value - term
+    }
+
+    fun clearAddonSearchHistory() {
+        _addonHistory.value = emptyList()
+    }
+
     private val _history = MutableStateFlow<List<SearchHistoryEntity>>(emptyList())
     val history: StateFlow<List<SearchHistoryEntity>> = _history.asStateFlow()
 
@@ -50,9 +83,11 @@ internal class IosSearch {
         _query.value = value
         // Typing again drops the results: the page goes back to suggestions for the new words.
         _results.value = null
+        _addonResults.value = null
         searchJob?.cancel()
         typingJob?.cancel()
-        if (value.isBlank()) {
+        // The add-ons have no suggestions to offer; the field is only words to send them.
+        if (value.isBlank() || _addons.value) {
             _suggestions.value = emptyList()
             _typeahead.value = emptyList()
             return
@@ -75,6 +110,16 @@ internal class IosSearch {
         typingJob?.cancel()
         searchJob?.cancel()
         continuation = null
+        if (_addons.value) {
+            _addonHistory.value = (listOf(text) + _addonHistory.value.filter { it != text }).take(MAX_HISTORY)
+            if (!IosSources.hasSearchableAddons()) {
+                _addonResults.value = UiState.Error("No addons are enabled. Add one in Settings → Sources.")
+                return
+            }
+            _addonResults.value = UiState.Loading
+            searchJob = scope.launch { _addonResults.value = UiState.Success(IosSources.search(text)) }
+            return
+        }
         _results.value = UiState.Loading
         searchJob = scope.launch {
             YtMusicRepository.searchPage(text, _filter.value)

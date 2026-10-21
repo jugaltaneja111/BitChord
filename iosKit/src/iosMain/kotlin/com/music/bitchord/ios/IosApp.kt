@@ -405,6 +405,9 @@ private fun SearchPage(
     val suggestions by search.suggestions.collectAsState()
     val typeahead by search.typeahead.collectAsState()
     val history by search.history.collectAsState()
+    val addons by search.addons.collectAsState()
+    val addonResults by search.addonResults.collectAsState()
+    val addonHistory by search.addonHistory.collectAsState()
     // The keyboard comes up on an empty page, not over results already there.
     var focusRequested by remember { mutableStateOf(query.isBlank()) }
     val listState = rememberLazyListState()
@@ -488,7 +491,44 @@ private fun SearchPage(
         onHistoryClear = search::clearHistory,
         contentPadding = contentPadding,
         topPadding = statusBar + 8.dp,
+        sourceSwitcher = {
+            SearchSourceSwitch(addons, onSelect = search::setAddons)
+        },
+        searchingAddons = addons,
+        addonResults = addonResults,
+        addonHistory = addonHistory,
+        onAddonHistoryClick = { search.submit(it) },
+        onAddonHistoryRemove = search::removeAddonSearch,
+        onAddonHistoryClear = search::clearAddonSearchHistory,
+        // An add-on's rows are a running order to play through, as on the phone, not a station seed.
+        onLibrarySongClick = { songs, index ->
+            IosPlayer.playQueue(songs.map { it.copy(playbackSource = query, playbackSourceType = PlaybackSourceType.SEARCH) }, index)
+        },
     )
+}
+
+/** The phone's YouTube / Addons selector at the head of the search page; Library comes with local music. */
+@Composable
+private fun SearchSourceSwitch(addons: Boolean, onSelect: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF1C1C1E)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        listOf("YouTube Music" to false, "Addons" to true).forEach { (label, value) ->
+            val chosen = addons == value
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (chosen) Color.White else Color.Transparent)
+                    .clickable { if (!chosen) onSelect(value) }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = if (chosen) Color.Black else Color.White.copy(alpha = 0.7f))
+            }
+        }
+    }
 }
 
 private val IosTab.label: String

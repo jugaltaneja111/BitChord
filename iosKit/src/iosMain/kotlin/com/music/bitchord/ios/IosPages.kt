@@ -140,8 +140,7 @@ internal fun IosPageHost(
             IosPage.Equalizer -> EqualizerPage(contentPadding, underBack)
             IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
             IosPage.TranslationLanguage -> TranslationLanguagePage(contentPadding, underBack)
-            // Filled in with the Sources page as it lands.
-            IosPage.Sources -> Unit
+            IosPage.Sources -> com.music.bitchord.ios.sources.SourcesPage(contentPadding, underBack)
         }
         BackButton(onClick = { navigator.back() }, modifier = Modifier.padding(top = topInset + 4.dp, start = 8.dp))
     }

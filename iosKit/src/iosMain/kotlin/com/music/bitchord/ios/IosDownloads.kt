@@ -7,6 +7,8 @@ import com.music.bitchord.data.model.ArtistRef
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.wallClockMs
+import com.music.bitchord.ios.sources.IosSources
+import com.music.bitchord.ios.sources.StreamRequest
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
@@ -284,8 +286,7 @@ internal object IosDownloads {
 
     private suspend fun fetch(song: Song): DownloadedTrack {
         val maxKbps = IosSettings.downloadKbps.flow.value
-        var stream = InnerTubeXResolver.extract(song.videoId, maxKbps = maxKbps, requireM4a = true)
-            ?: error("No downloadable stream")
+        var stream = streamFor(song, maxKbps) ?: error("No downloadable stream")
         val total = contentLength(stream.url, stream.headers) ?: error("Track unavailable: no length to fetch")
         val part = "$dir/${song.videoId}.part"
         files.removeItemAtPath(part, null)
@@ -304,8 +305,7 @@ internal object IosDownloads {
                 if (code in REFUSAL_CODES) {
                     if (reresolved) error("Download refused (HTTP $code)")
                     reresolved = true
-                    stream = InnerTubeXResolver.extract(song.videoId, maxKbps = maxKbps, requireM4a = true)
-                        ?: error("No downloadable stream")
+                    stream = streamFor(song, maxKbps) ?: error("No downloadable stream")
                     // Another client can answer with another format: resuming one stream into the
                     // middle of another makes a file the right length and unplayable.
                     if (contentLength(stream.url, stream.headers) != total) error("The stream changed mid-download, try again")
@@ -324,7 +324,14 @@ internal object IosDownloads {
         } finally {
             handle.closeFile()
         }
-        val audioFile = "${song.videoId}.m4a"
+        // AVFoundation reads a local file's container from its extension, so a FLAC is kept as one;
+        // a source track's key carries colons, which a file name is better without.
+        val extension = when {
+            stream.mimeType.endsWith("flac") -> "flac"
+            stream.mimeType.endsWith("mpeg") || stream.mimeType.endsWith("mp3") -> "mp3"
+            else -> "m4a"
+        }
+        val audioFile = "${song.videoId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.$extension"
         files.removeItemAtPath("$dir/$audioFile", null)
         files.moveItemAtPath(part, "$dir/$audioFile", null)
         val artworkFile = song.thumbnailUrl?.let { saveArtwork(song.videoId, it) }
@@ -345,6 +352,32 @@ internal object IosDownloads {
             addedAt = wallClockMs(),
             loudnessDb = stream.loudnessDb,
         )
+    }
+
+    /**
+     * What to save for [song]: YouTube's AAC for a YouTube track; for a row from an add-on or
+     * JioSaavn, its own source's best (lossless where it has it, as the phone's Lossless
+     * download quality), falling back to YouTube's match.
+     */
+    private suspend fun streamFor(song: Song, maxKbps: Int): InnerTubeXResolver.Extracted? {
+        if (!IosSources.isSourceTrack(song)) {
+            return InnerTubeXResolver.extract(song.videoId, maxKbps = maxKbps, requireM4a = true)
+        }
+        val request = if (maxKbps >= 256) StreamRequest.Lossless else StreamRequest.Capped(maxKbps)
+        IosSources.resolve(song, request)?.let { resolved ->
+            return InnerTubeXResolver.Extracted(
+                videoId = song.videoId,
+                profileId = "",
+                url = resolved.url,
+                headers = resolved.headers,
+                kbps = resolved.format.kbps ?: 0,
+                mimeType = resolved.format.codec?.let { "audio/$it" } ?: "audio/mp4",
+                clientName = resolved.sourceName,
+                loudnessDb = null,
+            )
+        }
+        val id = IosSources.youtubeFallback(song) ?: return null
+        return InnerTubeXResolver.extract(id, maxKbps = maxKbps, requireM4a = true)
     }
 
     /** The cover beside the audio, so lists and the player have it with no connection. */
