@@ -32,6 +32,10 @@ targets:
         UIViewControllerBasedStatusBarAppearance: false
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Last.fm's key and secret, from the repository's secrets when it has them (see ios.yml);
+        # empty otherwise, and the app asks the listener for their own.
+        BitChordLastfmApiKey: $(BITCHORD_LASTFM_API_KEY)
+        BitChordLastfmSecret: $(BITCHORD_LASTFM_SECRET)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord

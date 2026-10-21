@@ -65,6 +65,8 @@ internal class IosAudioEngine(
         var item: AVPlayerItem? = null
         var dsp: TapDsp? = null
         var loudnessDb: Double? = null
+        /** The track's real length when known; AVPlayer's own figure is only a fallback. */
+        var knownDurationMs = 0L
         /** What this deck holds, for [IosPlayer] to match against its queue. */
         var key: String? = null
         /** The crossfade's share of this deck's volume. */
@@ -77,7 +79,7 @@ internal class IosAudioEngine(
             }
         }
 
-        fun hold(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String?): Boolean {
+        fun hold(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String?, durationMs: Long): Boolean {
             val nsUrl = (if (url.startsWith("/")) NSURL.fileURLWithPath(url) else NSURL.URLWithString(url))
                 ?: return false
             // AVURLAssetHTTPHeaderFieldsKey: long-standing, if undocumented, and what every
@@ -90,6 +92,7 @@ internal class IosAudioEngine(
             this.dsp = dsp
             this.loudnessDb = loudnessDb
             this.key = key
+            knownDurationMs = durationMs
             applyGain()
             IosAudioTap.attach(item, dsp)
             player.replaceCurrentItemWithPlayerItem(item)
@@ -128,6 +131,7 @@ internal class IosAudioEngine(
             dsp = null
             key = null
             loudnessDb = null
+            knownDurationMs = 0L
             fade = 1f
         }
 
@@ -176,9 +180,9 @@ internal class IosAudioEngine(
      * Plays [url], fetched with [headers] (googlevideo wants the resolving client's User-Agent),
      * or the file at [url] when it is an absolute path — a download.
      */
-    fun load(url: String, headers: Map<String, String>, loudnessDb: Double? = null, key: String? = null) {
+    fun load(url: String, headers: Map<String, String>, loudnessDb: Double? = null, key: String? = null, durationMs: Long = 0L) {
         finishFade()
-        if (!active.hold(url, headers, loudnessDb, key)) return onFailed("bad stream URL")
+        if (!active.hold(url, headers, loudnessDb, key, durationMs)) return onFailed("bad stream URL")
         active.listen()
         AVAudioSession.sharedInstance().setActive(true, error = null)
         _durationMs.value = 0L
@@ -188,10 +192,10 @@ internal class IosAudioEngine(
     }
 
     /** Hands the waiting player the next track, paused and silent, so it is ready when wanted. */
-    fun prepareNext(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String) {
+    fun prepareNext(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String, durationMs: Long = 0L) {
         if (spare === outgoing) finishFade()
         spare.fade = 0f
-        if (!spare.hold(url, headers, loudnessDb, key)) spare.clear()
+        if (!spare.hold(url, headers, loudnessDb, key, durationMs)) spare.clear()
         spare.player.pause()
     }
 
@@ -308,8 +312,16 @@ internal class IosAudioEngine(
             stop()
             return
         }
+        // YouTube's audio-only MP4 is fragmented, with no total length in its header, so
+        // AVPlayer's figure is an estimate that can land at twice the truth. The track's own
+        // length wins whenever the caller knew it.
+        val known = active.knownDurationMs
         val duration = CMTimeGetSeconds(item.duration)
-        if (!duration.isNaN() && duration > 0) _durationMs.value = (duration * 1000).toLong()
+        if (known > 0L) {
+            _durationMs.value = known
+        } else if (!duration.isNaN() && duration > 0) {
+            _durationMs.value = (duration * 1000).toLong()
+        }
         val player = active.player
         val waiting = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
         _isBuffering.value = _isPlaying.value && waiting

@@ -166,11 +166,16 @@ jobs:
       # own Apple ID. The Kotlin framework is built by the project's own build phase.
       - name: Build the unsigned IPA
         if: github.event_name != 'workflow_dispatch' || inputs.app
+        env:
+          # Empty in a fork without them: the app then asks for the listener's own key.
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
         run: |
           xcodebuild -project iosApp/BitChord.xcodeproj -scheme BitChord \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/ios-device \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            BITCHORD_LASTFM_API_KEY="$LASTFM_API_KEY" BITCHORD_LASTFM_SECRET="$LASTFM_SECRET" \
             build
           mkdir -p build/ipa/Payload
           cp -R build/ios-device/Build/Products/Release-iphoneos/BitChord.app build/ipa/Payload/

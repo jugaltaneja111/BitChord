@@ -4,6 +4,7 @@ import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.innertube.InnerTubeXResolver
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.model.durationMillis
 import com.music.bitchord.ui.player.RepeatModes
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
@@ -103,6 +104,12 @@ internal object IosPlayer {
                 watchTransition()
             }
         }
+        // The scrobblers follow what is heard: playing once the stream is found, paused otherwise.
+        scope.launch {
+            combine(engine.isPlaying, _resolving) { playing, resolving -> playing && !resolving }
+                .collect { IosScrobbler.onPlaying(it, engine.position.positionMs) }
+        }
+        scope.launch { engine.durationMs.collect(IosScrobbler::onDuration) }
         // Replay's listening, sampled while something actually plays.
         scope.launch {
             var wasPlaying = false
@@ -256,18 +263,30 @@ internal object IosPlayer {
             nextIndex in _queue.value.indices -> playAt(nextIndex)
             _repeatMode.value == RepeatModes.ALL && _queue.value.isNotEmpty() -> playAt(0)
             _autoplay.value -> extendWithRadio(playNext = true)
-            else -> engine.pause()
+            else -> {
+                // The queue ran out: nothing follows to close the last listen out.
+                if (advancingFromEnd) _song.value?.let { IosScrobbler.onSongChanged(it, ended = true, song = it) }
+                engine.pause()
+            }
         }
     }
 
     private fun onEnded() {
         if (_repeatMode.value == RepeatModes.ONE) {
+            _song.value?.let { IosScrobbler.onSongChanged(it, ended = true, song = it) }
             engine.seekTo(0)
             engine.play()
+            // Still playing, so the play state never changes: the repeat starts here.
+            IosScrobbler.onPlaying(true, 0L)
         } else {
+            advancingFromEnd = true
             next()
+            advancingFromEnd = false
         }
     }
+
+    /** Set while the queue moves on because a track ended, for the scrobblers: a skip isn't a listen. */
+    private var advancingFromEnd = false
 
     /** The queue position that plays after this one on its own, or null at the end. */
     private fun upcomingIndex(): Int? {
@@ -305,7 +324,9 @@ internal object IosPlayer {
         }
         val fadeMs = (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
         if (fadeMs > 0L && remaining in 1..fadeMs && engine.preparedFor(next.videoId)) {
+            advancingFromEnd = true
             transition(nextIndex, fadeMs)
+            advancingFromEnd = false
         }
     }
 
@@ -316,14 +337,14 @@ internal object IosPlayer {
             try {
                 IosDownloads.audioPath(song.videoId)?.let { path ->
                     val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
-                    engine.prepareNext(path, emptyMap(), loudness, song.videoId)
+                    engine.prepareNext(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
                     return@launch
                 }
                 val stream = InnerTubeXResolver.extract(song.videoId, maxKbps = 320, requireM4a = true) ?: return@launch
                 // The queue may have moved on while that resolved.
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != song.videoId) return@launch
                 TrackLog.i(TAG, "${song.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, song.videoId)
+                engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, song.videoId, trackLength(stream.url, song))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -341,12 +362,15 @@ internal object IosPlayer {
         _resolving.value = false
         _index.value = index
         playedThisSession += song.videoId
+        IosScrobbler.onSongChanged(_song.value, advancingFromEnd, song)
         _song.value = song
         _error.value = null
         if (_autoplay.value && _queue.value.size > 1 && index >= _queue.value.size - 2) {
             extendWithRadio(playNext = false)
         }
         engine.startNext(fadeMs)
+        // The engine never stops between the two tracks, so the new one is started here.
+        IosScrobbler.onPlaying(engine.isPlaying.value, 0L)
     }
 
     /** The last song's radio after the queue; played straight away when the queue has run out. */
@@ -388,6 +412,7 @@ internal object IosPlayer {
         }
         _index.value = index
         playedThisSession += song.videoId
+        IosScrobbler.onSongChanged(_song.value, advancingFromEnd, song)
         _song.value = song
         _error.value = null
         // Fetched ahead, so the next song is already queued when this one ends. A queue of one is
@@ -404,7 +429,7 @@ internal object IosPlayer {
                 IosDownloads.audioPath(song.videoId)?.let { path ->
                     TrackLog.i(TAG, "${song.videoId}: from download")
                     val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
-                    engine.load(path, emptyMap(), loudness, song.videoId)
+                    engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
                     return@launch
                 }
                 // AAC in MP4: AVFoundation cannot play the Opus/WebM streams the phone prefers.
@@ -414,7 +439,7 @@ internal object IosPlayer {
                     return@launch
                 }
                 TrackLog.i(TAG, "${song.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
-                engine.load(stream.url, stream.headers, stream.loudnessDb, song.videoId)
+                engine.load(stream.url, stream.headers, stream.loudnessDb, song.videoId, trackLength(stream.url, song))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -423,6 +448,16 @@ internal object IosPlayer {
                 _resolving.value = false
             }
         }
+    }
+
+    /**
+     * How long the track really is: googlevideo's `dur` parameter (seconds, exact), else the
+     * catalogue's length, else 0 for the engine to estimate.
+     */
+    private fun trackLength(url: String?, song: Song): Long {
+        val dur = url?.let { Regex("[?&]dur=([0-9.]+)").find(it)?.groupValues?.get(1)?.toDoubleOrNull() }
+        if (dur != null && dur > 0) return (dur * 1000).toLong()
+        return song.durationMillis().coerceAtLeast(0L)
     }
 
     private fun fail(message: String) {

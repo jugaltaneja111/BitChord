@@ -1,6 +1,14 @@
 package com.music.bitchord.data.spotify
 
-import com.music.bitchord.data.Http
+import com.music.bitchord.data.appHttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.IO
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,9 +26,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 
 /** A Spotify playlist's page id in the detail stack: this plus the playlist id (or [SpotifyLibrary.LIKED_ID]). */
 const val SPOTIFY_PAGE_PREFIX = "spotify:playlist:"
@@ -70,7 +75,7 @@ object SpotifyLibrary {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/122.0.0.0 Safari/537.36"
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val mediaType = "application/json; charset=utf-8".toMediaType()
+    private val http by lazy { appHttpClient {} }
 
     /** Every playlist in the library, however many pages it takes. */
     suspend fun playlists(): List<SpotifyPlaylist> = withContext(Dispatchers.IO) {
@@ -114,7 +119,7 @@ object SpotifyLibrary {
         collected
     }
 
-    private fun playlistPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyPlaylist>, Int, Int> {
+    private suspend fun playlistPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyPlaylist>, Int, Int> {
         val variables = buildJsonObject {
             putJsonArray("filters") { add("Playlists") }
             put("order", null as String?)
@@ -135,7 +140,7 @@ object SpotifyLibrary {
         return parsePlaylistPage(gql("libraryV3", LIBRARY, variables, headers))
     }
 
-    private fun trackPage(
+    private suspend fun trackPage(
         headers: Map<String, String>,
         playlistId: String,
         offset: Int,
@@ -166,7 +171,7 @@ object SpotifyLibrary {
         largestSource(root.obj("data")?.obj("playlistV2")?.obj("images"))
     }
 
-    private fun likedPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyTrack>, Int, Int> {
+    private suspend fun likedPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyTrack>, Int, Int> {
         val variables = buildJsonObject {
             put("offset", offset)
             put("limit", 100)
@@ -188,7 +193,7 @@ object SpotifyLibrary {
         }
     }
 
-    private fun gql(operation: String, hash: String, variables: JsonObject, headers: Map<String, String>): JsonObject {
+    private suspend fun gql(operation: String, hash: String, variables: JsonObject, headers: Map<String, String>): JsonObject {
         val body = buildJsonObject {
             put("variables", variables)
             put("operationName", operation)
@@ -199,17 +204,14 @@ object SpotifyLibrary {
                 }
             }
         }
-        val request = Request.Builder()
-            .url(GQL)
-            .post(body.toString().toRequestBody(mediaType))
-            .apply { headers.forEach { (name, value) -> header(name, value) } }
-            .build()
-        val text = Http.client.newCall(request).execute().use { response ->
-            val payload = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw IllegalStateException("Spotify $operation failed (${response.code})")
-            }
-            payload
+        val response = http.post(GQL) {
+            headers.forEach { (name, value) -> header(name, value) }
+            contentType(ContentType.Application.Json)
+            setBody(body.toString())
+        }
+        val text = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("Spotify $operation failed (${response.status.value})")
         }
         val root = json.parseToJsonElement(text).jsonObject
         val error = root.arr("errors")?.firstOrNull()?.jsonObject?.str("message")

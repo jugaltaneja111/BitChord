@@ -154,16 +154,6 @@ internal fun EqualizerPage(contentPadding: PaddingValues, topPadding: Dp) {
     }
 }
 
-@Composable
-private fun Footer(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 32.dp).padding(top = 8.dp),
-    )
-}
-
 /** Dynamic | Manual, as the phone's segmented control draws them. */
 @Composable
 private fun ModeSwitch(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit) {

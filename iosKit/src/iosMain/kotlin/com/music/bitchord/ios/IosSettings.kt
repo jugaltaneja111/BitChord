@@ -80,6 +80,17 @@ internal class IntPref(private val key: String, default: Int) {
     }
 }
 
+internal class StringPref(private val key: String, default: String) {
+    private val defaults = NSUserDefaults.standardUserDefaults
+
+    val flow = MutableStateFlow(defaults.stringForKey(key) ?: default)
+
+    fun set(value: String) {
+        defaults.setObject(value, key)
+        flow.value = value
+    }
+}
+
 internal class FloatPref(private val key: String, default: Float) {
     private val defaults = NSUserDefaults.standardUserDefaults
 
@@ -150,6 +161,23 @@ internal object IosSettings {
     /** The ceiling a download is resolved under: 320 takes the best AAC there is. */
     val downloadKbps = IntPref("${PREFIX}download_kbps", 320)
 
+    // Scrobbling, the phone's defaults: everything off until signed in.
+    val lastfmEnabled = BoolPref("${PREFIX}lastfm_enabled", false)
+    val lastfmUsername = StringPref("${PREFIX}lastfm_username", "")
+    val lastfmSessionKey = StringPref("${PREFIX}lastfm_session_key", "")
+    /** The listener's own key and secret, asked for only when the build carries none. */
+    val lastfmApiKey = StringPref("${PREFIX}lastfm_api_key", "")
+    val lastfmSecret = StringPref("${PREFIX}lastfm_secret", "")
+    val lastfmScrobbleEnabled = BoolPref("${PREFIX}lastfm_scrobble_enabled", false)
+    val lastfmNowPlaying = BoolPref("${PREFIX}lastfm_now_playing", false)
+    val lastfmPrimaryArtistOnly = BoolPref("${PREFIX}lastfm_primary_artist_only", false)
+    val scrobbleMinDuration = IntPref("${PREFIX}scrobble_min_duration", 30)
+    val scrobbleDelayPercent = FloatPref("${PREFIX}scrobble_delay_percent", 0.5f)
+    val scrobbleDelaySeconds = IntPref("${PREFIX}scrobble_delay_seconds", 180)
+    val listenBrainzEnabled = BoolPref("${PREFIX}listenbrainz_enabled", false)
+    val listenBrainzToken = StringPref("${PREFIX}listenbrainz_token", "")
+    val listenBrainzPrimaryArtistOnly = BoolPref("${PREFIX}listenbrainz_primary_artist_only", false)
+
     // Playback sound, the phone's defaults.
     val loudnessNormalization = BoolPref("${PREFIX}loudness_normalization", true)
     val loudnessOffOnSpeaker = BoolPref("${PREFIX}loudness_off_on_speaker", true)
@@ -187,6 +215,7 @@ internal fun SettingsPage(
     onOpenLyricsSources: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenEqualizer: () -> Unit,
+    onOpenIntegrations: () -> Unit,
 ) {
     val enabledLyricsSources by IosSettings.lyricsSources.flow.collectAsState()
     val lyricsSourceCount = "${enabledLyricsSources.count { !it.hidden }} of ${LyricsSource.offered.size}"
@@ -260,7 +289,7 @@ internal fun SettingsPage(
                     }
                 }
                 Divider()
-                Soon("Spotify, Last.fm, ListenBrainz, Discord")
+                ActionRow("Spotify, Last.fm, ListenBrainz, Discord", onClick = onOpenIntegrations)
                 Divider()
                 Soon("Listen together")
             }
@@ -528,7 +557,7 @@ private fun CrossfadeRow() {
 
 /** A setting the phone has and this app does not yet: shown, so the page reads the same. */
 @Composable
-private fun Soon(title: String, subtitle: String? = null) {
+internal fun Soon(title: String, subtitle: String? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, color = Color.White.copy(alpha = 0.45f))
@@ -579,18 +608,24 @@ internal fun Toggle(title: String, subtitle: String, pref: BoolPref) {
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = pref::set,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = Color(0xFF34C759),
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = Color(0xFF39393D),
-                uncheckedBorderColor = Color.Transparent,
-            ),
-        )
+        IosSwitch(checked, pref::set)
     }
+}
+
+/** The iOS green switch every settings row uses. */
+@Composable
+internal fun IosSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Color.White,
+            checkedTrackColor = Color(0xFF34C759),
+            uncheckedThumbColor = Color.White,
+            uncheckedTrackColor = Color(0xFF39393D),
+            uncheckedBorderColor = Color.Transparent,
+        ),
+    )
 }
 
 @Composable

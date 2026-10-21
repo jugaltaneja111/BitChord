@@ -118,7 +118,8 @@ internal fun IosPageHost(
             is IosPage.Replay -> ReplayPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
-            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) })
+            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) })
+            IosPage.Integrations -> IntegrationsPage(contentPadding, underBack)
             IosPage.Equalizer -> EqualizerPage(contentPadding, underBack)
             IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
         }
