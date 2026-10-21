@@ -30,7 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -205,29 +208,32 @@ private fun LastfmSignIn(onDone: () -> Unit) {
     var secret by remember { mutableStateOf(IosSettings.lastfmSecret.flow.value) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    // Return moves to the next field rather than doing nothing.
+    val next = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false)
     AlertDialog(
         onDismissRequest = { if (!loading) onDone() },
         title = { Text("Sign in to Last.fm") },
         text = {
-            Column {
+            // Scrolls, so the password stays reachable above the keyboard.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (needsKey) {
                     Text(
                         "This build has no Last.fm API key. Create one free at last.fm/api, then paste its key and shared secret here.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     TextButton(onClick = { openUrl("https://www.last.fm/api/account/create") }) { Text("Create an API account") }
-                    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, singleLine = true, label = { Text("API key") })
-                    OutlinedTextField(value = secret, onValueChange = { secret = it }, singleLine = true, label = { Text("Shared secret") })
+                    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, singleLine = true, label = { Text("API key") }, keyboardOptions = next)
+                    OutlinedTextField(value = secret, onValueChange = { secret = it }, singleLine = true, label = { Text("Shared secret") }, keyboardOptions = next)
                     Spacer(Modifier.height(8.dp))
                 }
-                OutlinedTextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text("Username") })
+                OutlinedTextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text("Username") }, keyboardOptions = next)
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
                     singleLine = true,
                     label = { Text("Password") },
                     visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 )
                 error?.let {
                     Spacer(Modifier.height(8.dp))
