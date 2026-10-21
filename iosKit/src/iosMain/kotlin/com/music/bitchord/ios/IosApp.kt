@@ -257,6 +257,14 @@ internal fun IosApp() {
                     if (IosAccount.signedIn.value && navigator.top == null) navigator.select(IosTab.LIBRARY)
                 })
             }
+            IosReplay.story?.let { (summary, start) ->
+                ReplayStories(
+                    summary = summary,
+                    start = start,
+                    onClose = { IosReplay.story = null },
+                    onShare = { shareLink(IosReplay.shareText(summary)) },
+                )
+            }
             // Above the pages and the player: a menu can be opened from either.
             IosMenuHost(navigator, onLeavePlayer = { playerOpen = false })
             IosToast.Host(
@@ -330,7 +338,7 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
         onShelfItemLongPress = { IosMenus.openShelfItem(it) },
         onNewPlaylist = { if (signedIn) IosMenus.newPlaylist = emptyList() else IosOverlays.login = true },
         onShowAll = { navigator.open(IosPage.LibraryShelf(it.title)) },
-        replay = {},
+        replay = { LibraryReplayCards(navigator) },
         onSignIn = { IosOverlays.login = true },
         onRetry = IosAccount::loadLibrary,
         refreshing = false,

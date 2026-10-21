@@ -22,8 +22,10 @@ icons), the rest is listed as coming. Lyrics come from the phone's providers, no
 commonMain on Ktor (TTML through a small common XML reader, Genius pages through a tag scanner on
 iOS and Jsoup on the JVM), with the sources' choice and order in Settings. Downloads keep tracks (and whole albums or
 playlists) in the app's Documents, out of backup, fetched in ranges as the phone does and played
-from the file with no connection; Library lists them. Not yet: lyrics
-translation and romanisation, Replay, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+from the file with no connection; Library lists them. Replay counts listening on the phone in the Android app's
+monthly files and format (iosKit's own copy, as the desktop has its own), and draws the phone's
+cards, charts and stories; genres wait for Last.fm, and the share picture is text for now. Not yet: lyrics
+translation and romanisation, audio effects, Spotify / Last.fm / Discord. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

@@ -43,6 +43,7 @@ private fun start() {
     // Before the first page asks for anything, so it is asked as the listener.
     IosAccount.restore()
     IosDownloads.restore()
+    IosArtistFacts.start()
     startAutoplayIfAsked()
 }
 

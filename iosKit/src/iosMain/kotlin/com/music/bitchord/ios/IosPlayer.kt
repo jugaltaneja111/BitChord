@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import platform.MediaPlayer.MPMediaItemPropertyArtist
 import platform.MediaPlayer.MPMediaItemPropertyPlaybackDuration
@@ -90,6 +91,21 @@ internal object IosPlayer {
             combine(_song, engine.isPlaying, engine.durationMs) { song, playing, duration ->
                 Triple(song, playing, duration)
             }.collect { (song, playing, duration) -> publishNowPlaying(song, playing, duration) }
+        }
+        // Replay's listening, sampled while something actually plays.
+        scope.launch {
+            var wasPlaying = false
+            while (true) {
+                val song = _song.value
+                val playing = engine.isPlaying.value && song != null && !_resolving.value
+                if (playing && song != null) {
+                    IosListeningRecorder.onSample(song, engine.durationMs.value)
+                } else if (wasPlaying) {
+                    IosListeningRecorder.onStopped()
+                }
+                wasPlaying = playing
+                delay(IosListeningRecorder.SAMPLE_MS)
+            }
         }
     }
 

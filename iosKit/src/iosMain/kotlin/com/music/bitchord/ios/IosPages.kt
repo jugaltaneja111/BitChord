@@ -115,6 +115,7 @@ internal fun IosPageHost(
             is IosPage.Artist -> ArtistPageView(page, navigator, contentPadding, topInset)
             is IosPage.Category -> CategoryPage(page, navigator, contentPadding, topInset)
             is IosPage.LibraryShelf -> LibraryShelfPage(page, navigator, contentPadding, topInset)
+            is IosPage.Replay -> ReplayPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
             IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) })

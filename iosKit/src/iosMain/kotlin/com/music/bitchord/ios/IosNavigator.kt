@@ -23,6 +23,8 @@ internal sealed interface IosPage {
     /** What the signed-in account has been listening to, most recent first. */
     /** A Library shelf's Show all: every card on it, read live so an edit lands here too. */
     data class LibraryShelf(val title: String) : IosPage
+    /** Replay, scrolled to the chart [landing] names. */
+    data class Replay(val landing: ReplayStoryPage = ReplayStoryPage.INTRO) : IosPage
     data object History : IosPage
     /** The tracks kept on the phone. */
     data object Downloads : IosPage
