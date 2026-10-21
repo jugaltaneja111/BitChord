@@ -1,5 +1,8 @@
 package com.music.bitchord.ios
 
+import com.music.bitchord.data.canvas.CanvasArtwork
+import com.music.bitchord.ios.canvas.AppleArtistVideo
+import com.music.bitchord.ios.canvas.IosCanvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -245,9 +248,29 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
             YtMusicRepository.playlistOwned(page.browseId).getOrNull() == true
     }
 
+    // An album's animated cover, the player's own, on the header; albums only, as on the phone —
+    // a playlist's artwork is a collage no label publishes a clip for.
+    val canvasEnabled by IosSettings.animatedCanvas.flow.collectAsState()
+    // The header's credit, as the phone reads it: the subtitle less its year and its "Album".
+    val credit = (loaded?.subtitle ?: page.fallback?.subtitle.orEmpty())
+        .split("•", "·").map(String::trim)
+        .filter { it.isNotEmpty() && !(it.length == 4 && it.all(Char::isDigit)) && it.lowercase() !in RELEASE_KINDS }
+        .joinToString(", ")
+        .ifBlank { songs.firstOrNull()?.artist.orEmpty() }
+    var canvas by remember(page.browseId) { mutableStateOf<CanvasArtwork?>(null) }
+    LaunchedEffect(page.browseId, title, credit, canvasEnabled) {
+        if (!canvasEnabled || type != BrowseType.ALBUM || title.isBlank()) {
+            canvas = null
+            return@LaunchedEffect
+        }
+        // The credit fills in once the tracks load, so this can run twice; a clip already up stays.
+        canvas = IosCanvas.canvasForAlbum(title, credit) ?: canvas
+    }
+
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "header") {
             CollectionHeader(
+                canvas = canvas,
                 title = title,
                 subtitle = loaded?.subtitle ?: page.fallback?.subtitle.orEmpty(),
                 thumbnailUrl = loaded?.thumbnailUrl ?: page.fallback?.thumbnailUrl,
@@ -311,6 +334,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
 
 @Composable
 internal fun CollectionHeader(
+    canvas: CanvasArtwork? = null,
     title: String,
     subtitle: String,
     thumbnailUrl: String?,
@@ -325,16 +349,21 @@ internal fun CollectionHeader(
         Modifier.fillMaxWidth().padding(top = topInset + 56.dp, start = PAGE_GUTTER, end = PAGE_GUTTER, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AsyncImage(
-            model = thumbnailUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
+        Box(
+            Modifier
                 .fillMaxWidth(0.68f)
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
-        )
+        ) {
+            AsyncImage(
+                model = thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+            canvas?.let { HeaderClip(it, Modifier.matchParentSize()) }
+        }
         Spacer(Modifier.height(18.dp))
         Text(
             title,
@@ -424,9 +453,15 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
     }
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
+    // Some artists' Apple Music pages loop a clip where the photograph is; the phone plays it.
+    val canvasEnabled by IosSettings.animatedCanvas.flow.collectAsState()
+    var video by remember(page.browseId) { mutableStateOf<CanvasArtwork?>(null) }
+    LaunchedEffect(name, canvasEnabled) {
+        video = if (canvasEnabled && name.isNotBlank()) AppleArtistVideo.videoFor(name)?.let { CanvasArtwork(url = it) } else null
+    }
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-        item(key = "banner") { ArtistBanner(artist?.thumbnailUrl, name) }
+        item(key = "banner") { ArtistBanner(artist?.thumbnailUrl, name, video) }
         when (val s = state) {
             UiState.Loading -> songListSkeleton(count = 5)
             is UiState.Error -> item(key = "error") {
@@ -499,9 +534,10 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
 
 /** The photograph, full width, with the name across the foot of it. */
 @Composable
-private fun ArtistBanner(url: String?, name: String) {
+private fun ArtistBanner(url: String?, name: String, video: CanvasArtwork?) {
     Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Color(0xFF111113))) {
         AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        video?.let { HeaderClip(it, Modifier.fillMaxSize()) }
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black),
@@ -770,3 +806,6 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
         }
     }
 }
+
+/** The words a release's subtitle uses for what it is, which are not who made it. */
+private val RELEASE_KINDS = setOf("album", "single", "ep", "playlist", "artist", "podcast", "episode", "song", "video")

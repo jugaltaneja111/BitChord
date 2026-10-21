@@ -41,10 +41,13 @@ party, and `bitchord://party/CODE` opens an invite. iOS suspends a backgrounded 
 playing, which would let the server reap the party, so a silent loop holds the app awake while it
 is in a party and paused (`IosPartyKeepAlive`). Animated covers ask the phone's four sources
 (iosKit/…/canvas) and loop muted in an AVPlayerLayer. Backups are the phone's file format, so
-the Replay moves between the two apps. Not yet: Automix and skip silence (both need
-the track analysed ahead), quality choices (iOS only plays YouTube's AAC until Sources), lyrics
-translation and romanisation, local playlists for imports when signed out, https invite links
-(they need the invite site's associated-domains file), the album and artist page videos. The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+the Replay moves between the two apps. Lyrics translation is the phone's (now commonMain, its
+cache behind `LyricsTranslationStore`). The song cache (`IosSongCache`) keeps played tracks under
+Caches; AVPlayer shares nothing it streamed, so a played track is fetched again in the background,
+off mobile data only. Album pages loop the animated cover, and artist pages Apple Music's artist
+clip (`AppleArtistVideo`). Not yet: Sources and quality choices (iOS only plays YouTube's AAC),
+Automix and skip silence (both need the track analysed ahead), local playlists for imports when
+signed out, https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

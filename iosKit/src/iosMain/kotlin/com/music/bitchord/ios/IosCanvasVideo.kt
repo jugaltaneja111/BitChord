@@ -1,5 +1,7 @@
 package com.music.bitchord.ios
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -12,6 +14,8 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitView
+import androidx.compose.ui.unit.IntSize
+import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.ui.player.CanvasContentMode
 import com.music.bitchord.ui.player.CanvasVideoSpec
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -140,4 +144,33 @@ internal fun IosCanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) {
         modifier = modifier,
         properties = UIKitInteropProperties(isInteractive = false, isNativeAccessibilityEnabled = false),
     )
+}
+
+/**
+ * A clip over a page header's still — an album's animated cover, an artist's Apple Music video —
+ * always running, as on the phone: there is no transport here to follow, and the page is only up
+ * while it is being read. It fades in over the still once its first frame is ready.
+ */
+@Composable
+internal fun HeaderClip(canvas: CanvasArtwork, modifier: Modifier) {
+    var shown by remember(canvas.url) { mutableStateOf(false) }
+    val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(400), label = "header clip")
+    val spec = CanvasVideoSpec(
+        canvas = canvas,
+        isPlaying = true,
+        contentMode = CanvasContentMode.CROP,
+        alignPortraitTop = false,
+        onAspectRatioChanged = {},
+        portraitRevealBounds = IntSize.Zero,
+        presentationAlpha = { alpha },
+        onRenderedChanged = { shown = it },
+        onFrameCaptured = {},
+        refreshFrameEveryMs = null,
+        frameCapturePx = 0,
+        onCoverChanged = {},
+        bottomFade = 0f,
+        bottomFadeEndPx = null,
+        pausedForTransition = false,
+    )
+    IosCanvasVideo(spec, modifier)
 }
