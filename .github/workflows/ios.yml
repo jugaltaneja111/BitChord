@@ -39,7 +39,8 @@ on:
         default: macos-15
 
 concurrency:
-  group: ios-${{ github.workflow }}-${{ github.ref }}
+  # Per event, so a push's Linux check never cancels a dispatched IPA build.
+  group: ios-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
