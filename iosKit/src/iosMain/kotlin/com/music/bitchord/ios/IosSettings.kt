@@ -297,6 +297,8 @@ internal object IosSettings {
     val lyricsBlur = BoolPref("${PREFIX}lyrics_blur", true)
     /** A line-timed answer only stands in while the rest of the order is searched for word timing. */
     val prioritizeSyllableSync = BoolPref("${PREFIX}prioritize_syllable_sync", false)
+    /** Megabytes of played songs kept on the phone; 0 is off, [IosSongCache.UNLIMITED_MB] no limit. */
+    val songCacheMb = IntPref("${PREFIX}song_cache_mb", 512)
     /** The language the translate button turns lyrics into; blank follows the app's language. */
     val translationLanguage = StringPref("${PREFIX}translation_language", "")
     /** Unlocks PaxSenix's Spotify and Musixmatch routes. A credential, so in the Keychain. */
@@ -533,7 +535,13 @@ internal fun SettingsPage(
                     }
                 }
                 Divider()
-                Soon("Song cache")
+                SongCacheRow()
+                Divider()
+                val songCache by IosSongCache.bytes.collectAsState()
+                ActionRow("Clear song cache", value = songCache.takeIf { it > 0 }?.let(::megabytes)) {
+                    IosSongCache.clear()
+                    IosPlayerHost.showMessage("Song cache cleared")
+                }
             }
         }
         item {
@@ -766,6 +774,45 @@ internal fun deviceLanguageTag(): String =
 private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
     if (to !in indices) return this
     return toMutableList().apply { add(to, removeAt(from)) }
+}
+
+/** The phone's Song cache limit slider, with Off at the left. */
+@Composable
+private fun SongCacheRow() {
+    val mb by IosSettings.songCacheMb.flow.collectAsState()
+    val label = when (mb) {
+        0 -> "Off"
+        IosSongCache.UNLIMITED_MB -> "Unlimited"
+        else -> if (mb >= 1024) "${mb / 1024}.${(mb % 1024) * 10 / 1024} GB" else "$mb MB"
+    }
+    Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Song cache", color = Color.White)
+                Text(
+                    "Keeps songs you’ve played on this iPhone for instant replays, saved over Wi-Fi only",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Slider(
+            value = mb.toFloat(),
+            onValueChange = { IosSettings.songCacheMb.set((it / IosSongCache.STEP_MB).roundToInt() * IosSongCache.STEP_MB) },
+            onValueChangeFinished = { IosSongCache.trim() },
+            valueRange = 0f..IosSongCache.UNLIMITED_MB.toFloat(),
+            steps = IosSongCache.UNLIMITED_MB / IosSongCache.STEP_MB - 1,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Color.White,
+                inactiveTrackColor = Color.White.copy(alpha = 0.18f),
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
+        )
+    }
 }
 
 /** The phone's crossfade slider: off, or one to twelve seconds of blend. */

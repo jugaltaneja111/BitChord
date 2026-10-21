@@ -471,6 +471,12 @@ internal object IosPlayer {
         }
     }
 
+    /** A copy of [videoId] on the phone — a download first, else the song cache — and its loudness. */
+    private fun onPhone(videoId: String): Pair<String, Double?>? =
+        IosDownloads.audioPath(videoId)?.let { path ->
+            path to IosDownloads.tracks.value.firstOrNull { it.videoId == videoId }?.loudnessDb
+        } ?: IosSongCache.audio(videoId)
+
     private fun prepare(song: Song) {
         prepareJob?.cancel()
         preparing = song.videoId
@@ -478,8 +484,7 @@ internal object IosPlayer {
             // What this job is readying: the queued track, or its audio release once swapped in.
             var readying = song.videoId
             try {
-                IosDownloads.audioPath(song.videoId)?.let { path ->
-                    val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
+                onPhone(song.videoId)?.let { (path, loudness) ->
                     engine.prepareNext(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
                     return@launch
                 }
@@ -489,8 +494,8 @@ internal object IosPlayer {
                     _queue.value = _queue.value.toMutableList().also { it[at] = audio }
                     preparing = audio.videoId
                     readying = audio.videoId
-                    IosDownloads.audioPath(audio.videoId)?.let { path ->
-                        engine.prepareNext(path, emptyMap(), null, audio.videoId, trackLength(null, audio))
+                    onPhone(audio.videoId)?.let { (path, loudness) ->
+                        engine.prepareNext(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio))
                         return@launch
                     }
                 }
@@ -499,6 +504,7 @@ internal object IosPlayer {
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
                 TrackLog.i(TAG, "${audio.videoId}: readied ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
                 engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio))
+                IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -595,9 +601,8 @@ internal object IosPlayer {
             _resolving.value = true
             try {
                 // A download plays from the phone, connection or not.
-                IosDownloads.audioPath(song.videoId)?.let { path ->
-                    TrackLog.i(TAG, "${song.videoId}: from download")
-                    val loudness = IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.loudnessDb
+                onPhone(song.videoId)?.let { (path, loudness) ->
+                    TrackLog.i(TAG, "${song.videoId}: from the phone")
                     engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song), startMs, startPlaying)
                     return@launch
                 }
@@ -610,8 +615,8 @@ internal object IosPlayer {
                     }
                     playedThisSession += audio.videoId
                     _song.value = audio
-                    IosDownloads.audioPath(audio.videoId)?.let { path ->
-                        engine.load(path, emptyMap(), null, audio.videoId, trackLength(null, audio), startMs, startPlaying)
+                    onPhone(audio.videoId)?.let { (path, loudness) ->
+                        engine.load(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio), startMs, startPlaying)
                         return@launch
                     }
                 }
@@ -623,6 +628,7 @@ internal object IosPlayer {
                 }
                 TrackLog.i(TAG, "${audio.videoId}: ${stream.clientName} ${stream.mimeType} ${stream.kbps} kbps")
                 engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, trackLength(stream.url, audio), startMs, startPlaying)
+                IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

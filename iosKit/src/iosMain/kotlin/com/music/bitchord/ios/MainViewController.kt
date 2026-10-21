@@ -59,6 +59,7 @@ private fun start() {
     // Before the first page asks for anything, so it is asked as the listener.
     IosAccount.restore()
     IosDownloads.restore()
+    IosSongCache.restore()
     IosArtistFacts.start()
     com.music.bitchord.data.lyrics.LyricsTranslation.store = CachesTranslationStore
     IosSpotify.install()
