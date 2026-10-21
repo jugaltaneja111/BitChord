@@ -136,6 +136,16 @@ internal class IosFfmpegPlayer(
 
     val format: DecodedInfo? get() = session?.info
 
+    /** One line of the player's state, for the log while the FFmpeg path is being proven. */
+    fun diagnostics(): String {
+        val s = session ?: return "no session"
+        val engine = node.engine
+        return "pos=${s.positionMs()}ms dur=${s.durationMs}ms ready=${s.isReady} playing=${s.isPlaying} " +
+            "buffering=${s.isBuffering} ${s.counters()} node.playing=${node.playing} vol=${node.volume} " +
+            "engine=${engine?.running} mixer=${engine?.mainMixerNode?.outputVolume} " +
+            "out=${engine?.outputNode?.outputFormatForBus(0u)?.sampleRate} fmt=${connectedFormat?.sampleRate}/${connectedFormat?.channelCount}"
+    }
+
     /** Stops everything, frees FFmpeg/engine resources, deletes temp files. */
     fun release() {
         if (released) return
@@ -320,6 +330,11 @@ internal class IosFfmpegPlayer(
             }
         }
 
+        fun counters(): String = locked(cond) {
+            "queued=$queuedFrames scheduled=$scheduledFrames completed=$completedFrames base=${baseMs.toLong()} " +
+                "rate=$outRate started=$nodeStarted restart=$needsRestart eof=$eofDecoded ended=$endedReported"
+        }
+
         val durationMs: Long get() = locked(cond) { duration }
         val isReady: Boolean get() = locked(cond) { ready }
         val failure: String? get() = locked(cond) { failed }
@@ -358,6 +373,7 @@ internal class IosFfmpegPlayer(
                 return
             }
             node.play()
+            TrackLog.d(TAG, "node started: engine=${node.engine?.running} ${counters()}")
             locked(cond) { nodeStarted = true }
         }
 
@@ -411,6 +427,7 @@ internal class IosFfmpegPlayer(
             when (waitForWork()) {
                 Work.EXIT -> return false
                 Work.ENDED -> {
+                    TrackLog.i(TAG, "ended: ${counters()}")
                     FfmpegAudioEngine.want(this, false)
                     onMain { if (session === this && !released) onEnded() }
                 }
@@ -482,6 +499,12 @@ internal class IosFfmpegPlayer(
             timeBase = stream.rational(FfmpegLayout.STREAM_TIME_BASE)
             if (timeBase <= 0) error("stream has no time base")
             startPts = stream.long(FfmpegLayout.STREAM_START_TIME).takeIf { it != FfmpegLayout.NOPTS_VALUE } ?: 0L
+            TrackLog.i(
+                TAG,
+                "opened ${Av.codecName(codecId)} rate=${parameters.int(FfmpegLayout.PAR_SAMPLE_RATE)} " +
+                    "ch=${parameters.int(FfmpegLayout.PAR_CH_LAYOUT + FfmpegLayout.LAYOUT_NB_CHANNELS)} " +
+                    "timeBase=$timeBase startPts=$startPts size=${src.size} seekable=${src.seekable}",
+            )
             readInterrupted = false
         }
 
@@ -550,7 +573,7 @@ internal class IosFfmpegPlayer(
                     fail(it)
                     return
                 }
-                if (result != FfmpegLayout.ERROR_EOF) TrackLog.w(TAG, "read ended: ${Av.describe(result)}")
+                TrackLog.i(TAG, "read ended (${Av.describe(result)}) at ${counters()} size=${source?.size}")
                 finishStream()
                 return
             }

@@ -599,6 +599,12 @@ internal fun SettingsPage(
             Group("Advanced & experimental") {
                 Toggle("Show stats for nerds", "Codec, bitrate and sample rate on the player", IosSettings.showNerdStats)
                 Divider()
+                // The phone's "Copy log": what the player did, to paste into a bug report.
+                ActionRow("Copy playback log") {
+                    platform.UIKit.UIPasteboard.generalPasteboard.string = com.music.bitchord.data.TrackLog.all()
+                    IosPlayerHost.showMessage("Playback log copied")
+                }
+                Divider()
                 Soon("Smart audio alignment")
             }
         }

@@ -206,6 +206,15 @@ object TrackLog {
             "\n"
     }
 
+    /** Every line held, oldest first, each marked with the track it was about. */
+    fun all(): String {
+        val held = synchronized(linesLock) { lines.toList() }
+        return headerLines().joinToString("\n") + "\n" +
+            held.joinToString("\n") { line ->
+                "${clockTime(line.at)} ${line.level} " + (line.track?.let { "[$it] " } ?: "") + line.text
+            } + "\n"
+    }
+
     // ── The part that isn't the log ─────────────────────────────────────────
 
     /**

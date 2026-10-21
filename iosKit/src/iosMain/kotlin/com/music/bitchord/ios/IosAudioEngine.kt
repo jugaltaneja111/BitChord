@@ -12,6 +12,7 @@ import platform.CoreMedia.CMAudioFormatDescriptionGetStreamBasicDescription
 import kotlinx.cinterop.reinterpret
 import platform.CoreFoundation.CFRelease
 import platform.Foundation.CFBridgingRetain
+import com.music.bitchord.data.TrackLog
 import com.music.bitchord.ios.ffmpeg.IosFfmpegPlayer
 import com.music.bitchord.playback.PlaybackPosition
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -108,7 +109,21 @@ internal class IosAudioEngine(
                 knownDurationMs = durationMs
                 ff = IosFfmpegPlayer(
                     dsp = dsp,
-                    onEnded = { if (this === active) onEnded() },
+                    onEnded = {
+                        if (this === active) {
+                            // A track that "ends" well short of its length didn't play: the FFmpeg
+                            // path is new, and this is how a stream it misreads looks. Failing it
+                            // hands the track to YouTube's AAC instead of skipping the queue on.
+                            val at = ff?.positionMs ?: 0L
+                            val length = knownDurationMs.takeIf { it > 0 } ?: ff?.durationMs ?: 0L
+                            if (length > 0 && at < length - EARLY_END_MS) {
+                                TrackLog.w(TAG, "FFmpeg ended at ${at}ms of ${length}ms: ${ff?.diagnostics()}")
+                                onFailed("ended early")
+                            } else {
+                                onEnded()
+                            }
+                        }
+                    },
                     onFailed = { message -> if (this === active) onFailed(message) },
                 ).also { it.open(url, headers, dash = route.dash) }
                 applyGain()
@@ -485,12 +500,66 @@ internal class IosAudioEngine(
 
     /** The FFmpeg deck's counterpart of [tick]; it has no time observer of its own, so it is polled. */
     private fun tickFfmpeg(ff: IosFfmpegPlayer) {
-        if (ff.failure != null) return
+        if (ff.failure != null) {
+            position.advancing = false
+            _isBuffering.value = false
+            return
+        }
+        watchFfmpeg(ff)
         val known = active.knownDurationMs
         _durationMs.value = if (known > 0L) known else ff.durationMs
         _isBuffering.value = _isPlaying.value && (ff.isBuffering || !ff.isReady)
         position.advancing = ff.isPlaying
         position.report(ff.positionMs)
+    }
+
+    private var watchedFf: IosFfmpegPlayer? = null
+    private var watchStartWall = 0L
+    private var watchStartPos = 0L
+    private var lastDiagnostics = 0L
+    private var stuckSince = 0L
+
+    /**
+     * Holds the FFmpeg player to real time while it is new: a playhead that outruns the clock by
+     * half again over a few seconds is a stream it is misreading (silence going by at speed), and
+     * fails over to AVPlayer. Also logs its state every few seconds, for "Copy playback log".
+     */
+    private fun watchFfmpeg(ff: IosFfmpegPlayer) {
+        val now = com.music.bitchord.data.wallClockMs()
+        if (now - lastDiagnostics >= DIAGNOSTICS_MS) {
+            lastDiagnostics = now
+            TrackLog.d(TAG, "ffmpeg ${active.key}: ${ff.diagnostics()}")
+        }
+        val pos = ff.positionMs
+        // Asked to play, opened, not waiting on the network, and still not moving: silence.
+        if (_isPlaying.value && ff.isReady && !ff.isBuffering && !ff.isPlaying) {
+            if (stuckSince == 0L) stuckSince = now
+            if (now - stuckSince > STUCK_MS) {
+                TrackLog.w(TAG, "FFmpeg isn't playing: ${ff.diagnostics()}")
+                stuckSince = 0L
+                onFailed("won't start")
+                return
+            }
+        } else {
+            stuckSince = 0L
+        }
+        if (watchedFf !== ff || !ff.isPlaying || !_isPlaying.value) {
+            watchedFf = ff.takeIf { it.isPlaying && _isPlaying.value }
+            watchStartWall = now
+            watchStartPos = pos
+            return
+        }
+        val wall = now - watchStartWall
+        if (wall < WATCH_WINDOW_MS) return
+        val advanced = pos - watchStartPos
+        if (advanced > wall * 3 / 2 + 500) {
+            TrackLog.w(TAG, "FFmpeg ran ahead: ${advanced}ms in ${wall}ms: ${ff.diagnostics()}")
+            watchedFf = null
+            onFailed("ran ahead of real time")
+            return
+        }
+        watchStartWall = now
+        watchStartPos = pos
     }
 
     /**
@@ -520,6 +589,11 @@ internal class IosAudioEngine(
 
     private companion object {
         const val FADE_STEP_MS = 40L
+        const val TAG = "IosAudioEngine"
+        const val EARLY_END_MS = 10_000L
+        const val WATCH_WINDOW_MS = 3_000L
+        const val DIAGNOSTICS_MS = 2_000L
+        const val STUCK_MS = 8_000L
 
         private fun fourCc(code: String): UInt = code.fold(0u) { acc, c -> (acc shl 8) or c.code.toUInt() }
         val FOURCC_AAC = fourCc("aac ")
