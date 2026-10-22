@@ -31,9 +31,11 @@ targets:
         UIBackgroundModes: [audio]
         # Compose draws at the display's full rate (ProMotion) only with this.
         CADisableMinimumFrameDurationOnPhone: true
-        # The UI is dark; the status bar's style is set here rather than per screen.
+        # The status bar's style is the application's, not a view controller's: the app sets it from
+        # the Theme setting and the screen on top (StatusBarIcons.ios.kt). Until then it follows the
+        # iPhone's light or dark, as the launch screen does.
         UIViewControllerBasedStatusBarAppearance: false
-        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIStatusBarStyle: UIStatusBarStyleDefault
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # Listen Together invites: bitchord://party/CODE, as the phone's intent filter takes them.
         CFBundleURLTypes:

@@ -64,7 +64,7 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
             Text(
                 "Account & integrations",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -278,7 +278,7 @@ internal fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChec
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White)
+            Text(title, color = MaterialTheme.colorScheme.onSurface)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
@@ -299,7 +299,7 @@ private fun SliderSetting(
     Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White)
+                Text(title, color = MaterialTheme.colorScheme.onSurface)
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -310,9 +310,9 @@ private fun SliderSetting(
             valueRange = range,
             steps = steps,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.18f),
+                thumbColor = MaterialTheme.colorScheme.onSurface,
+                activeTrackColor = MaterialTheme.colorScheme.onSurface,
+                inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
                 activeTickColor = Color.Transparent,
                 inactiveTickColor = Color.Transparent,
             ),

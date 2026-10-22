@@ -448,15 +448,15 @@ internal fun IosSpotifyLoginScreen(onClose: () -> Unit) {
             onClose()
         }
     }
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color.White)
+                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface)
             }
-            Text("Sign in to Spotify", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text("Sign in to Spotify", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
         }
         UIKitView(
             factory = {
@@ -504,7 +504,7 @@ internal fun SpotifyPage(navigator: IosNavigator, contentPadding: PaddingValues,
             Text(
                 "Spotify",
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -544,10 +544,10 @@ internal fun SpotifyPage(navigator: IosNavigator, contentPadding: PaddingValues,
                         model = playlist.imageUrl,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2C2C2E)),
+                        modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(PlaceholderColor),
                     )
                     Column(Modifier.weight(1f)) {
-                        Text(playlist.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(playlist.name, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         playlist.owner?.takeIf { it.isNotBlank() }?.let {
                             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }

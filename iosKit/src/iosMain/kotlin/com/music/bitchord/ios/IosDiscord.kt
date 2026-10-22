@@ -334,14 +334,14 @@ internal fun IosDiscordLoginScreen(onClose: () -> Unit) {
             break
         }
     }
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color.White) }
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface) }
             Column(Modifier.weight(1f)) {
-                Text("Sign in to Discord", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("Sign in to Discord", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
@@ -379,7 +379,7 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
         contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding() + 24.dp),
     ) {
         item {
-            Text("Discord", style = MaterialTheme.typography.headlineMedium, color = Color.White, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            Text("Discord", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         }
         if (token.isBlank()) {
             item {
@@ -406,7 +406,7 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(name.ifBlank { username }, color = Color.White)
+                            Text(name.ifBlank { username }, color = MaterialTheme.colorScheme.onSurface)
                             Text("@$username", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -495,7 +495,7 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
 @Composable
 private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Color.White, modifier = Modifier.weight(1f))
+        Text(label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         if (selected) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF0A84FF), modifier = Modifier.size(22.dp))
     }
 }

@@ -100,8 +100,8 @@ internal fun AppIconPicker() {
                         Modifier
                             .size(64.dp)
                             .clip(shape)
-                            .background(Color(0xFF2C2C2E))
-                            .border(if (isSelected) 2.5.dp else 0.5.dp, if (isSelected) Color.White else Color.White.copy(alpha = 0.12f), shape),
+                            .background(PlaceholderColor)
+                            .border(if (isSelected) 2.5.dp else 0.5.dp, if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), shape),
                     ) {
                         rememberBundleImage(icon.previewName)?.let { bitmap ->
                             Image(bitmap, contentDescription = icon.label, modifier = Modifier.size(64.dp).clip(shape))
@@ -111,7 +111,7 @@ internal fun AppIconPicker() {
                     Text(
                         icon.label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                     )

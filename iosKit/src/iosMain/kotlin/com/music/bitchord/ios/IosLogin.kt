@@ -181,16 +181,16 @@ internal fun IosLoginScreen(onClose: () -> Unit) {
     var cleared by remember { mutableStateOf(false) }
     remember { IosLogin.clearGoogleCookies { cleared = true } }
 
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color.White)
+                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface)
             }
             Column(Modifier.weight(1f)) {
-                Text("Sign in to YouTube Music", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("Sign in to YouTube Music", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 if (pageReady) {
                     Text(
                         if (failed) {

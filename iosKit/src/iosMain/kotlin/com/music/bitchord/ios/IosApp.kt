@@ -65,9 +65,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import com.music.bitchord.ui.theme.StatusBarIcons
 import com.music.bitchord.data.model.ShelfItem
 import androidx.compose.material.icons.rounded.DownloadDone
 import com.music.bitchord.ui.screens.LibraryLink
@@ -94,19 +94,6 @@ import com.music.bitchord.data.model.SearchHistoryEntity
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.ui.screens.SearchScreen
 
-/** The phone's dark scheme (app/…/ui/theme/Theme.kt); iOS draws in its own system face, SF Pro. */
-private val DarkColors = darkColorScheme(
-    primary = Color.White,
-    onPrimary = Color.Black,
-    background = Color.Black,
-    onBackground = Color.White,
-    surface = Color(0xFF0D0D0F),
-    onSurface = Color.White,
-    surfaceVariant = Color(0xFF1C1C1E),
-    onSurfaceVariant = Color(0xFF8E8E93),
-    outline = Color(0xFF2C2C2E),
-)
-
 /** The phone's type scale, in the system face. */
 private val BitChordTypography = Typography(
     displayLarge = TextStyle(fontWeight = FontWeight.W800, fontSize = 34.sp, letterSpacing = (-0.8).sp),
@@ -124,7 +111,8 @@ private val BitChordTypography = Typography(
 /** The phone's shell: four tabs, the pages opened on them, the mini player and the full player. */
 @Composable
 internal fun IosApp() {
-    MaterialTheme(colorScheme = DarkColors, typography = BitChordTypography) {
+    val darkTheme = rememberDarkTheme()
+    MaterialTheme(colorScheme = if (darkTheme) DarkColors else LightColors, typography = BitChordTypography) {
         val navigator = remember { IosNavigator() }
         val search = remember { IosSearch() }
         val feeds = remember { IosFeeds() }
@@ -165,7 +153,10 @@ internal fun IosApp() {
             LaunchedEffect(Unit) { runTour(navigator, search, feeds, setPlayerOpen = { playerOpen = it }) }
         }
 
-        Box(Modifier.fillMaxSize().background(Color.Black).edgeSwipeBack(::back)) {
+        // The pages' glyphs; the player and Replay's stories put light ones over these while up.
+        StatusBarIcons(dark = !darkTheme)
+        val pageColor = MaterialTheme.colorScheme.background
+        Box(Modifier.fillMaxSize().background(pageColor).edgeSwipeBack(::back)) {
             // The page is what the bars frost over.
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
                 val page = navigator.top
@@ -190,8 +181,8 @@ internal fun IosApp() {
                     .height(scrimHeight + 12.dp)
                     .background(
                         Brush.verticalGradient(
-                            0f to Color.Black,
-                            0.6f to Color.Black.copy(alpha = 0.85f),
+                            0f to pageColor,
+                            0.6f to pageColor.copy(alpha = 0.85f),
                             1f to Color.Transparent,
                         ),
                     ),
@@ -529,7 +520,7 @@ private fun SearchPage(
 @Composable
 private fun SearchSourceSwitch(addons: Boolean, onSelect: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF1C1C1E)).padding(4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         listOf("YouTube Music" to false, "Addons" to true).forEach { (label, value) ->
@@ -538,12 +529,12 @@ private fun SearchSourceSwitch(addons: Boolean, onSelect: (Boolean) -> Unit) {
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (chosen) Color.White else Color.Transparent)
+                    .background(if (chosen) MaterialTheme.colorScheme.primary else Color.Transparent)
                     .clickable { if (!chosen) onSelect(value) }
                     .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = if (chosen) Color.Black else Color.White.copy(alpha = 0.7f))
+                Text(label, style = MaterialTheme.typography.labelMedium, color = if (chosen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
         }
     }

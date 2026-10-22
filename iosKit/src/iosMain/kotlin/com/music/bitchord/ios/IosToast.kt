@@ -57,11 +57,11 @@ internal object IosToast {
             val shape = RoundedCornerShape(20.dp)
             Box(
                 Modifier
-                    .background(Color(0xFF2C2C2E), shape)
-                    .border(0.5.dp, Color.White.copy(alpha = 0.12f), shape)
+                    .background(PlaceholderColor, shape)
+                    .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), shape)
                     .padding(horizontal = 18.dp, vertical = 11.dp),
             ) {
-                Text(text, color = Color.White, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                Text(text, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
             }
         }
     }

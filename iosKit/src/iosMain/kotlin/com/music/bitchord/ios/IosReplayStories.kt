@@ -74,6 +74,7 @@ import com.music.bitchord.ui.replay.InitialTile
 import com.music.bitchord.sharedui.resources.Res
 import com.music.bitchord.sharedui.resources.ic_logo
 import org.jetbrains.compose.resources.painterResource
+import com.music.bitchord.ui.theme.StatusBarIcons
 import kotlinx.coroutines.launch
 
 /**
@@ -122,6 +123,8 @@ internal fun ReplayStories(
      */
     paused: Boolean = false,
 ) {
+    // The cards are dark whatever the theme, so the clock is light over them, as over the player.
+    StatusBarIcons(dark = false)
     // A category with nothing in it has no card: an empty page in the middle of
     // a story reads as the app having lost something.
     val pages = remember(summary) {

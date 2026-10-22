@@ -113,7 +113,7 @@ internal fun IosPageHost(
     topInset: Dp,
     onClearSearchHistory: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Pages with no artwork header of their own start under the back button.
         val underBack = topInset + 52.dp
         when (page) {
@@ -159,11 +159,11 @@ private fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
         modifier
             .size(40.dp)
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.55f))
+            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.55f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
+        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -429,7 +429,7 @@ internal fun CollectionHeader(
         Text(
             title,
             style = MaterialTheme.typography.headlineMedium,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -465,14 +465,14 @@ private fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Mo
             Modifier
                 .height(48.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.primary)
                 .clickable(onClick = onPlay)
                 .padding(horizontal = 26.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.Black)
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
             Spacer(Modifier.width(6.dp))
-            Text("Play", color = Color.Black, style = MaterialTheme.typography.titleMedium)
+            Text("Play", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleMedium)
         }
         CircleAction(BitChordIcons.Shuffle, "Shuffle", onShuffle)
         onMore?.let { CircleAction(Icons.Rounded.MoreHoriz, "More", it) }
@@ -482,10 +482,10 @@ private fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Mo
 @Composable
 private fun CircleAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF1C1C1E)).clickable(onClick = onClick),
+        Modifier.size(48.dp).clip(CircleShape).background(GroupColor).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -596,18 +596,18 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
 /** The photograph, full width, with the name across the foot of it. */
 @Composable
 private fun ArtistBanner(url: String?, name: String, video: CanvasArtwork?) {
-    Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Color(0xFF111113))) {
+    Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surface)) {
         AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         video?.let { HeaderClip(it, Modifier.fillMaxSize()) }
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black),
+                Brush.verticalGradient(0.45f to Color.Transparent, 1f to MaterialTheme.colorScheme.background),
             ),
         )
         Text(
             name,
             style = MaterialTheme.typography.displayLarge,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = PAGE_GUTTER, vertical = 12.dp),
@@ -621,7 +621,7 @@ private fun PageSectionTitle(text: String) {
         text,
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
-        color = Color.White,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.padding(start = PAGE_GUTTER, end = PAGE_GUTTER, top = 18.dp, bottom = 6.dp),
     )
 }
@@ -665,7 +665,7 @@ private fun CategoryPage(page: IosPage.Category, navigator: IosNavigator, conten
 @Composable
 internal fun PageSpinner() {
     Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+        CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.onSurface, strokeWidth = 2.dp)
     }
 }
 
@@ -704,7 +704,7 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
             Text(
                 "History",
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -771,12 +771,12 @@ private fun LibraryShelfPage(page: IosPage.LibraryShelf, navigator: IosNavigator
         Modifier
             .fillMaxWidth()
             .height(topInset + 52.dp)
-            .background(Brush.verticalGradient(0.7f to Color.Black, 1f to Color.Transparent)),
+            .background(Brush.verticalGradient(0.7f to MaterialTheme.colorScheme.background, 1f to Color.Transparent)),
     )
     Text(
         page.title,
         style = MaterialTheme.typography.titleLarge,
-        color = Color.White,
+        color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.padding(top = topInset + 10.dp, start = 60.dp, end = 16.dp),
@@ -799,7 +799,7 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
     ) {
         item(key = "title") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text("Downloads", style = MaterialTheme.typography.displayLarge, color = Color.White)
+                Text("Downloads", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     "${songs.size} ${if (songs.size == 1) "song" else "songs"} · ${(tracks.sumOf { it.bytes } / (1024 * 1024))} MB on this iPhone",
                     style = MaterialTheme.typography.bodyMedium,
@@ -819,7 +819,7 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
                 Text(
                     "Downloading",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
                 )
             }
@@ -841,7 +841,7 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
                                 is DownloadProgress.Running -> "${(state.fraction * 100).toInt()}%"
                                 is DownloadProgress.Failed -> "Failed"
                             },
-                            color = if (state is DownloadProgress.Failed) Color(0xFFFF6B6B) else Color.White,
+                            color = if (state is DownloadProgress.Failed) Color(0xFFFF6B6B) else MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
