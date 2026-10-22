@@ -380,15 +380,42 @@ internal object IosSpotify {
 
     /**
      * Makes [songs] a YouTube Music playlist called [title]: the first fifty in the create call,
-     * the rest added fifty at a time, as the phone does.
+     * the rest added fifty at a time, as the phone does. Signed out, or when YouTube refuses, it is
+     * kept on this iPhone instead, as the phone's createPlaylistWithVideoIds does.
      */
-    suspend fun saveAsPlaylist(title: String, privacy: PlaylistPrivacy, songs: List<Song>): Result<String> = runCatching {
-        val ids = songs.map { it.videoId }
-        val playlistId = YtMusicRepository.createPlaylist(title, privacy, ids.take(50)).getOrThrow()
-        ids.drop(50).chunked(50).forEach { YtMusicRepository.addToPlaylist(playlistId, it) }
-        IosAccount.playlistCreated(playlistId, title, songs)
-        playlistId
+    suspend fun saveAsPlaylist(title: String, privacy: PlaylistPrivacy, songs: List<Song>): SavedPlaylist {
+        if (IosAccount.signedIn.value) {
+            try {
+                val ids = songs.map { it.videoId }
+                val playlistId = YtMusicRepository.createPlaylist(title, privacy, ids.take(50)).getOrThrow()
+                ids.drop(50).chunked(50).forEach { YtMusicRepository.addToPlaylist(playlistId, it) }
+                IosAccount.playlistCreated(playlistId, title, songs)
+                return SavedPlaylist("VL$playlistId", title, local = false)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TrackLog.w("Spotify", "YouTube Music playlist create failed, keeping it on the phone: ${e.message}")
+            }
+        }
+        val local = IosLocalPlaylists.create(title, songs)
+        return SavedPlaylist(local.browseId, local.title, local = true)
     }
+
+    /** What a save says once it lands: [doneMessage] for YouTube Music, otherwise where it went. */
+    fun savedMessage(saved: SavedPlaylist, doneMessage: String): String = when {
+        !saved.local -> doneMessage
+        IosAccount.signedIn.value -> "Couldn’t create it on YouTube Music, so “${saved.title}” was saved on this device instead"
+        else -> "Saved “${saved.title}” on this device"
+    }
+}
+
+/** Where a saved playlist went: a YouTube Music playlist, or one kept on this iPhone ([local]). */
+internal data class SavedPlaylist(val browseId: String, val title: String, val local: Boolean) {
+    /** Its page, for opening once it is saved. */
+    fun page() = IosPage.Collection(
+        browseId,
+        com.music.bitchord.data.model.BrowseItem(browseId, title, "", null, browseTypeOf(browseId)),
+    )
 }
 
 // ---- Sign-in ---------------------------------------------------------------
@@ -536,7 +563,7 @@ internal fun SpotifyPage(navigator: IosNavigator, contentPadding: PaddingValues,
  * replaced by its YouTube Music match as the search answers, so the page plays as it fills.
  */
 @Composable
-internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: PaddingValues, topInset: Dp) {
+internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: PaddingValues, topInset: Dp, onOpen: (IosPage) -> Unit) {
     var cover by remember(page.id) { mutableStateOf(page.imageUrl) }
     var rows by remember(page.id) { mutableStateOf<List<Song>?>(null) }
     var error by remember(page.id) { mutableStateOf<String?>(null) }
@@ -571,7 +598,6 @@ internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: 
         .map { it.copy(playbackSource = page.title, playbackSourceType = PlaybackSourceType.BROWSE, playbackSourceId = "spotify:playlist:${page.id}") }
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
-    val signedIn by IosAccount.signedIn.collectAsState()
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "header") {
@@ -584,15 +610,14 @@ internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: 
                 topInset = topInset,
                 onPlay = { IosPlayer.playQueue(playable, 0) },
                 onShuffle = { IosPlayer.playShuffled(playable) },
+                // Saved to the account's library, or signed out, to this iPhone and opened there.
                 onMore = {
-                    if (!signedIn) {
-                        IosOverlays.login = true
-                    } else if (!saving && playable.isNotEmpty()) {
+                    if (!saving && playable.isNotEmpty()) {
                         saving = true
                         scope.launch {
-                            IosSpotify.saveAsPlaylist(page.title, PlaylistPrivacy.PRIVATE, playable)
-                                .onSuccess { IosPlayerHost.showMessage("Saved “${page.title}” to your library") }
-                                .onFailure { IosPlayerHost.showMessage("Could not save the playlist") }
+                            val saved = IosSpotify.saveAsPlaylist(page.title, PlaylistPrivacy.PRIVATE, playable)
+                            IosPlayerHost.showMessage(IosSpotify.savedMessage(saved, "Saved “${page.title}” to your library"))
+                            if (saved.local) onOpen(saved.page())
                             saving = false
                         }
                     }
@@ -638,10 +663,14 @@ private const val MATCH_PARALLELISM = 4
 
 // ---- Importing a link ------------------------------------------------------
 
-/** The phone's import dialog: a public playlist's link, matched and saved as a YouTube Music playlist. */
+/**
+ * The phone's import dialog: a public playlist's link, matched and saved as a YouTube Music
+ * playlist, or signed out, as one on this iPhone, which then opens.
+ */
 @Composable
-internal fun SpotifyImportDialog(onDismiss: () -> Unit) {
+internal fun SpotifyImportDialog(onDismiss: () -> Unit, onOpen: (IosPage) -> Unit) {
     val scope = rememberCoroutineScope()
+    val signedIn by IosAccount.signedIn.collectAsState()
     var link by remember { mutableStateOf("") }
     var working by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -666,8 +695,9 @@ internal fun SpotifyImportDialog(onDismiss: () -> Unit) {
                 }
                 if (songs.isEmpty()) error("None of its songs were found on YouTube Music")
                 status = "Saving…"
-                IosSpotify.saveAsPlaylist(name, PlaylistPrivacy.PRIVATE, songs).getOrThrow()
-                IosPlayerHost.showMessage("Imported “$name”")
+                val saved = IosSpotify.saveAsPlaylist(name, PlaylistPrivacy.PRIVATE, songs)
+                IosPlayerHost.showMessage(IosSpotify.savedMessage(saved, "Imported “$name”"))
+                if (saved.local) onOpen(saved.page())
                 if (missed.isEmpty()) onDismiss() else unmatched = missed
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -698,7 +728,7 @@ internal fun SpotifyImportDialog(onDismiss: () -> Unit) {
                         }
                     }
                 } else {
-                    Text("Paste a link to a public Spotify playlist. Its songs are found on YouTube Music and saved as a playlist in your library.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Paste a link to a public Spotify playlist. Its songs are found on YouTube Music and saved as a playlist ${if (signedIn) "in your library" else "on this device"}.", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(value = link, onValueChange = { link = it }, singleLine = true, enabled = !working, label = { Text("Playlist link") })
                     status?.let {

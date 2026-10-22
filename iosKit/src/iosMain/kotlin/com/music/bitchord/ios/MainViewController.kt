@@ -59,6 +59,7 @@ private fun start() {
     // Before the first page asks for anything, so it is asked as the listener.
     IosAccount.restore()
     IosDownloads.restore()
+    IosLocalPlaylists.restore()
     IosSongCache.restore()
     com.music.bitchord.ios.sources.IosSources.init()
     IosArtistFacts.start()

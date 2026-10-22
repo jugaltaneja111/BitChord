@@ -282,7 +282,7 @@ internal fun IosApp() {
             ) {
                 IosDiscordLoginScreen(onClose = { IosOverlays.discordLogin = false })
             }
-            if (IosOverlays.spotifyImport) SpotifyImportDialog(onDismiss = { IosOverlays.spotifyImport = false })
+            if (IosOverlays.spotifyImport) SpotifyImportDialog(onDismiss = { IosOverlays.spotifyImport = false }, onOpen = navigator::open)
             IosReplay.story?.let { (summary, start) ->
                 ReplayStories(
                     summary = summary,
@@ -355,15 +355,16 @@ private fun ExplorePage(feeds: IosFeeds, navigator: IosNavigator, contentPadding
 private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp) {
     val signedIn by IosAccount.signedIn.collectAsState()
     val state by IosAccount.library.collectAsState()
-    val releases by IosDownloads.releases.collectAsState()
+    val deviceItems = deviceShelfItems()
     LibraryScreen(
         signedIn = signedIn,
         state = state,
         listState = rememberLazyListState(),
         onShelfItemClick = { navigator.openShelfItem(it, null) },
         onShelfItemLongPress = { IosMenus.openShelfItem(it) },
-        onNewPlaylist = { if (signedIn) IosMenus.newPlaylist = emptyList() else IosOverlays.login = true },
-        onImportSpotifyPlaylist = { if (signedIn) IosOverlays.spotifyImport = true else IosOverlays.login = true },
+        // Signed out, a new playlist is kept on this iPhone.
+        onNewPlaylist = { IosMenus.newPlaylist = emptyList() },
+        onImportSpotifyPlaylist = { IosOverlays.spotifyImport = true },
         onShowAll = { navigator.open(IosPage.LibraryShelf(it.title)) },
         replay = { LibraryReplayCards(navigator) },
         onSignIn = { IosOverlays.login = true },
@@ -384,10 +385,25 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
                 icon = Icons.Rounded.DownloadDone,
             ),
         ),
-        deviceItems = releases.map { release ->
-            ShelfItem(release.title, release.subtitle, release.thumbnailUrl, videoId = null, browseId = release.browseId)
-        },
+        deviceItems = deviceItems,
     )
+}
+
+/**
+ * Library's On Device shelf: the playlists kept on this iPhone, newest first, then the releases
+ * saved whole — less a local playlist's own download, whose card is the playlist's.
+ */
+@Composable
+internal fun deviceShelfItems(): List<ShelfItem> {
+    val releases by IosDownloads.releases.collectAsState()
+    val localPlaylists by IosLocalPlaylists.playlists.collectAsState()
+    val local = localPlaylists.map {
+        ShelfItem(title = it.title, subtitle = it.subtitle, thumbnailUrl = it.thumbnailUrl, videoId = null, browseId = it.browseId)
+    }
+    val localIds = local.mapNotNull { it.browseId }.toSet()
+    return local + releases.filterNot { it.browseId in localIds }.map { release ->
+        ShelfItem(release.title, release.subtitle, release.thumbnailUrl, videoId = null, browseId = release.browseId)
+    }
 }
 
 @Composable

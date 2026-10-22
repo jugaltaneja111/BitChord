@@ -249,7 +249,8 @@ private fun MenuRow(
 
 /**
  * The phone's track menu: the account's rows first (rating, playlists, library), then the
- * queue, then where the track belongs, then Share. The account's rows are left off signed out.
+ * queue, then where the track belongs, then Share. The account's rows are left off signed out,
+ * but for the playlists, which signed out are the ones kept on this iPhone.
  */
 @Composable
 private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onLeavePlayer: () -> Unit, onDismiss: () -> Unit) {
@@ -283,6 +284,8 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
         action()
     }
 
+    val localPlaylistId = request.fromPlaylistId?.takeIf(IosLocalPlaylists::isLocal)
+
     TintedSheet(song.thumbnailUrl, onDismiss) { colors ->
         SheetHeader(song.title, song.artist, song.thumbnailUrl, colors)
         if (signedIn) {
@@ -300,10 +303,21 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 colors,
                 tint = if (disliked) colors.accent else null,
             ) { IosAccount.toggleDislike(song, likeStatus) }
-            MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", colors) {
-                leave { IosMenus.addToPlaylist = listOf(song) }
+        }
+        MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", colors) {
+            leave { IosMenus.addToPlaylist = listOf(song) }
+        }
+        if (localPlaylistId != null) {
+            MenuRow(Icons.Rounded.PlaylistRemove, "Remove from playlist", colors) {
+                leave {
+                    IosLocalPlaylists.remove(localPlaylistId, song.videoId)
+                    IosPlayerHost.showMessage("Removed from playlist")
+                    request.onRemoved?.invoke()
+                }
             }
-            val playlistId = request.fromPlaylistId
+        }
+        if (signedIn) {
+            val playlistId = request.fromPlaylistId?.takeUnless(IosLocalPlaylists::isLocal)
             val setVideoId = song.setVideoId
             if (playlistId != null && setVideoId != null) {
                 MenuRow(Icons.Rounded.PlaylistRemove, "Remove from playlist", colors) {
@@ -340,8 +354,8 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                     }
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
         }
+        HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
         MenuRow(Icons.Rounded.Radio, "Start radio", colors) { leave { IosPlayer.playRadio(song) } }
         MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next", colors) { leave { IosPlayer.playNext(listOf(song)) } }
         MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", colors) { leave { IosPlayer.addToQueue(listOf(song)) } }
@@ -405,6 +419,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
 /**
  * The phone's BrowseActionsSheet: play or queue a whole release from its card, open it, keep it
  * in the library, share it; rename and delete for the account's own playlists, delete asked twice.
+ * A playlist kept on this iPhone is the phone's to rename and delete, and has no link to share.
  */
 @Composable
 private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator, onLeavePlayer: () -> Unit, onDismiss: () -> Unit) {
@@ -414,6 +429,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
     val isArtist = type == BrowseType.ARTIST
     // Liked Music and the other auto playlists can be played but not saved, renamed or deleted.
     val isAutoPlaylist = request.browseId in AUTO_PLAYLISTS
+    val isLocal = IosLocalPlaylists.isLocal(request.browseId)
     var owned by remember(request.browseId) { mutableStateOf<Boolean?>(null) }
     var library by remember(request.browseId) { mutableStateOf<com.music.bitchord.data.model.LibraryState?>(null) }
     var libraryLoaded by remember(request.browseId) { mutableStateOf(false) }
@@ -422,7 +438,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
     var loadingSongs by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(request.browseId, signedIn) {
-        if (!signedIn || isArtist || isAutoPlaylist) {
+        if (!signedIn || isArtist || isAutoPlaylist || isLocal) {
             libraryLoaded = true
             return@LaunchedEffect
         }
@@ -435,7 +451,12 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
     fun withSongs(label: String, action: (List<Song>) -> Unit) {
         loadingSongs = label
         scope.launch {
-            val songs = YtMusicRepository.browseSongs(request.browseId).getOrNull()?.songs.orEmpty()
+            val found = if (isLocal) {
+                IosLocalPlaylists.get(request.browseId)?.songs
+            } else {
+                YtMusicRepository.browseSongs(request.browseId).getOrNull()?.songs
+            }
+            val songs = found.orEmpty()
                 .map { it.copy(playbackSource = request.title, playbackSourceType = com.music.bitchord.data.model.PlaybackSourceType.BROWSE, playbackSourceId = request.browseId) }
             loadingSongs = null
             onDismiss()
@@ -449,6 +470,11 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
         if (renaming) {
             RenameForm(request.title, colors, onCancel = { renaming = false }) { title ->
                 onDismiss()
+                if (isLocal) {
+                    IosLocalPlaylists.rename(request.browseId, title)
+                    IosPlayerHost.showMessage("Renamed")
+                    return@RenameForm
+                }
                 scope.launch {
                     YtMusicRepository.renamePlaylist(playlistId, title)
                         .onSuccess {
@@ -500,7 +526,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                     BrowseType.ALBUM -> "Go to album"
                     BrowseType.ARTIST -> "Go to artist"
                     BrowseType.PLAYLIST -> "Go to playlist"
-                    else -> "Open"
+                    else -> if (isLocal) "Go to playlist" else "Open"
                 },
                 colors,
             ) {
@@ -512,7 +538,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
             }
         }
         // An owned playlist is in the library by being the account's; only someone else's is saved.
-        if (signedIn && !isArtist && !isAutoPlaylist && owned != true) {
+        if (signedIn && !isArtist && !isAutoPlaylist && !isLocal && owned != true) {
             val state = library
             if (!libraryLoaded || state != null) {
                 MenuRow(
@@ -534,15 +560,25 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                 }
             }
         }
-        MenuRow(Icons.Rounded.Share, "Share", colors) {
-            onDismiss()
-            shareLink(browseLink(request.browseId))
+        if (!isLocal) {
+            MenuRow(Icons.Rounded.Share, "Share", colors) {
+                onDismiss()
+                shareLink(browseLink(request.browseId))
+            }
         }
-        if (owned == true) {
+        if (owned == true || isLocal) {
             MenuRow(Icons.Rounded.Edit, "Rename", colors) { renaming = true }
             if (confirmingDelete) {
                 MenuRow(Icons.Rounded.DeleteForever, "Delete “${request.title}” for good", colors, tint = Danger) {
                     onDismiss()
+                    if (isLocal) {
+                        // Its download, if it was saved whole, would leave a card that opens nothing.
+                        IosLocalPlaylists.delete(request.browseId)
+                        IosDownloads.removeRelease(request.browseId)
+                        IosPlayerHost.showMessage("Playlist deleted")
+                        if (request.fromPage) navigator.back()
+                        return@MenuRow
+                    }
                     scope.launch {
                         YtMusicRepository.deletePlaylist(playlistId)
                             .onSuccess {
@@ -560,13 +596,19 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
     }
 }
 
-/** The account's playlists to add to, newest-made first as YouTube lists them, under New playlist. */
+/**
+ * The account's playlists to add to, newest-made first as YouTube lists them, under New playlist;
+ * then those kept on this iPhone, under a heading of their own. Signed out, only the latter.
+ */
 @Composable
 private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
+    val signedIn by IosAccount.signedIn.collectAsState()
+    val localPlaylists by IosLocalPlaylists.playlists.collectAsState()
     var playlists by remember { mutableStateOf<List<UserPlaylist>?>(null) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) {
+    LaunchedEffect(signedIn) {
+        if (!signedIn) return@LaunchedEffect
         YtMusicRepository.userPlaylists()
             .onSuccess { playlists = IosAccount.withPlaylistEdits(it) }
             .onFailure { failed = true }
@@ -585,51 +627,81 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
         HorizontalDivider(thickness = 0.5.dp, color = colors.divider)
         val list = playlists
         when {
+            !signedIn -> if (localPlaylists.isEmpty()) {
+                Text("No playlists yet", color = colors.secondary, modifier = Modifier.padding(22.dp))
+            }
             failed -> Text("Could not load your playlists", color = colors.secondary, modifier = Modifier.padding(22.dp))
             list == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(Modifier.size(24.dp), color = colors.secondary, strokeWidth = 2.dp)
             }
             list.isEmpty() -> Text("No playlists yet", color = colors.secondary, modifier = Modifier.padding(22.dp))
             else -> list.forEach { playlist ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            onDismiss()
-                            scope.launch {
-                                YtMusicRepository.addToPlaylist(playlist.playlistId, songs.map { it.videoId })
-                                    .onSuccess {
-                                        IosPlayerHost.showMessage("Added to ${playlist.title}")
-                                        IosAccount.playlistChanged()
-                                    }
-                                    .onFailure { IosPlayerHost.showMessage("Could not add to ${playlist.title}") }
+                PlaylistChoice(playlist.title, playlist.subtitle, playlist.thumbnailUrl, colors) {
+                    onDismiss()
+                    scope.launch {
+                        YtMusicRepository.addToPlaylist(playlist.playlistId, songs.map { it.videoId })
+                            .onSuccess {
+                                IosPlayerHost.showMessage("Added to ${playlist.title}")
+                                IosAccount.playlistChanged()
                             }
-                        }
-                        .padding(horizontal = 22.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = playlist.thumbnailUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(46.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF2C2C2E)),
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(playlist.title, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (playlist.subtitle.isNotBlank()) {
-                            Text(playlist.subtitle, color = colors.secondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                            .onFailure { IosPlayerHost.showMessage("Could not add to ${playlist.title}") }
                     }
+                }
+            }
+        }
+        if (localPlaylists.isNotEmpty()) {
+            if (signedIn) {
+                Text(
+                    "On this device",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.secondary,
+                    modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp),
+                )
+            }
+            localPlaylists.forEach { playlist ->
+                PlaylistChoice(playlist.title, playlist.subtitle, playlist.thumbnailUrl, colors) {
+                    onDismiss()
+                    val added = IosLocalPlaylists.add(playlist.id, songs)
+                    IosPlayerHost.showMessage(if (added == 0) "Already in ${playlist.title}" else "Added to ${playlist.title}")
                 }
             }
         }
     }
 }
 
-/** Names a new playlist and picks who can see it; the tracks it was made for go in it. */
+/** A playlist row in Add to playlist: its cover, name and count. */
+@Composable
+private fun PlaylistChoice(title: String, subtitle: String, thumbnailUrl: String?, colors: MenuColors, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = thumbnailUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF2C2C2E)),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, color = colors.secondary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/**
+ * Names a new playlist and picks who can see it; the tracks it was made for go in it. Signed out
+ * it is kept on this iPhone, which has no one to show it to.
+ */
 @Composable
 private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
+    val signedIn by IosAccount.signedIn.collectAsState()
     var title by remember { mutableStateOf("") }
     var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
     var saving by remember { mutableStateOf(false) }
@@ -637,17 +709,32 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     TintedSheet(songs.firstOrNull()?.thumbnailUrl, onDismiss) { colors ->
         Text("New playlist", style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp))
         NameField(title, colors, onChange = { title = it })
-        Text("Visibility", style = MaterialTheme.typography.labelMedium, color = colors.secondary, modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp))
-        PlaylistPrivacy.entries.forEach { option ->
-            MenuRow(
-                Icons.Rounded.Check,
-                option.label,
-                colors,
-                tint = if (option == privacy) colors.accent else Color.Transparent,
-            ) { privacy = option }
+        if (signedIn) {
+            Text("Visibility", style = MaterialTheme.typography.labelMedium, color = colors.secondary, modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp))
+            PlaylistPrivacy.entries.forEach { option ->
+                MenuRow(
+                    Icons.Rounded.Check,
+                    option.label,
+                    colors,
+                    tint = if (option == privacy) colors.accent else Color.Transparent,
+                ) { privacy = option }
+            }
+        } else {
+            Text(
+                "Kept on this device. Sign in to make playlists on YouTube Music.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.secondary,
+                modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 12.dp),
+            )
         }
         Spacer(Modifier.height(8.dp))
         MenuRow(Icons.Rounded.Add, if (saving) "Creating…" else "Create", colors, enabled = title.isNotBlank() && !saving, tint = colors.accent) {
+            if (!signedIn) {
+                val created = IosLocalPlaylists.create(title, songs)
+                IosPlayerHost.showMessage(if (songs.isEmpty()) "Playlist created on this device" else "Added to ${created.title}")
+                onDismiss()
+                return@MenuRow
+            }
             saving = true
             scope.launch {
                 YtMusicRepository.createPlaylist(title.trim(), privacy, songs.map { it.videoId })
