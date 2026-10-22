@@ -73,7 +73,7 @@ internal object IosPlayer {
     private fun engineFailed(message: String) {
         val song = _song.value
         val key = song?.videoId
-        if (key != null && servedByFfmpeg[key] == true && key !in avPlayerOnly) {
+        if (key != null && engine.onFfmpeg && key !in avPlayerOnly) {
             TrackLog.w(TAG, "$key: FFmpeg could not play it ($message); trying YouTube's AAC")
             avPlayerOnly += key
             playAt(_index.value, startMs = engine.position.positionMs, startPlaying = true)
@@ -81,9 +81,6 @@ internal object IosPlayer {
         }
         fail(message)
     }
-
-    /** Which tracks the FFmpeg player is holding, for [engineFailed]. */
-    private val servedByFfmpeg = HashMap<String, Boolean>()
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
@@ -585,7 +582,6 @@ internal object IosPlayer {
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
                 TrackLog.i(TAG, "${audio.videoId}: readied from ${stream.source}, ${stream.kbps} kbps")
                 servedBy[audio.videoId] = stream.source to stream.kbps
-                servedByFfmpeg[audio.videoId] = stream.route.ffmpeg
                 engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -710,7 +706,6 @@ internal object IosPlayer {
                 }
                 TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.kbps} kbps")
                 servedBy[audio.videoId] = stream.source to stream.kbps
-                servedByFfmpeg[audio.videoId] = stream.route.ffmpeg
                 engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, startPlaying, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
             } catch (e: kotlinx.coroutines.CancellationException) {

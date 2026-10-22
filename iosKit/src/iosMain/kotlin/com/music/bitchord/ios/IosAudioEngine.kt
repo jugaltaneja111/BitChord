@@ -450,8 +450,13 @@ internal class IosAudioEngine(
         tick(active.seconds)
     }
 
+    /** Whether the FFmpeg player holds the track now (a stream or a cached or downloaded file). */
+    val onFfmpeg: Boolean get() = active.ff != null
+
     fun seekTo(positionMs: Long) {
         finishFade()
+        // A seek jumps the playhead: the real-time watch starts over from the new position.
+        watchedFf = null
         active.seekTo(positionMs)
         position.report(positionMs)
         position.seeks++
