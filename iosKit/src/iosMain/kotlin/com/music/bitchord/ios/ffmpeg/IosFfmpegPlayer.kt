@@ -1089,9 +1089,9 @@ internal class IosFfmpegPlayer(
     }
 }
 
-/** The AVIOContext's view of a [ByteSource]: a read position over it. Decode thread only. */
+/** The AVIOContext's view of a [ByteSource]: a read position over it. One decode thread's: a player session's or [FfmpegMonoDecoder]'s. */
 @OptIn(ExperimentalForeignApi::class)
-private class AvioBridge(val source: ByteSource) {
+internal class AvioBridge(val source: ByteSource) {
     var position = 0L
 
     fun read(buffer: CPointer<UByteVar>, size: Int): Int {
@@ -1122,14 +1122,14 @@ private class AvioBridge(val source: ByteSource) {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun avioRead(opaque: COpaquePointer?, buffer: CPointer<UByteVar>?, size: Int): Int = try {
+internal fun avioRead(opaque: COpaquePointer?, buffer: CPointer<UByteVar>?, size: Int): Int = try {
     if (opaque == null || buffer == null) ERROR_EIO else opaque.asStableRef<AvioBridge>().get().read(buffer, size)
 } catch (e: Throwable) {
     ERROR_EIO
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun avioSeek(opaque: COpaquePointer?, offset: Long, whence: Int): Long = try {
+internal fun avioSeek(opaque: COpaquePointer?, offset: Long, whence: Int): Long = try {
     opaque?.asStableRef<AvioBridge>()?.get()?.seek(offset, whence) ?: ERROR_EIO.toLong()
 } catch (e: Throwable) {
     ERROR_EIO.toLong()
