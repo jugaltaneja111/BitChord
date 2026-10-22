@@ -72,7 +72,10 @@ import com.music.bitchord.ui.components.songListSkeleton
 import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.ui.screens.MoodGenrePlaylistsScreen
 import com.music.bitchord.ui.screens.Shelf
+import com.music.bitchord.sharedui.resources.Res
+import com.music.bitchord.sharedui.resources.on_device
 import kotlinx.coroutines.flow.distinctUntilChanged
+import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.flow.filter
 
 /** An album or playlist page as loaded: the first page of rows, and the token for the rest. */
@@ -114,7 +117,11 @@ internal fun IosPageHost(
         // Pages with no artwork header of their own start under the back button.
         val underBack = topInset + 52.dp
         when (page) {
-            is IosPage.Collection -> CollectionPage(page, contentPadding, topInset)
+            is IosPage.Collection -> if (IosLocalPlaylists.isLocal(page.browseId)) {
+                LocalPlaylistPage(page, contentPadding, topInset)
+            } else {
+                CollectionPage(page, contentPadding, topInset)
+            }
             is IosPage.Artist -> ArtistPageView(page, navigator, contentPadding, topInset)
             is IosPage.Category -> CategoryPage(page, navigator, contentPadding, topInset)
             is IosPage.LibraryShelf -> LibraryShelfPage(page, navigator, contentPadding, topInset)
@@ -136,7 +143,7 @@ internal fun IosPageHost(
                     onSignIn = { IosOverlays.login = true },
                 )
             }
-            is IosPage.SpotifyPlaylist -> SpotifyPlaylistPage(page, contentPadding, underBack)
+            is IosPage.SpotifyPlaylist -> SpotifyPlaylistPage(page, contentPadding, underBack, onOpen = navigator::open)
             IosPage.Equalizer -> EqualizerPage(contentPadding, underBack)
             IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
             IosPage.TranslationLanguage -> TranslationLanguagePage(contentPadding, underBack)
@@ -328,6 +335,59 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                     item(key = "empty") { MessageState("Nothing to play on this page") }
                 }
                 if (loadingMore) item(key = "more") { PageSpinner() }
+            }
+        }
+    }
+}
+
+/**
+ * A playlist kept on this iPhone: read live from the store, no network, so an edit from its menu
+ * or a row's lands at once. Its rows offer Remove from playlist; its header's menu, rename and delete.
+ */
+@Composable
+private fun LocalPlaylistPage(page: IosPage.Collection, contentPadding: PaddingValues, topInset: Dp) {
+    val playlists by IosLocalPlaylists.playlists.collectAsState()
+    val playlist = remember(playlists, page.browseId) { IosLocalPlaylists.get(page.browseId) }
+    val title = playlist?.title ?: page.fallback?.title.orEmpty()
+    val subtitle = "On this device"
+    val thumbnailUrl = playlist?.thumbnailUrl ?: page.fallback?.thumbnailUrl
+    val songs = playlist?.songs.orEmpty().map { song ->
+        song.copy(playbackSource = title, playbackSourceType = PlaybackSourceType.BROWSE, playbackSourceId = page.browseId)
+    }
+    val current by IosPlayer.song.collectAsState()
+    val isPlaying by IosPlayer.isPlaying.collectAsState()
+
+    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+        item(key = "header") {
+            CollectionHeader(
+                title = title,
+                subtitle = subtitle,
+                thumbnailUrl = thumbnailUrl,
+                typeLabel = "Playlist",
+                count = songs.size,
+                topInset = topInset,
+                onPlay = { if (songs.isNotEmpty()) IosPlayer.playQueue(songs, 0) },
+                onShuffle = { if (songs.isNotEmpty()) IosPlayer.playShuffled(songs) },
+                onMore = {
+                    if (playlist != null) {
+                        IosMenus.browse = BrowseMenuRequest(page.browseId, title, playlist.subtitle, thumbnailUrl, fromPage = true)
+                    }
+                },
+            )
+        }
+        when {
+            playlist == null -> item(key = "gone") { MessageState("This playlist is no longer on this device") }
+            songs.isEmpty() -> item(key = "empty") { MessageState("No songs yet. Add some with Add to playlist in any song’s menu.") }
+            else -> itemsIndexed(songs, key = { index, song -> "${song.videoId}:$index" }) { index, song ->
+                val isCurrent = current?.videoId == song.videoId
+                SongRow(
+                    song = song,
+                    onClick = { IosPlayer.playQueue(songs, index) },
+                    onLongPress = { IosMenus.song = SongMenuRequest(song = song, fromPlaylistId = page.browseId) },
+                    onSwipeToQueue = { IosPlayer.swipe(song) },
+                    isCurrent = isCurrent,
+                    isPlaying = isCurrent && isPlaying,
+                )
             }
         }
     }
@@ -685,8 +745,15 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
 @Composable
 private fun LibraryShelfPage(page: IosPage.LibraryShelf, navigator: IosNavigator, contentPadding: PaddingValues, topInset: Dp) {
     val state by IosAccount.library.collectAsState()
-    val shelf = (state as? UiState.Success)?.data?.shelves?.firstOrNull { it.title == page.title }
-        ?: HomeShelf(page.title, emptyList())
+    // The On Device shelf is drawn from the phone, not the account's feed.
+    val onDevice = stringResource(Res.string.on_device)
+    val deviceItems = deviceShelfItems()
+    val shelf = if (page.title == onDevice) {
+        HomeShelf(page.title, deviceItems)
+    } else {
+        (state as? UiState.Success)?.data?.shelves?.firstOrNull { it.title == page.title }
+            ?: HomeShelf(page.title, emptyList())
+    }
     val isPlaylists = page.title == YtMusicRepository.PLAYLISTS_SHELF
     LibraryGridPage(
         shelf = shelf,
