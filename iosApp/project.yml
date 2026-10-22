@@ -39,6 +39,8 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.music.bitchord.party
             CFBundleURLSchemes: [bitchord]
+        # The Replay share sheet's Save button: add-only, the app never reads the library.
+        NSPhotoLibraryAddUsageDescription: BitChord saves your Replay picture to your photo library.
         # Last.fm's key and secret, from the repository's secrets when it has them (see ios.yml);
         # empty otherwise, and the app asks the listener for their own.
         BitChordLastfmApiKey: $(BITCHORD_LASTFM_API_KEY)

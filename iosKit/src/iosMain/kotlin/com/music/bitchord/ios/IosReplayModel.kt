@@ -58,9 +58,7 @@ internal fun rememberReplayState(active: Boolean): Pair<ReplayState, (ReplayPeri
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
         // A directory listing, so off the composition's thread.
-        memberSince = IosListeningStats.months().firstOrNull()?.let {
-            it.month.toString().padStart(2, '0') + "/" + (it.year % 100).toString().padStart(2, '0')
-        }
+        memberSince = replayMemberSince()
     }
     LaunchedEffect(period, active) {
         if (!active) return@LaunchedEffect
@@ -87,6 +85,11 @@ internal fun rememberReplayState(active: Boolean): Pair<ReplayState, (ReplayPeri
     }
     return ReplayState(period, summary, loading, memberSince) to
         { next: ReplayPeriod -> period = next }
+}
+
+/** [ReplayState.memberSince]: `MM/YY` of the first month this device recorded anything. */
+internal fun replayMemberSince(): String? = IosListeningStats.months().firstOrNull()?.let {
+    it.month.toString().padStart(2, '0') + "/" + (it.year % 100).toString().padStart(2, '0')
 }
 
 /** How long a burst of artist lookups is allowed to settle before a rebuild. */
