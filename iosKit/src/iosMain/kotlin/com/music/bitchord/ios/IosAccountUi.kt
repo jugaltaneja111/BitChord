@@ -62,7 +62,9 @@ internal object IosOverlays {
 }
 
 private val PillShape = RoundedCornerShape(50)
-private val PillColor = Color(0xFF1C1C1E).copy(alpha = 0.92f)
+// Over whatever scrolls beneath: the group fill, nearly solid.
+private val PillColor: Color
+    @Composable get() = GroupColor.copy(alpha = 0.92f)
 
 /**
  * The phone's top-right pill: History, then the listener's photo (the account switcher), or,
@@ -77,7 +79,7 @@ internal fun TopActions(onOpenHistory: () -> Unit, onOpenSettings: () -> Unit, m
         modifier
             .clip(PillShape)
             .background(PillColor)
-            .border(0.5.dp, Color.White.copy(alpha = 0.10f), PillShape)
+            .border(0.5.dp, HairlineColor, PillShape)
             .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -86,7 +88,7 @@ internal fun TopActions(onOpenHistory: () -> Unit, onOpenSettings: () -> Unit, m
                 Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onOpenHistory),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.History, contentDescription = "History", tint = Color.White, modifier = Modifier.size(24.dp))
+                Icon(Icons.Rounded.History, contentDescription = "History", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
             }
             Spacer(Modifier.width(4.dp))
         }
@@ -109,7 +111,7 @@ internal fun TopActions(onOpenHistory: () -> Unit, onOpenSettings: () -> Unit, m
                 Icon(
                     Icons.Rounded.Person,
                     contentDescription = if (signedIn) "Switch account" else "Settings",
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -151,12 +153,12 @@ internal fun AccountSwitcher(
                 .clip(shape)
                 .then(
                     if (reduceBlur) {
-                        Modifier.background(Color(0xFF1C1C1E))
+                        Modifier.background(GroupColor)
                     } else {
-                        Modifier.optimizedHazeEffect(state = hazeState, style = HazeMaterials.thin(Color(0xFF0D0D0F)))
+                        Modifier.optimizedHazeEffect(state = hazeState, style = HazeMaterials.thin(MaterialTheme.colorScheme.surface))
                     },
                 )
-                .border(0.5.dp, Color.White.copy(alpha = 0.10f), shape)
+                .border(0.5.dp, HairlineColor, shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
         ) {
             LazyColumn(Modifier.heightIn(max = 560.dp)) {
@@ -164,7 +166,7 @@ internal fun AccountSwitcher(
                     Text(
                         "Switch account",
                         style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp),
                     )
                 }
@@ -235,7 +237,7 @@ private fun ProfileRow(profile: IosProfile, selected: Boolean, managing: Boolean
                 model = profile.avatar,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(38.dp).clip(CircleShape).background(Color(0xFF2C2C2E)),
+                modifier = Modifier.size(38.dp).clip(CircleShape).background(PlaceholderColor),
             )
         } else {
             Box(
@@ -247,7 +249,7 @@ private fun ProfileRow(profile: IosProfile, selected: Boolean, managing: Boolean
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(profile.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(profile.name, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 profile.handle.ifBlank { if (profile.brand) "Brand account" else "Personal" },
                 style = MaterialTheme.typography.bodyMedium,
@@ -258,7 +260,7 @@ private fun ProfileRow(profile: IosProfile, selected: Boolean, managing: Boolean
         }
         when {
             managing -> Text("Sign out", color = Color(0xFFFF6B6B))
-            selected -> Icon(Icons.Rounded.Check, contentDescription = "Selected account", tint = Color.White)
+            selected -> Icon(Icons.Rounded.Check, contentDescription = "Selected account", tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -269,8 +271,8 @@ private fun SelectorAction(icon: ImageVector, label: String, onClick: () -> Unit
         Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White)
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.width(16.dp))
-        Text(label, color = Color.White)
+        Text(label, color = MaterialTheme.colorScheme.onSurface)
     }
 }

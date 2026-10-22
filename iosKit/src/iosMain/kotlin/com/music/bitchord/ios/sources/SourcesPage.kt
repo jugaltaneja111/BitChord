@@ -152,7 +152,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
             Text(
                 "Sources",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -236,7 +236,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Dolby Atmos", color = Color.White)
+                        Text("Dolby Atmos", color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             "Prefer an addon's Atmos mix when it has one",
                             style = MaterialTheme.typography.bodyMedium,
@@ -341,12 +341,12 @@ private fun SourceRow(
         Icon(
             kindIcon(config.kind),
             contentDescription = null,
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(22.dp).alpha(fade),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).alpha(fade)) {
-            Text(config.displayName, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(config.displayName, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val line = when {
                 // Outranks everything: this one is not reached at all until
                 // the output changes.
@@ -391,7 +391,7 @@ private fun SourceRow(
 @Composable
 private fun Arrow(icon: ImageVector, label: String, onClick: (() -> Unit)?) {
     IconButton(onClick = { onClick?.invoke() }, enabled = onClick != null, modifier = Modifier.size(28.dp)) {
-        Icon(icon, contentDescription = label, tint = if (onClick != null) Color.White else Color.White.copy(alpha = 0.2f))
+        Icon(icon, contentDescription = label, tint = if (onClick != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
     }
 }
 

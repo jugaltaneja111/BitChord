@@ -69,6 +69,8 @@ import com.music.bitchord.ios.ActionRow
 import com.music.bitchord.ios.Divider
 import com.music.bitchord.ios.Footer
 import com.music.bitchord.ios.Group
+import com.music.bitchord.ios.GroupColor
+import com.music.bitchord.ios.PlaceholderColor
 import com.music.bitchord.ios.IosAccount
 import com.music.bitchord.ios.IosPlayerHost
 import com.music.bitchord.ios.SwitchRow
@@ -81,8 +83,10 @@ import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.UIKit.UIPasteboard
 
 private val Danger = Color(0xFFFF6B6B)
-private val SheetColor = Color(0xFF1C1C1E)
-private val FieldFill = Color(0xFF2C2C2E)
+private val SheetColor: Color
+    @Composable get() = GroupColor
+private val FieldFill: Color
+    @Composable get() = PlaceholderColor
 private val Secondary = Color(0xFF8E8E93)
 private val Online = Color(0xFF34C759)
 
@@ -336,7 +340,7 @@ internal fun ListenTogetherPage(
             Text(
                 "Listen together",
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -419,7 +423,7 @@ private fun PartyAction(title: String, subtitle: String, enabled: Boolean, onCli
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = if (enabled) Color.White else Secondary)
+            Text(title, color = if (enabled) MaterialTheme.colorScheme.onSurface else Secondary)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -430,7 +434,7 @@ private fun PartyCodeGroup(state: IosListenTogether.State, onCopy: () -> Unit, o
     Group("Party code") {
         Text(
             state.code.orEmpty(),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = 34.sp,
             fontWeight = FontWeight.Bold,
             // Wide tracking: a string to be read out loud and typed by somebody else.
@@ -475,7 +479,7 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
             Column(Modifier.weight(1f)) {
                 Text(
                     track?.title?.takeIf(String::isNotBlank) ?: "Nothing playing yet",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -512,7 +516,7 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
                 Row(Modifier.fillMaxWidth().padding(16.dp, 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${index + 1}", color = Secondary, modifier = Modifier.width(24.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(next.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(next.title, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(next.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -529,13 +533,13 @@ private fun MembersGroup(state: IosListenTogether.State) {
         if (isHost) {
             Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Party size", color = Color.White)
+                    Text("Party size", color = MaterialTheme.colorScheme.onSurface)
                     Text("Never removes anyone already inside", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Stepper("−", state.maxMembers > maxOf(2, state.members.size)) {
                     IosListenTogether.setMaxMembers(state.maxMembers - 1)
                 }
-                Text("${state.maxMembers}", color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.width(32.dp))
+                Text("${state.maxMembers}", color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center, modifier = Modifier.width(32.dp))
                 Stepper("+", state.maxMembers < 10) { IosListenTogether.setMaxMembers(state.maxMembers + 1) }
             }
             Divider()
@@ -582,7 +586,7 @@ private fun MemberRow(member: PartyMember, isYou: Boolean, canKick: Boolean, onK
         Column(Modifier.weight(1f)) {
             Text(
                 member.displayName.ifBlank { "Someone" } + if (isYou) " · You" else "",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -613,7 +617,7 @@ private fun ActivityGroup(entries: List<PartyActivity>) {
                 Text(
                     "$time  ${entry.by}: ${entry.detail.ifBlank { entry.action }}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(vertical = 3.dp),
@@ -637,7 +641,7 @@ private fun SheetBody(content: @Composable () -> Unit) {
 
 @Composable
 private fun SheetHeader(title: String, subtitle: String? = null) {
-    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
+    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
     subtitle?.let {
         Spacer(Modifier.height(4.dp))
         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
@@ -686,11 +690,11 @@ private fun CreateSheet(
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Party size", color = Color.White)
+                Text("Party size", color = MaterialTheme.colorScheme.onSurface)
                 Text("2–10 people", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Stepper("−", !busy && maxMembers > 2) { onMaxMembersChange(maxMembers - 1) }
-            Text("$maxMembers", color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.width(34.dp))
+            Text("$maxMembers", color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center, modifier = Modifier.width(34.dp))
             Stepper("+", !busy && maxMembers < 10) { onMaxMembersChange(maxMembers + 1) }
         }
         SheetError(error)
@@ -714,7 +718,7 @@ private fun JoinCodeSheet(
             onValueChange = onCodeChange,
             placeholder = { Text("ABC123") },
             singleLine = true,
-            textStyle = MaterialTheme.typography.headlineSmall.copy(letterSpacing = 6.sp, textAlign = TextAlign.Center, color = Color.White),
+            textStyle = MaterialTheme.typography.headlineSmall.copy(letterSpacing = 6.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Characters,
                 keyboardType = KeyboardType.Ascii,
@@ -741,7 +745,7 @@ private fun ConfirmSheet(
     onJoin: () -> Unit,
 ) {
     SheetBody {
-        Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(48.dp))
+        Icon(Icons.Rounded.Groups, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(48.dp))
         Spacer(Modifier.height(10.dp))
         SheetHeader(
             if (preview.hostName.isBlank()) "Join this party?" else "Join ${preview.hostName}'s party?",
@@ -759,7 +763,7 @@ private fun ConfirmSheet(
         Spacer(Modifier.height(20.dp))
         PrimaryButton("Join party", busy, enabled = !preview.isFull, onClick = onJoin)
         Spacer(Modifier.height(4.dp))
-        TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel", color = Color.White) }
+        TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel", color = MaterialTheme.colorScheme.onSurface) }
     }
 }
 
@@ -767,13 +771,13 @@ private fun ConfirmSheet(
 private fun InviteSheet(code: String, link: String, onShare: () -> Unit, onCopy: () -> Unit) {
     SheetBody {
         SheetHeader("Invite friends", "Send the link, or read out the code.")
-        Text(code, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 8.sp)
+        Text(code, color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 8.sp)
         Spacer(Modifier.height(8.dp))
         Text(link, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         Spacer(Modifier.height(20.dp))
         PrimaryButton("Share invite link", busy = false, enabled = true, onClick = onShare)
         Spacer(Modifier.height(4.dp))
-        TextButton(onClick = onCopy) { Text("Copy code", color = Color.White) }
+        TextButton(onClick = onCopy) { Text("Copy code", color = MaterialTheme.colorScheme.onSurface) }
     }
 }
 
@@ -890,7 +894,7 @@ private fun PartyAvatar(url: String?, size: Dp, fallback: String = "") {
     } else {
         Box(Modifier.size(size).clip(CircleShape).background(FieldFill), contentAlignment = Alignment.Center) {
             if (fallback.isNotBlank()) {
-                Text(fallback.trim().take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
+                Text(fallback.trim().take(1).uppercase(), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             } else {
                 Icon(Icons.Rounded.Person, null, tint = Secondary, modifier = Modifier.size(size * 0.55f))
             }
@@ -903,7 +907,7 @@ private fun Stepper(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.size(32.dp).clip(CircleShape).background(FieldFill).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(label, color = if (enabled) Color.White else Secondary) }
+    ) { Text(label, color = if (enabled) MaterialTheme.colorScheme.onSurface else Secondary) }
 }
 
 @Composable
@@ -913,14 +917,14 @@ private fun PrimaryButton(label: String, busy: Boolean, enabled: Boolean, onClic
         enabled = enabled && !busy,
         shape = RoundedCornerShape(50),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = Color.Black,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             disabledContainerColor = FieldFill,
             disabledContentColor = Secondary,
         ),
         modifier = Modifier.fillMaxWidth().height(50.dp),
     ) {
-        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.Black)
+        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
         else Text(label, fontWeight = FontWeight.SemiBold)
     }
 }

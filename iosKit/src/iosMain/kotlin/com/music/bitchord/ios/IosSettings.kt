@@ -16,7 +16,9 @@ import com.music.bitchord.data.lyrics.translationLanguageName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -338,7 +340,6 @@ internal object IosSettings {
 }
 
 internal val GroupShape = RoundedCornerShape(14.dp)
-internal val GroupColor = Color(0xFF1C1C1E)
 
 @Composable
 internal fun SettingsPage(
@@ -371,7 +372,7 @@ internal fun SettingsPage(
             Text(
                 "Settings",
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -386,11 +387,11 @@ internal fun SettingsPage(
                             model = account?.thumbnailUrl,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF2C2C2E)),
+                            modifier = Modifier.size(44.dp).clip(CircleShape).background(PlaceholderColor),
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(account?.name.orEmpty().ifBlank { "YouTube Music" }, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(account?.name.orEmpty().ifBlank { "YouTube Music" }, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 account?.email.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -413,10 +414,10 @@ internal fun SettingsPage(
                         Modifier.fillMaxWidth().clickable { IosOverlays.login = true }.padding(16.dp, 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Rounded.Person, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Rounded.Person, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Sign in to YouTube Music", color = Color.White)
+                            Text("Sign in to YouTube Music", color = MaterialTheme.colorScheme.onSurface)
                             Text(
                                 "Your library, likes and personal Home",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -505,7 +506,7 @@ internal fun SettingsPage(
         }
         item {
             Group("Appearance") {
-                Soon("Theme", "The iOS app is dark for now")
+                ThemeRow()
                 Divider()
                 Toggle("Reduce animation", "Freezes the main player's gradient instead of drifting", IosSettings.reduceAnimation)
                 Divider()
@@ -617,7 +618,7 @@ internal fun SettingsPage(
             val version = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
             Group("About") {
                 Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Version", color = Color.White)
+                    Text("Version", color = MaterialTheme.colorScheme.onSurface)
                     Text(version ?: "–", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -643,7 +644,7 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
             Text(
                 "Lyrics sources",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
             Text(
@@ -663,7 +664,7 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(source.label, color = if (on) Color.White else Color.White.copy(alpha = 0.45f))
+                            Text(source.label, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
                             Text(
                                 (if (source.wordSynced) "Word by word · " else "Line by line · ") + source.detail,
                                 style = MaterialTheme.typography.bodySmall,
@@ -671,10 +672,10 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
                             )
                         }
                         IconButton(onClick = { IosSettings.lyricsSourceOrder.set(order.moved(index, index - 1)) }, enabled = index > 0) {
-                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = if (index > 0) Color.White else Color.White.copy(alpha = 0.2f))
+                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = if (index > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                         }
                         IconButton(onClick = { IosSettings.lyricsSourceOrder.set(order.moved(index, index + 1)) }, enabled = index < order.lastIndex) {
-                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = if (index < order.lastIndex) Color.White else Color.White.copy(alpha = 0.2f))
+                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = if (index < order.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                         }
                         Switch(
                             checked = on,
@@ -685,7 +686,7 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = Color(0xFF34C759),
                                 uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFF39393D),
+                                uncheckedTrackColor = SwitchOffColor,
                                 uncheckedBorderColor = Color.Transparent,
                             ),
                         )
@@ -760,7 +761,7 @@ internal fun TranslationLanguagePage(contentPadding: PaddingValues, topPadding: 
             Text(
                 "Translation language",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
             Text(
@@ -794,7 +795,7 @@ internal fun TranslationLanguagePage(contentPadding: PaddingValues, topPadding: 
 @Composable
 private fun LanguageRow(name: String, checked: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(name, color = Color.White, modifier = Modifier.weight(1f))
+        Text(name, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         if (checked) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
     }
 }
@@ -833,7 +834,7 @@ private fun QualityRow(title: String, pref: StringPref) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(option.label, color = Color.White)
+                                Text(option.label, color = MaterialTheme.colorScheme.onSurface)
                                 Text(
                                     if (option == AudioQuality.MEDIUM) "Best available · ~128 kbps AAC" else option.detail,
                                     style = MaterialTheme.typography.bodySmall,
@@ -850,6 +851,39 @@ private fun QualityRow(title: String, pref: StringPref) {
     }
 }
 
+/** The phone's Theme row: System, Light or Dark, as a segmented control under the title. */
+@Composable
+private fun ThemeRow() {
+    val mode by IosSettings.themeMode.flow.collectAsState()
+    Column(Modifier.fillMaxWidth().padding(16.dp, 12.dp)) {
+        Text("Theme", color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PlaceholderColor).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            listOf("System" to "SYSTEM", "Light" to "LIGHT", "Dark" to "DARK").forEach { (label, value) ->
+                val chosen = mode == value
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (chosen) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .clickable { if (!chosen) IosSettings.themeMode.set(value) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (chosen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** The phone's Song cache limit slider, with Off at the left. */
 @Composable
 private fun SongCacheRow() {
@@ -862,7 +896,7 @@ private fun SongCacheRow() {
     Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Song cache", color = Color.White)
+                Text("Song cache", color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     "Keeps songs you’ve played on this iPhone for instant replays, saved over Wi-Fi only",
                     style = MaterialTheme.typography.bodyMedium,
@@ -879,9 +913,9 @@ private fun SongCacheRow() {
             valueRange = 0f..IosSongCache.UNLIMITED_MB.toFloat(),
             steps = IosSongCache.UNLIMITED_MB / IosSongCache.STEP_MB - 1,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.18f),
+                thumbColor = MaterialTheme.colorScheme.onSurface,
+                activeTrackColor = MaterialTheme.colorScheme.onSurface,
+                inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
                 activeTickColor = Color.Transparent,
                 inactiveTickColor = Color.Transparent,
             ),
@@ -896,7 +930,7 @@ private fun CrossfadeRow() {
     Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Crossfade", color = Color.White)
+                Text("Crossfade", color = MaterialTheme.colorScheme.onSurface)
                 Text("Blends one track into the next", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(if (seconds == 0) "Off" else "${seconds}s", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -907,9 +941,9 @@ private fun CrossfadeRow() {
             valueRange = 0f..12f,
             steps = 11,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.18f),
+                thumbColor = MaterialTheme.colorScheme.onSurface,
+                activeTrackColor = MaterialTheme.colorScheme.onSurface,
+                inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
                 activeTickColor = Color.Transparent,
                 inactiveTickColor = Color.Transparent,
             ),
@@ -922,7 +956,7 @@ private fun CrossfadeRow() {
 internal fun Soon(title: String, subtitle: String? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White.copy(alpha = 0.45f))
+            Text(title, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
             subtitle?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
             }
@@ -955,7 +989,7 @@ internal fun Group(header: String, content: @Composable () -> Unit) {
 
 @Composable
 internal fun Divider() {
-    HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.5.dp, color = Color.White.copy(alpha = 0.10f))
+    HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.5.dp, color = HairlineColor)
 }
 
 @Composable
@@ -966,7 +1000,7 @@ internal fun Toggle(title: String, subtitle: String, pref: BoolPref) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White)
+            Text(title, color = MaterialTheme.colorScheme.onSurface)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
@@ -984,7 +1018,7 @@ internal fun IosSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
             checkedThumbColor = Color.White,
             checkedTrackColor = Color(0xFF34C759),
             uncheckedThumbColor = Color.White,
-            uncheckedTrackColor = Color(0xFF39393D),
+            uncheckedTrackColor = SwitchOffColor,
             uncheckedBorderColor = Color.Transparent,
         ),
     )
@@ -993,7 +1027,7 @@ internal fun IosSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
 @Composable
 internal fun ActionRow(title: String, destructive: Boolean = false, value: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp)) {
-        Text(title, color = if (destructive) Color(0xFFFF6B6B) else Color.White, modifier = Modifier.weight(1f))
+        Text(title, color = if (destructive) Color(0xFFFF6B6B) else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         value?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }

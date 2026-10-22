@@ -86,7 +86,7 @@ internal fun EqualizerPage(contentPadding: PaddingValues, topPadding: Dp) {
         Text(
             "Equalizer",
             style = MaterialTheme.typography.headlineMedium,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
         Group("") {
@@ -171,12 +171,12 @@ private fun ModeSwitch(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit)
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (active) Color(0xFF636366) else Color.Transparent)
+                    .background(if (!active) Color.Transparent else if (isDarkScheme) Color(0xFF636366) else Color.White)
                     .clickable(enabled = enabled && !active) { onSelect(index) }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MaterialTheme.typography.labelLarge, color = Color.White)
+                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -285,13 +285,13 @@ private fun ToneReadout(x: Int, y: Int) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Waves, contentDescription = "Tilt", tint = Color.White, modifier = Modifier.size(20.dp))
+        Icon(Icons.Rounded.Waves, contentDescription = "Tilt", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text(signed(x), style = MaterialTheme.typography.bodyLarge, color = Color.White)
+        Text(signed(x), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.width(22.dp))
-        Icon(Icons.AutoMirrored.Rounded.ShowChart, contentDescription = "Contour", tint = Color.White, modifier = Modifier.size(20.dp))
+        Icon(Icons.AutoMirrored.Rounded.ShowChart, contentDescription = "Contour", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text(signed(y), style = MaterialTheme.typography.bodyLarge, color = Color.White)
+        Text(signed(y), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -312,7 +312,7 @@ private fun ChoiceRow(label: String, selected: Boolean, enabled: Boolean, onClic
             .padding(horizontal = 16.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = Color.White, modifier = Modifier.weight(1f))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         if (selected) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = AccentBlue, modifier = Modifier.size(22.dp))
     }
 }
@@ -357,7 +357,8 @@ private fun BandSliders(bands: List<Float>, enabled: Boolean, onChange: (List<Fl
 @Composable
 private fun BandFader(value: Float, enabled: Boolean, onChange: (Float) -> Unit) {
     val haptics = rememberHaptics()
-    val trackColor = Color.White.copy(alpha = 0.18f)
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+    val centreLineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
     val range = EqLayout.MANUAL_RANGE_DB
     val latest by rememberUpdatedState(value)
     // The caller's lambda closes over the whole band list: a stale copy would write every other
@@ -421,7 +422,7 @@ private fun BandFader(value: Float, enabled: Boolean, onChange: (Float) -> Unit)
             )
         }
         drawLine(
-            color = Color.White.copy(alpha = 0.4f),
+            color = centreLineColor,
             start = Offset(centreX - trackWidth, centreY),
             end = Offset(centreX + trackWidth, centreY),
             strokeWidth = 1.dp.toPx(),
@@ -464,12 +465,12 @@ private fun formatFrequency(hz: Float): String = when {
 @Composable
 private fun BalanceControl(balance: Float, enabled: Boolean, onChange: (Float) -> Unit) {
     val haptics = rememberHaptics()
-    val trackColor = Color.White.copy(alpha = 0.18f)
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     val latest by rememberUpdatedState(balance)
     val currentOnChange by rememberUpdatedState(onChange)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("L", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+            Text("L", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
                 twoDecimals(balance),
                 style = MaterialTheme.typography.bodyLarge,
@@ -477,7 +478,7 @@ private fun BalanceControl(balance: Float, enabled: Boolean, onChange: (Float) -
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            Text("R", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+            Text("R", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
         }
         Spacer(Modifier.height(10.dp))
         Canvas(
@@ -558,13 +559,13 @@ private fun PresetSheet(selected: EqualizerPreset, onSelect: (EqualizerPreset) -
     val haptics = rememberHaptics()
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1C1C1E),
+        containerColor = GroupColor,
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
                 "Preset",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 22.dp, end = 22.dp, bottom = 14.dp),
             )
             Divider()
@@ -582,7 +583,7 @@ private fun PresetSheet(selected: EqualizerPreset, onSelect: (EqualizerPreset) -
                             .padding(horizontal = 22.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(preset.label(), style = MaterialTheme.typography.bodyLarge, color = Color.White, modifier = Modifier.weight(1f))
+                        Text(preset.label(), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                         if (preset == selected) {
                             Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = AccentBlue, modifier = Modifier.size(22.dp))
                         }
