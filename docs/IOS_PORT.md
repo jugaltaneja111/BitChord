@@ -53,8 +53,14 @@ go to a second player (iosKit/…/ffmpeg): FFmpegBuild 3.9.0's prebuilt framewor
 Linux job cross-compiling iOS), decoding into AVAudioEngine through the same TapDsp; a track it
 fails is retried on YouTube's AAC. YouTube's own Opus is behind a switch, off by default. APE,
 WavPack and DSD are still passed over, the legacy JS modules are not ported, and Dolby Atmos is off by default. Stats for
-nerds read the decoded format off the AVPlayerItem's track. Not yet: Automix and skip silence (both need the track analysed ahead), local playlists for imports when
-signed out, https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+nerds read the decoded format off the AVPlayerItem's track. Skip silence cuts gaps past a second: the FFmpeg player drops the silent chunks before scheduling
+them; AVPlayer, which can't drop samples, plays a long gap muted at 8x and rewinds a second once
+sound returns. Theme (System / Light / Dark) uses the phone's light scheme, the player and Replay
+stories staying dark; app language writes `AppleLanguages`, applied at the next launch, and only
+the shared screens are translated so far (iosKit's own strings are still English). Local playlists
+are kept on the phone when signed out (and when a YouTube create fails), and the Replay poster is
+drawn with Skia and shared or saved to Photos. Not yet: Automix (needs the track analysed ahead),
+https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 
