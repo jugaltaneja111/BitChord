@@ -76,6 +76,8 @@ targets:
         embed: true
       - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibzvbi.xcframework
         embed: true
+      # The Replay poster's Save button; linked explicitly, as the Kotlin framework is static.
+      - sdk: Photos.framework
     preBuildScripts:
       - name: Build the Kotlin framework
         basedOnDependencyAnalysis: false
