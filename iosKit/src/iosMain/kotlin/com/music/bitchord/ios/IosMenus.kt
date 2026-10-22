@@ -259,13 +259,18 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
     var menu by remember(request.song.videoId) { mutableStateOf<SongMenu?>(null) }
     var menuLoaded by remember(request.song.videoId) { mutableStateOf(false) }
     var links by remember(request.song.videoId) { mutableStateOf<Song?>(null) }
-    var linksLoaded by remember(request.song.videoId) { mutableStateOf(request.song.albumId != null && request.song.artistId != null) }
+    // A file on this iPhone has no album or artist page to look up.
+    var linksLoaded by remember(request.song.videoId) {
+        mutableStateOf(request.song.albumId != null && request.song.artistId != null || IosLocalMusic.isLocal(request.song))
+    }
     val scope = rememberCoroutineScope()
     val song = request.song
+    // A file on this iPhone: what YouTube Music holds about it — likes, library, radio, links — isn't there.
+    val onDevice = IosLocalMusic.isLocal(song)
 
     // Whether it is liked or in the library is YouTube's to say; the row that opened this rarely knew.
     LaunchedEffect(song.videoId, signedIn) {
-        if (!signedIn) return@LaunchedEffect
+        if (!signedIn || onDevice) return@LaunchedEffect
         menu = YtMusicRepository.songMenu(song.videoId).getOrNull()
         menuLoaded = true
         menu?.likeStatus?.let { stated -> if (likes[song.videoId] == null) LikeState.set(song.videoId, stated) }
@@ -288,7 +293,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
 
     TintedSheet(song.thumbnailUrl, onDismiss) { colors ->
         SheetHeader(song.title, song.artist, song.thumbnailUrl, colors)
-        if (signedIn) {
+        if (signedIn && !onDevice) {
             val liked = likeStatus == LikeStatus.LIKE
             val disliked = likeStatus == LikeStatus.DISLIKE
             MenuRow(
@@ -316,7 +321,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 }
             }
         }
-        if (signedIn) {
+        if (signedIn && !onDevice) {
             val playlistId = request.fromPlaylistId?.takeUnless(IosLocalPlaylists::isLocal)
             val setVideoId = song.setVideoId
             if (playlistId != null && setVideoId != null) {
@@ -356,12 +361,12 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
-        MenuRow(Icons.Rounded.Radio, "Start radio", colors) { leave { IosPlayer.playRadio(song) } }
+        if (!onDevice) MenuRow(Icons.Rounded.Radio, "Start radio", colors) { leave { IosPlayer.playRadio(song) } }
         MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next", colors) { leave { IosPlayer.playNext(listOf(song)) } }
         MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", colors) { leave { IosPlayer.addToQueue(listOf(song)) } }
         val downloadedIds by IosDownloads.ids.collectAsState()
         val downloadProgress by IosDownloads.progress.collectAsState()
-        when (val state = downloadProgress[song.videoId]) {
+        if (!onDevice) when (val state = downloadProgress[song.videoId]) {
             null -> if (song.videoId in downloadedIds) {
                 MenuRow(Icons.Rounded.DownloadDone, "Remove download", colors) {
                     onDismiss()
@@ -412,7 +417,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 IosMenus.lyricsOffset = true
             }
         }
-        MenuRow(Icons.Rounded.Share, "Share", colors) { leave { shareLink(songLink(song.videoId)) } }
+        if (!onDevice) MenuRow(Icons.Rounded.Share, "Share", colors) { leave { shareLink(songLink(song.videoId)) } }
     }
 }
 
@@ -602,7 +607,9 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
  */
 @Composable
 private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
-    val signedIn by IosAccount.signedIn.collectAsState()
+    // Files on this iPhone go only in playlists kept on it: YouTube Music can't hold them.
+    val account by IosAccount.signedIn.collectAsState()
+    val signedIn = account && songs.none { IosLocalMusic.isLocal(it) }
     val localPlaylists by IosLocalPlaylists.playlists.collectAsState()
     var playlists by remember { mutableStateOf<List<UserPlaylist>?>(null) }
     var failed by remember { mutableStateOf(false) }
@@ -701,7 +708,8 @@ private fun PlaylistChoice(title: String, subtitle: String, thumbnailUrl: String
  */
 @Composable
 private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
-    val signedIn by IosAccount.signedIn.collectAsState()
+    val account by IosAccount.signedIn.collectAsState()
+    val signedIn = account && songs.none { IosLocalMusic.isLocal(it) }
     var title by remember { mutableStateOf("") }
     var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
     var saving by remember { mutableStateOf(false) }
@@ -721,7 +729,11 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
             }
         } else {
             Text(
-                "Kept on this device. Sign in to make playlists on YouTube Music.",
+                if (account) {
+                    "Kept on this device: songs on this iPhone can’t go in a YouTube Music playlist."
+                } else {
+                    "Kept on this device. Sign in to make playlists on YouTube Music."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.secondary,
                 modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 12.dp),

@@ -70,6 +70,7 @@ import androidx.compose.runtime.LaunchedEffect
 import com.music.bitchord.ui.theme.StatusBarIcons
 import com.music.bitchord.data.model.ShelfItem
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.LibraryMusic
 import com.music.bitchord.ui.screens.LibraryLink
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -377,6 +378,16 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
                 ),
                 icon = Icons.Rounded.DownloadDone,
             ),
+            LibraryLink(
+                item = ShelfItem(
+                    title = "Local music",
+                    subtitle = "Your own audio files",
+                    thumbnailUrl = null,
+                    videoId = null,
+                    browseId = LOCAL_MUSIC_LINK,
+                ),
+                icon = Icons.Rounded.LibraryMusic,
+            ),
         ),
         deviceItems = deviceItems,
     )
@@ -414,7 +425,8 @@ private fun SearchPage(
     val suggestions by search.suggestions.collectAsState()
     val typeahead by search.typeahead.collectAsState()
     val history by search.history.collectAsState()
-    val addons by search.addons.collectAsState()
+    val source by search.source.collectAsState()
+    val libraryResults by search.libraryResults.collectAsState()
     val addonResults by search.addonResults.collectAsState()
     val addonHistory by search.addonHistory.collectAsState()
     // The keyboard comes up on an empty page, not over results already there.
@@ -501,9 +513,11 @@ private fun SearchPage(
         contentPadding = contentPadding,
         topPadding = statusBar + 8.dp,
         sourceSwitcher = {
-            SearchSourceSwitch(addons, onSelect = search::setAddons)
+            SearchSourceSwitch(source, onSelect = search::setSource)
         },
-        searchingAddons = addons,
+        searchingLibrary = source == IosSearch.Source.LIBRARY,
+        libraryResults = libraryResults,
+        searchingAddons = source == IosSearch.Source.ADDONS,
         addonResults = addonResults,
         addonHistory = addonHistory,
         onAddonHistoryClick = { search.submit(it) },
@@ -516,15 +530,15 @@ private fun SearchPage(
     )
 }
 
-/** The phone's YouTube / Addons selector at the head of the search page; Library comes with local music. */
+/** The phone's YouTube / Addons / Library selector at the head of the search page. */
 @Composable
-private fun SearchSourceSwitch(addons: Boolean, onSelect: (Boolean) -> Unit) {
+private fun SearchSourceSwitch(selected: IosSearch.Source, onSelect: (IosSearch.Source) -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        listOf("YouTube Music" to false, "Addons" to true).forEach { (label, value) ->
-            val chosen = addons == value
+        listOf("YouTube Music" to IosSearch.Source.YOUTUBE, "Addons" to IosSearch.Source.ADDONS, "Library" to IosSearch.Source.LIBRARY).forEach { (label, value) ->
+            val chosen = selected == value
             Box(
                 Modifier
                     .weight(1f)

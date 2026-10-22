@@ -307,6 +307,8 @@ internal object IosPlayer {
     fun playRadio(song: Song) {
         if (refusedByHost()) return
         playQueue(listOf(song), 0)
+        // A local file has no YouTube id to seed a station with.
+        if (IosLocalMusic.isLocal(song)) return
         scope.launch {
             YtMusicRepository.radio(song.videoId).onSuccess { radio ->
                 // Still the same session: the user may have moved on while it loaded.
@@ -543,6 +545,11 @@ internal object IosPlayer {
 
     /** A copy of [videoId] on the phone — a download first, else the song cache — and its loudness. */
     private fun onPhone(videoId: String): Pair<String, Double?>? {
+        // The listener's own file: played where it lies, AVPlayer or FFmpeg by its extension.
+        if (IosLocalMusic.isLocal(videoId)) {
+            servedBy[videoId] = "On this iPhone" to null
+            return IosLocalMusic.audioPath(videoId)?.let { it to null }
+        }
         IosDownloads.audioPath(videoId)?.let { path ->
             val track = IosDownloads.tracks.value.firstOrNull { it.videoId == videoId }
             servedBy[videoId] = "Downloaded" to track?.kbps?.takeIf { it > 0 }
@@ -614,7 +621,9 @@ internal object IosPlayer {
 
     /** The last song's radio after the queue; played straight away when the queue has run out. */
     private fun extendWithRadio(playNext: Boolean) {
-        val last = _queue.value.lastOrNull() ?: return
+        // Seeded from the last YouTube track: a local file has no id to seed it with.
+        val last = _queue.value.lastOrNull { !IosLocalMusic.isLocal(it) }
+            ?: return if (playNext && _queue.value.isNotEmpty()) engine.pause() else Unit
         if (extending) return
         // One supplier per party, as the phone has it: the host tops the queue up for everyone.
         val party = IosListenTogether.state.value
@@ -757,6 +766,8 @@ internal object IosPlayer {
      * [SUBSTITUTE_WAIT_MS] loses to YouTube, so a slow add-on delays a track rather than stalls it.
      */
     private suspend fun networkStream(audio: Song): Picked? = kotlinx.coroutines.coroutineScope {
+        // A local file that has gone has nothing to ask YouTube or the sources for.
+        if (IosLocalMusic.isLocal(audio)) return@coroutineScope null
         val request = IosSources.requestFor(IosSettings.effectiveAudioQuality)
         val cap = (request as? StreamRequest.Capped)?.maxKbps?.coerceAtMost(320) ?: 320
         if (IosSources.isSourceTrack(audio)) {

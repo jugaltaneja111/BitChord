@@ -193,7 +193,8 @@ internal object IosDiscord {
             runCatching {
                 val now = wallClockMs()
                 val buttons = buildList {
-                    if (IosSettings.discordButton1Visible.flow.value) {
+                    // A file on this iPhone has no page to link to.
+                    if (IosSettings.discordButton1Visible.flow.value && !IosLocalMusic.isLocal(song)) {
                         add(resolve(IosSettings.discordButton1Text.flow.value.ifEmpty { DEFAULT_BUTTON_1 }, song) to watchUrl(song))
                     }
                     if (IosSettings.discordButton2Visible.flow.value) {
@@ -204,7 +205,7 @@ internal object IosDiscord {
                     name = IosSettings.discordActivityName.flow.value.ifEmpty { "BitChord" },
                     details = song.title,
                     state = song.artist,
-                    detailsUrl = watchUrl(song),
+                    detailsUrl = watchUrl(song).takeUnless { IosLocalMusic.isLocal(song) },
                     largeImage = song.artworkAt(ART_PX)?.takeIf { it.startsWith("http") }?.let(RpcImage::ExternalImage),
                     smallImage = null,
                     largeText = null,

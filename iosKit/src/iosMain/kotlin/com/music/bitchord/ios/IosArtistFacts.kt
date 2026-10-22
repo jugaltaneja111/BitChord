@@ -24,11 +24,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import com.music.bitchord.data.appHttpClient
-import platform.Foundation.NSDocumentDirectory
-import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.writeToFile
@@ -57,8 +54,7 @@ internal object IosArtistFacts {
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
     private val path: String by lazy {
-        val documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).first() as String
-        "$documents/artist_facts.json"
+        appDataPath("artist_facts.json")
     }
 
     /** Reads what is known and starts the lookups. Called once, at launch. */

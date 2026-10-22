@@ -128,6 +128,8 @@ internal fun IosPageHost(
             is IosPage.Replay -> ReplayPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
+            IosPage.LocalMusic -> LocalMusicPage(navigator, contentPadding, underBack)
+            is IosPage.LocalMusicGroup -> LocalMusicGroupPage(page, contentPadding, underBack)
             IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenTranslationLanguage = { navigator.open(IosPage.TranslationLanguage) }, onOpenSources = { navigator.open(IosPage.Sources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) }, onOpenListenTogether = { navigator.open(IosPage.ListenTogether()) })
             IosPage.Integrations -> IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) }, onOpenDiscord = { navigator.open(IosPage.Discord) })
             IosPage.Spotify -> SpotifyPage(navigator, contentPadding, underBack)
@@ -351,8 +353,11 @@ private fun LocalPlaylistPage(page: IosPage.Collection, contentPadding: PaddingV
     val title = playlist?.title ?: page.fallback?.title.orEmpty()
     val subtitle = "On this device"
     val thumbnailUrl = playlist?.thumbnailUrl ?: page.fallback?.thumbnailUrl
+    // A file on this iPhone takes its cover from the latest scan, which the playlist doesn't keep.
+    val localTracks by IosLocalMusic.tracks.collectAsState()
     val songs = playlist?.songs.orEmpty().map { song ->
-        song.copy(playbackSource = title, playbackSourceType = PlaybackSourceType.BROWSE, playbackSourceId = page.browseId)
+        IosLocalMusic.current(song, localTracks)
+            .copy(playbackSource = title, playbackSourceType = PlaybackSourceType.BROWSE, playbackSourceId = page.browseId)
     }
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
@@ -459,7 +464,7 @@ internal fun CollectionHeader(
 
 /** The phone's release controls: a labelled Play pill and Shuffle. */
 @Composable
-private fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier, onMore: (() -> Unit)? = null) {
+internal fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier, onMore: (() -> Unit)? = null) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier
