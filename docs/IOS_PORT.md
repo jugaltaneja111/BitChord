@@ -59,8 +59,13 @@ sound returns. Theme (System / Light / Dark) uses the phone's light scheme, the 
 stories staying dark; app language writes `AppleLanguages`, applied at the next launch, and only
 the shared screens are translated so far (iosKit's own strings are still English). Local playlists
 are kept on the phone when signed out (and when a YouTube create fails), and the Replay poster is
-drawn with Skia and shared or saved to Photos. Not yet: Automix (needs the track analysed ahead),
-https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
+drawn with Skia and shared or saved to Photos. Automix analyses each track with the phone's C++
+analyzer (native/analyzer, built into an embedded BitChordAnalysis framework and loaded with
+dlopen; decoded through FFmpeg to 11 kHz mono; no ONNX beat or vocal models, so beats come from
+the DSP tracker) and plans with the shared planner; the phone's filters, echo and tempo ramps are
+not rendered. A track started on YouTube is upgraded mid-play onto a better copy (a 300 ms blend).
+Local music plays files from a folder picked in Files and from BitChord's own folder there. Not
+yet: https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.
 

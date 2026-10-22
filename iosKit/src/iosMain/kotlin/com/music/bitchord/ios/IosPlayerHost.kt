@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.ios.canvas.IosCanvas
 import com.music.bitchord.ios.party.IosListenTogether
+import com.music.bitchord.ios.automix.IosAutomixAnalysis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -131,7 +132,11 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val reduceAnimation = IosSettings.reduceAnimation.flow
     override val reduceDynamicBlur = IosSettings.reduceDynamicBlur.flow
     override val showNerdStats = IosSettings.showNerdStats.flow
-    override val smartAnalysis = MutableStateFlow(SmartAnalysis())
+    override val smartAnalysis = kotlinx.coroutines.flow.combine(
+        IosAutomixAnalysis.states, IosPlayer.queue, IosPlayer.index,
+    ) { _, queue, index ->
+        IosAutomixAnalysis.smartAnalysis(queue.getOrNull(index)?.videoId, queue.getOrNull(index + 1)?.videoId)
+    }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main), SharingStarted.Eagerly, SmartAnalysis())
     override val smartFadeEnabled = IosSettings.automix.flow
     override val smartMixInProgress = MutableStateFlow(false)
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
