@@ -108,6 +108,24 @@ internal object IosSources {
     }
 
     /**
+     * A better copy of [song], already playing at [playing] from [servedBy] (a
+     * source's display name, or null for YouTube), or null — see
+     * [SourceResolver.upgradeFor].
+     */
+    suspend fun upgradeFor(song: Song, request: StreamRequest, playing: StreamFormat?, servedBy: String?): ResolvedStream? {
+        if (isSourceTrack(song) && SourceRegistry.config(SourceRegistry.parseTrackKey(song.videoId)!!.first)?.kind == SourceKind.ADDON) return null
+        return SourceResolver.upgradeFor(TrackMatcher.targetOf(song), request, playing, servedBy)?.toResolved()
+    }
+
+    /** Whether [candidate] is enough better than [playing] to be worth a swap mid-track. */
+    fun worthSwapping(candidate: StreamFormat, playing: StreamFormat?): Boolean =
+        SourceResolver.worthSwapping(candidate, playing)
+
+    /** Whether two runtimes, in seconds, are the same recording for a swap mid-track. */
+    fun sameRecordingAs(candidateSec: Int?, playingSec: Int?): Boolean =
+        SourceResolver.sameRecordingAs(candidateSec, playingSec)
+
+    /**
      * Whether anything outranks YouTube under [request], without a search — so
      * the player can skip [substituteForYouTube] entirely when it could only
      * come back null.

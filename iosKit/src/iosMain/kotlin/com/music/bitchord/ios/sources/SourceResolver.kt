@@ -234,6 +234,47 @@ internal object SourceResolver {
     }
 
     /**
+     * A better copy of a track that is already playing, or null (the phone's
+     * `upgradeFor`).
+     *
+     * Every source ranked above YouTube but [servedBy] is asked at once and all
+     * of their answers are weighed, held to the strict match — length to within
+     * [UPGRADE_DRIFT_SEC], a shared artist — because this replaces audio the
+     * listener is already hearing. Only a copy [worthSwapping] over [playing]
+     * qualifies; an unmeasured [playing] lets only lossless through.
+     */
+    suspend fun upgradeFor(
+        target: TrackMatcher.Target,
+        request: StreamRequest,
+        playing: StreamFormat?,
+        servedBy: String?,
+    ): Pair<MusicSource, SourceStream>? {
+        if (target.title.isBlank() || target.durationSec == null || target.isVideo) return null
+        val active = SourceRegistry.activeForPlayback(request)
+        val youtube = active.firstOrNull { it.kind == SourceKind.YOUTUBE } ?: return null
+        val found = bestAcross(
+            rankedAbove(youtube.configId, active).filterNot { it.displayName == servedBy || it.configId == servedBy },
+            target,
+            request,
+            waitForAll = true,
+            strictLength = true,
+            requireSharedArtist = true,
+        ) { candidate, stream ->
+            worthSwapping(stream.format, playing).also { worth ->
+                if (!worth) {
+                    TrackLog.d(
+                        TAG,
+                        "${candidate.displayName}'s ${stream.format.summary} isn't worth swapping " +
+                            "'${target.title}' off ${playing?.summary ?: "an unmeasured stream"}",
+                    )
+                }
+            }
+        } ?: return null
+        TrackLog.d(TAG, "upgrade found: '${target.title}' at ${found.second.format.summary} from ${found.first.displayName}")
+        return found
+    }
+
+    /**
      * Whether anything outranks YouTube under [request] — i.e. whether a
      * YouTube track is worth offering around before it is resolved. Answerable
      * from the source list alone, without a search.
