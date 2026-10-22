@@ -132,7 +132,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val reduceDynamicBlur = IosSettings.reduceDynamicBlur.flow
     override val showNerdStats = IosSettings.showNerdStats.flow
     override val smartAnalysis = MutableStateFlow(SmartAnalysis())
-    override val smartFadeEnabled = MutableStateFlow(false)
+    override val smartFadeEnabled = IosSettings.automix.flow
     override val smartMixInProgress = MutableStateFlow(false)
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)

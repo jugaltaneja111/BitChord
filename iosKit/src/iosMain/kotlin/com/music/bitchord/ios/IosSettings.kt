@@ -243,6 +243,8 @@ internal object IosSettings {
      */
     val youtubeOpus = BoolPref("${PREFIX}youtube_opus", false)
     val skipSilence = BoolPref("${PREFIX}skip_silence", false)
+    /** Automix; the phone's key, which still calls it smart fade. */
+    val automix = BoolPref("${PREFIX}smart_fade_enabled", false)
     /** SYSTEM, LIGHT or DARK, as the phone stores it. */
     val themeMode = StringPref("${PREFIX}theme_mode", "DARK")
     /** A BCP 47 tag, or empty for the phone's own language. */
@@ -494,9 +496,17 @@ internal fun SettingsPage(
                 Divider()
                 Toggle("Disable on Phone Speaker", "The phone’s own speaker plays every track as it was mastered", IosSettings.loudnessOffOnSpeaker)
                 Divider()
-                CrossfadeRow()
-                Divider()
-                Soon("Automix", "Times and blends transitions automatically, without a slider")
+                val automixOn by IosSettings.automix.flow.collectAsState()
+                // As on the phone, Automix times its own blends and the slider gives way to it.
+                if (!automixOn) {
+                    CrossfadeRow()
+                    Divider()
+                }
+                Toggle(
+                    "Automix (beta)",
+                    if (automixOn) "Times and blends transitions from each song’s beat and structure" else "Times and blends transitions automatically, without a slider",
+                    IosSettings.automix,
+                )
                 Divider()
                 Toggle("Skip silence", "Trim gaps longer than a second", IosSettings.skipSilence)
                 Divider()

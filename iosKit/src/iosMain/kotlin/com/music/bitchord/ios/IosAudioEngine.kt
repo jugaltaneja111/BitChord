@@ -474,6 +474,15 @@ internal class IosAudioEngine(
     /** What the waiting player holds, prepared or still loading. */
     val preparedKey: String? get() = if (isBlending) null else spare.key
 
+    /** Whether the waiting player holds [key], opened and ready to be cued and started. */
+    fun readyFor(key: String): Boolean =
+        preparedFor(key) && (spare.ff?.isReady ?: (spare.item?.status == AVPlayerItemStatusReadyToPlay))
+
+    /** Puts the waiting player's track at [positionMs], where Automix brings it in. */
+    fun cueNext(positionMs: Long) {
+        if (!isBlending) spare.seekExactly(positionMs)
+    }
+
     /** Drops whatever the waiting player holds. */
     fun clearPrepared() {
         if (spare !== outgoing) spare.clear()
@@ -481,9 +490,11 @@ internal class IosAudioEngine(
 
     /**
      * Makes the waiting player the heard one: straight away when [fadeMs] is 0, or blended in
-     * over [fadeMs] while the old track fades out under it.
+     * over [fadeMs] while the old track fades out under it. Automix cues the new track at
+     * [startAtMs] (see [cueNext]) and may play it at [incomingRate] through the blend, to hold
+     * the two beats together; only AVPlayer can, so a track the FFmpeg player holds stays at 1.
      */
-    fun startNext(fadeMs: Long) {
+    fun startNext(fadeMs: Long, startAtMs: Long = 0L, incomingRate: Float = 1f) {
         abandonSwap()
         finishFade()
         val previous = active
@@ -492,7 +503,7 @@ internal class IosAudioEngine(
         active.listen()
         previous.clearObservers()
         _durationMs.value = 0L
-        position.report(0L)
+        position.report(startAtMs)
         position.seeks++
         AVAudioSession.sharedInstance().setActive(true, error = null)
         if (fadeMs <= 0L) {
@@ -506,6 +517,10 @@ internal class IosAudioEngine(
         active.fade = 0f
         active.applyGain()
         play()
+        if (incomingRate != 1f && active.ff == null) {
+            blendRate = incomingRate
+            active.player.setRate(incomingRate)
+        }
         fadeJob = scope.launch {
             var elapsed = 0L
             while (elapsed < fadeMs) {
@@ -620,10 +635,17 @@ internal class IosAudioEngine(
         spare.clear()
     }
 
+    /** The rate Automix brought the new track in at, put back to 1 when the blend ends. */
+    private var blendRate = 1f
+
     /** Ends a blend at once: the new track at full volume, the old one gone. */
     private fun finishFade() {
         fadeJob?.cancel()
         fadeJob = null
+        if (blendRate != 1f) {
+            blendRate = 1f
+            if (active.ff == null && active.player.rate != 0f) active.player.setRate(1f)
+        }
         outgoing?.let { old ->
             outgoing = null
             old.clear()

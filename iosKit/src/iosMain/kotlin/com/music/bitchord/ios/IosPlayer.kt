@@ -20,6 +20,11 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import com.music.bitchord.ios.automix.IosAutomixAnalysis
+import com.music.bitchord.playback.smart.CrossfadeMode
+import com.music.bitchord.playback.smart.TrackAnalysis
+import com.music.bitchord.playback.smart.TransitionTrackInfo
+import com.music.bitchord.playback.smart.planTransition
 import kotlinx.coroutines.Deferred
 import com.music.bitchord.data.sources.StreamFormat
 import kotlinx.coroutines.SupervisorJob
@@ -64,6 +69,10 @@ internal object IosPlayer {
     /** How long before a track ends the next one is fetched into the waiting player. */
     private const val PREPARE_AHEAD_MS = 30_000L
     private const val TRANSITION_POLL_MS = 250L
+    /** Automix readies the next song earlier, so it can be cued before its blend comes round. */
+    private const val AUTOMIX_PREPARE_AHEAD_MS = 45_000L
+    /** Automix's fade for a pair it has no analysis for, with the slider at 0 (the phone's 6 s). */
+    private const val AUTOMIX_FALLBACK_SECONDS = 6.0
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loadJob: Job? = null
@@ -537,10 +546,17 @@ internal object IosPlayer {
             if (engine.preparedKey != null && preparing == null) engine.clearPrepared()
             return
         }
-        if (remaining <= PREPARE_AHEAD_MS && engine.preparedKey != next.videoId && preparing != next.videoId) {
+        // A party keeps every device on one timeline: a blend would put this one ahead of it.
+        val automix = IosSettings.automix.flow.value && !inParty
+        if (automix) {
+            IosAutomixAnalysis.request(song)
+            IosAutomixAnalysis.request(next)
+        }
+        val prepareAhead = if (automix) AUTOMIX_PREPARE_AHEAD_MS else PREPARE_AHEAD_MS
+        if (remaining <= prepareAhead && engine.preparedKey != next.videoId && preparing != next.videoId) {
             prepare(next)
         }
-        // A party keeps every device on one timeline: a blend would put this one ahead of it.
+        if (automix && automixTransition(song, next, nextIndex, duration)) return
         val fadeMs = if (inParty) 0L else (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
         if (fadeMs > 0L && remaining in 1..fadeMs && engine.preparedFor(next.videoId)) {
             advancingFromEnd = true
@@ -548,6 +564,60 @@ internal object IosPlayer {
             advancingFromEnd = false
         }
     }
+
+    /** Where the waiting player's track was last cued for Automix, so it is cued once per plan. */
+    private var automixCue: Pair<String, Long>? = null
+
+    /**
+     * Automix: the shared planner (the phone's and the desktop's) decides from both songs' analyses
+     * when the blend starts, how long it runs and where the next song comes in, every tick until it
+     * starts. False when it declines — a blocked plan (too short, a live recording, …) — and the
+     * ordinary crossfade decides instead. Without analyses yet, its plan is a plain fade.
+     */
+    private fun automixTransition(song: Song, next: Song, nextIndex: Int, durationMs: Long): Boolean {
+        val crossfade = IosSettings.crossfadeSeconds.flow.value
+        val plan = planTransition(
+            analysis = IosAutomixAnalysis.analysisFor(song.videoId) ?: TrackAnalysis(),
+            nextAnalysis = IosAutomixAnalysis.analysisFor(next.videoId) ?: TrackAnalysis(),
+            currentTrack = song.transitionInfo(durationMs),
+            nextTrack = next.transitionInfo(trackLength(null, next)),
+            currentTime = engine.position.positionMs / 1000.0,
+            duration = durationMs / 1000.0,
+            fadeSeconds = if (crossfade > 0) crossfade.toDouble() else AUTOMIX_FALLBACK_SECONDS,
+            mode = CrossfadeMode.SMART,
+            // The filters, echo and tempo ramps of the phone's advanced mode aren't built here.
+            advanced = false,
+            mixWindow = true,
+        )
+        if (plan.blocked) return false
+        // Cued only once it has opened: a seek before then can be lost.
+        if (!engine.readyFor(next.videoId)) return true
+        val cueMs = (plan.incomingCueTime * 1000).toLong().coerceAtLeast(0L)
+        if (automixCue != next.videoId to cueMs) {
+            engine.cueNext(cueMs)
+            automixCue = next.videoId to cueMs
+        }
+        if (!plan.shouldStart) return true
+        TrackLog.i(
+            TAG,
+            "Automix: ${plan.transitionStyle} over ${plan.fadeMs}ms at ${engine.position.positionMs}ms, " +
+                "next in at ${cueMs}ms" + if (plan.incomingPlaybackRate != 1.0) " ×${plan.incomingPlaybackRate}" else "",
+        )
+        automixCue = null
+        advancingFromEnd = true
+        transition(nextIndex, plan.fadeMs.coerceAtLeast(1L), cueMs, plan.incomingPlaybackRate.toFloat())
+        advancingFromEnd = false
+        return true
+    }
+
+    private fun Song.transitionInfo(durationMs: Long) = TransitionTrackInfo(
+        id = videoId,
+        durationMs = durationMs,
+        title = title,
+        artist = artist,
+        album = albumName.orEmpty(),
+        albumId = albumId.orEmpty(),
+    )
 
     /** A copy of [videoId] on the phone — a download first, else the song cache — and its loudness. */
     private fun onPhone(videoId: String): Pair<String, Double?>? {
@@ -604,7 +674,7 @@ internal object IosPlayer {
     }
 
     /** Moves the queue on to [index], whose track the waiting player already holds. */
-    private fun transition(index: Int, fadeMs: Long) {
+    private fun transition(index: Int, fadeMs: Long, startAtMs: Long = 0L, incomingRate: Float = 1f) {
         val song = _queue.value.getOrNull(index) ?: return
         loadJob?.cancel()
         _resolving.value = false
@@ -617,7 +687,7 @@ internal object IosPlayer {
             extendWithRadio(playNext = false)
         }
         upgradeJob?.cancel()
-        engine.startNext(fadeMs)
+        engine.startNext(fadeMs, startAtMs, incomingRate)
         // The engine never stops between the two tracks, so the new one is started here.
         IosScrobbler.onPlaying(engine.isPlaying.value, 0L)
         lookForBetterCopy(song)
