@@ -7,12 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.writeToFile
@@ -41,8 +38,7 @@ internal object IosListeningStats {
     private val files = NSFileManager.defaultManager
 
     private val directory: String by lazy {
-        val documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).first() as String
-        "$documents/listening".also {
+        appDataPath("listening").also {
             files.createDirectoryAtPath(it, withIntermediateDirectories = true, attributes = null, error = null)
         }
     }

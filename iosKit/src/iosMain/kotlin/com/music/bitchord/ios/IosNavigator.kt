@@ -28,6 +28,10 @@ internal sealed interface IosPage {
     data object History : IosPage
     /** The tracks kept on the phone. */
     data object Downloads : IosPage
+    /** The listener's own audio files, from BitChord's folder in Files and the folder picked in Settings. */
+    data object LocalMusic : IosPage
+    /** One artist's or album's local songs, opened from [LocalMusic]. */
+    data class LocalMusicGroup(val album: Boolean, val name: String) : IosPage
     data object Settings : IosPage
     data object LyricsSources : IosPage
     data object TranslationLanguage : IosPage
@@ -84,6 +88,7 @@ internal class IosNavigator {
         val browseId = item.browseId
         when {
             browseId == DOWNLOADS_LINK -> open(IosPage.Downloads)
+            browseId == LOCAL_MUSIC_LINK -> open(IosPage.LocalMusic)
             videoId != null -> IosPlayer.playRadio(item.toSong(shelfTitle))
             browseId != null -> openBrowse(
                 BrowseItem(
@@ -100,6 +105,9 @@ internal class IosNavigator {
 
 /** Library's Downloads entry, under the phone's own id for it. */
 internal const val DOWNLOADS_LINK = "local:downloads"
+
+/** Library's Local music entry, under the phone's own id for it. */
+internal const val LOCAL_MUSIC_LINK = "local:all"
 
 /** What a browse id says it is, as the desktop reads it (DesktopSearchClient). */
 internal fun browseTypeOf(browseId: String): BrowseType = when {

@@ -13,8 +13,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -45,9 +48,20 @@ internal class IosSearch {
     private val _typeahead = MutableStateFlow<List<SearchResult>>(emptyList())
     val typeahead: StateFlow<List<SearchResult>> = _typeahead.asStateFlow()
 
-    private val _addons = MutableStateFlow(false)
-    /** Whether the page asks the enabled add-ons instead of YouTube Music — the phone's Addons tab. */
-    val addons: StateFlow<Boolean> = _addons.asStateFlow()
+    /** Which catalogue the page asks: YouTube Music, the enabled add-ons, or the songs on this iPhone. */
+    enum class Source { YOUTUBE, ADDONS, LIBRARY }
+
+    private val _source = MutableStateFlow(Source.YOUTUBE)
+    val source: StateFlow<Source> = _source.asStateFlow()
+
+    private val addons: Boolean get() = _source.value == Source.ADDONS
+    /** The add-ons and the Library have no suggestions to offer; the field is only words to match. */
+    private val ownField: Boolean get() = _source.value != Source.YOUTUBE
+
+    /** The Library source's songs for what is typed, matched as it is typed; null while nothing is. */
+    val libraryResults: StateFlow<UiState<List<Song>>?> = combine(_query, IosLocalMusic.songs) { query, songs ->
+        if (query.isBlank()) null else UiState.Success(localSongsMatching(songs, query).sortedBy { it.title.lowercase() })
+    }.stateIn(scope, SharingStarted.WhileSubscribed(), null)
 
     private val _addonResults = MutableStateFlow<UiState<List<Song>>?>(null)
     val addonResults: StateFlow<UiState<List<Song>>?> = _addonResults.asStateFlow()
@@ -56,10 +70,10 @@ internal class IosSearch {
     /** Words searched in the Addons tab, newest first, for the session. */
     val addonHistory: StateFlow<List<String>> = _addonHistory.asStateFlow()
 
-    /** Flips the page between YouTube Music and the add-ons; whatever is typed is asked again. */
-    fun setAddons(value: Boolean) {
-        if (_addons.value == value) return
-        _addons.value = value
+    /** Flips the page between its sources; whatever is typed is asked again. */
+    fun setSource(value: Source) {
+        if (_source.value == value) return
+        _source.value = value
         _suggestions.value = emptyList()
         _typeahead.value = emptyList()
         val hadResults = _results.value != null || _addonResults.value != null
@@ -87,7 +101,7 @@ internal class IosSearch {
         searchJob?.cancel()
         typingJob?.cancel()
         // The add-ons have no suggestions to offer; the field is only words to send them.
-        if (value.isBlank() || _addons.value) {
+        if (value.isBlank() || ownField) {
             _suggestions.value = emptyList()
             _typeahead.value = emptyList()
             return
@@ -110,7 +124,9 @@ internal class IosSearch {
         typingJob?.cancel()
         searchJob?.cancel()
         continuation = null
-        if (_addons.value) {
+        // The Library's results follow the field as it is typed in.
+        if (_source.value == Source.LIBRARY) return
+        if (addons) {
             _addonHistory.value = (listOf(text) + _addonHistory.value.filter { it != text }).take(MAX_HISTORY)
             if (!IosSources.hasSearchableAddons()) {
                 _addonResults.value = UiState.Error("No addons are enabled. Add one in Settings → Sources.")

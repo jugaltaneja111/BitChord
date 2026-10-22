@@ -749,7 +749,8 @@ internal class IosPartySync(
  * its real id, which every other device can stream perfectly well.
  */
 private fun Song.isDeviceFile(): Boolean =
-    localPath != null || localUri != null || videoId.startsWith("file://") || videoId.startsWith("content://")
+    localPath != null || localUri != null || videoId.startsWith("file://") || videoId.startsWith("content://") ||
+        com.music.bitchord.ios.IosLocalMusic.isLocal(videoId)
 
 /**
  * This device's row as the party knows it — identity and artwork, not how the audio was got.

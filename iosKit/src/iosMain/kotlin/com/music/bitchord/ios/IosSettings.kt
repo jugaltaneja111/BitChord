@@ -258,6 +258,10 @@ internal object IosSettings {
         get() = (if (IosNetwork.metered.value == true) audioQualityCellular else audioQualityWifi).flow.value
             .let { name -> AudioQuality.entries.firstOrNull { it.name == name } ?: AudioQuality.LOSSLESS }
     val downloadWifiOnly = BoolPref("${PREFIX}download_wifi_only", false)
+    /** Local music leaves out clips under thirty seconds and folders of ringtones and recordings. */
+    val hideNonMusicAudio = BoolPref("${PREFIX}filter_non_music_audio", true)
+    /** The Local music page's order, a [LocalMusicSort] name. Not the phone's key: its sorts differ. */
+    val localMusicSort = StringPref("${PREFIX}ios_local_music_sort", "TITLE")
     /** For a music video, play the catalogue's audio release in its place. */
     val preferMusicOnly = BoolPref("${PREFIX}prefer_music_only", false)
 
@@ -557,8 +561,26 @@ internal fun SettingsPage(
             Group("App icon") { AppIconPicker() }
         }
         item {
+            val folderName by IosLocalMusic.folderName.collectAsState()
+            val localScanning by IosLocalMusic.scanning.collectAsState()
+            val localSongs by IosLocalMusic.songs.collectAsState()
             Group("Local music") {
-                Soon("Music from the Files app")
+                ActionRow("Music folder", value = folderName ?: "Choose…", onClick = IosLocalMusic::chooseFolder)
+                if (folderName != null) {
+                    Divider()
+                    ActionRow("Forget folder", destructive = true, onClick = IosLocalMusic::forgetFolder)
+                }
+                Divider()
+                // Files dropped in BitChord's own folder are found without picking anything.
+                ActionRow("BitChord’s folder in Files", value = "Music", onClick = IosLocalMusic::openInFiles)
+                Divider()
+                ActionRow(
+                    "Rescan",
+                    value = if (localScanning) "Scanning…" else "${localSongs.size} ${if (localSongs.size == 1) "song" else "songs"}",
+                    onClick = IosLocalMusic::rescan,
+                )
+                Divider()
+                Toggle("Hide short and non-music audio", "Leaves out clips under 30 seconds, ringtones and recordings", IosSettings.hideNonMusicAudio)
             }
         }
         item {

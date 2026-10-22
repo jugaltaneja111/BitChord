@@ -41,6 +41,11 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.music.bitchord.party
             CFBundleURLSchemes: [bitchord]
+        # Local music: BitChord's Documents folder shows in the Files app (On My iPhone › BitChord),
+        # so songs can be copied into its Music folder. Downloads show there too; the app's own data
+        # lives in Application Support, out of sight.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         # The Replay share sheet's Save button: add-only, the app never reads the library.
         NSPhotoLibraryAddUsageDescription: BitChord saves your Replay picture to your photo library.
         # Last.fm's key and secret, from the repository's secrets when it has them (see ios.yml);

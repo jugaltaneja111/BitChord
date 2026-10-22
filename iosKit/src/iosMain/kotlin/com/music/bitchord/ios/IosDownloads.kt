@@ -188,7 +188,8 @@ internal object IosDownloads {
 
     /** Queues [songs] that are neither on the phone nor already on their way. */
     fun download(songs: List<Song>) {
-        val fresh = songs.filter { song ->
+        // A file already on this iPhone (a local playlist's) has nothing to fetch.
+        val fresh = songs.filterNot { IosLocalMusic.isLocal(it) }.filter { song ->
             song.videoId !in _ids.value && song.videoId != current &&
                 waiting.none { it.videoId == song.videoId }
         }
