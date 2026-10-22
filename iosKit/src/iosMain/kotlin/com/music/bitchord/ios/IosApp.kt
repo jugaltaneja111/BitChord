@@ -288,9 +288,11 @@ internal fun IosApp() {
                     summary = summary,
                     start = start,
                     onClose = { IosReplay.story = null },
-                    onShare = { shareLink(IosReplay.shareText(summary)) },
+                    onShare = { card -> IosReplay.share = ReplayShareRequest(summary, card) },
+                    paused = IosReplay.share != null,
                 )
             }
+            IosReplay.share?.let { ReplayShareSheet(it, onDismiss = { IosReplay.share = null }) }
             // Above the pages and the player: a menu can be opened from either.
             IosMenuHost(navigator, onLeavePlayer = { playerOpen = false })
             IosToast.Host(

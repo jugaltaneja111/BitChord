@@ -22,14 +22,8 @@ import kotlinx.coroutines.launch
 internal object IosReplay {
     var story by mutableStateOf<Pair<ReplaySummary, ReplayStoryPage>?>(null)
 
-    /** What the share sheet sends for a Replay: its headline numbers, as text. */
-    fun shareText(summary: ReplaySummary): String = buildString {
-        append("My BitChord Replay · ${summary.localizedLabel()}\n")
-        append("${formatMinutes(summary.totalMs)} minutes · ${replayCount(summary.totalPlays, "replay_play_count")}\n")
-        summary.songs.firstOrNull()?.let { append("Top song: ${it.song.title} · ${it.song.artist}\n") }
-        summary.artists.firstOrNull()?.let { append("Top artist: ${it.title}\n") }
-        summary.albums.firstOrNull()?.let { append("Top album: ${it.title}\n") }
-    }.trim()
+    /** The share sheet's picture, from the Replay page's button (no page) or a story card's. */
+    var share by mutableStateOf<ReplayShareRequest?>(null)
 }
 
 /** Library's row of Replay cards, each opening Replay at the chart it sums up. */
@@ -77,7 +71,7 @@ internal fun ReplayPage(page: IosPage.Replay, navigator: IosNavigator, contentPa
                 navigator.openBrowse(BrowseItem(browseId = id, title = title, subtitle = subtitle.orEmpty(), thumbnailUrl = artwork, type = BrowseType.ALBUM))
             }
         },
-        onShare = { state.summary?.let { shareLink(IosReplay.shareText(it)) } },
+        onShare = { state.summary?.takeIf { !it.isEmpty }?.let { IosReplay.share = ReplayShareRequest(it, page = null) } },
         contentPadding = PaddingValues(top = topInset, bottom = contentPadding.calculateBottomPadding() + 16.dp),
         landingPage = page.landing,
     )
