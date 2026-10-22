@@ -49,6 +49,11 @@ import platform.AVFoundation.volume
 import platform.AVFoundation.setVolume
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
+import platform.CoreMedia.kCMTimeZero
+import kotlinx.cinterop.readValue
+import platform.AVFoundation.canPlayFastForward
+import platform.AVFoundation.rate
+import platform.AVFoundation.setRate
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
@@ -89,6 +94,15 @@ internal class IosAudioEngine(
         /** The FFmpeg player holding this deck's track instead of [player], for what AVPlayer can't open. */
         var ff: IosFfmpegPlayer? = null
 
+        // Skip silence on AVPlayer, which can't drop samples: a gap past a second is played muted at
+        // speed, then rewound a little once sound comes back, so the music after it starts whole.
+        /** Where in the track the silence now being heard began; NaN while there's sound. */
+        private var quietSince = Double.NaN
+        /** The rate a gap is being fast-forwarded at; 0 when none is. */
+        private var gapRate = 0f
+        /** No new gap before this point: the rewind after one lands back in its tail. */
+        private var noGapBefore = 0.0
+
         init {
             player.addPeriodicTimeObserverForInterval(CMTimeMakeWithSeconds(0.25, 600), queue = null) { time ->
                 if (this === active) tick(CMTimeGetSeconds(time))
@@ -125,7 +139,10 @@ internal class IosAudioEngine(
                         }
                     },
                     onFailed = { message -> if (this === active) onFailed(message) },
-                ).also { it.open(url, headers, dash = route.dash) }
+                ).also {
+                    it.skipSilence = IosSettings.skipSilence.flow.value
+                    it.open(url, headers, dash = route.dash)
+                }
                 applyGain()
                 return true
             }
@@ -144,6 +161,7 @@ internal class IosAudioEngine(
             this.key = key
             knownDurationMs = durationMs
             applyGain()
+            resetGap()
             IosAudioTap.attach(item, dsp)
             player.replaceCurrentItemWithPlayerItem(item)
             return true
@@ -163,6 +181,8 @@ internal class IosAudioEngine(
         fun pause() = ff?.pause() ?: player.pause()
 
         fun seekTo(positionMs: Long) {
+            if (gapRate > 0f) endGap(null)
+            quietSince = Double.NaN
             ff?.seekTo(positionMs) ?: player.seekToTime(CMTimeMakeWithSeconds(positionMs / 1000.0, 1000))
         }
 
@@ -173,6 +193,59 @@ internal class IosAudioEngine(
         fun releaseFfmpeg() {
             ff?.release()
             ff = null
+        }
+
+        /** Called about every 50 ms for the deck being heard. */
+        fun skipSilence(enabled: Boolean) {
+            ff?.let {
+                it.skipSilence = enabled
+                return
+            }
+            val dsp = dsp ?: return
+            val item = item ?: return
+            val sound = dsp.heardSound
+            dsp.heardSound = false
+            val now = CMTimeGetSeconds(player.currentTime())
+            if (now.isNaN()) return
+            if (gapRate > 0f) {
+                when {
+                    // Paused, or played on at its own rate: the fast-forward is over.
+                    player.rate != gapRate -> endGap(null)
+                    sound -> endGap(now)
+                }
+                return
+            }
+            val playing = player.timeControlStatus == AVPlayerTimeControlStatusPlaying && player.rate == 1f
+            if (!enabled || !dsp.attached || !playing || sound || now < noGapBefore) {
+                quietSince = Double.NaN
+                return
+            }
+            if (quietSince.isNaN()) {
+                quietSince = now
+            } else if (now - quietSince >= MIN_SILENCE_S) {
+                gapRate = if (item.canPlayFastForward) GAP_RATE else 2f
+                dsp.muted = true
+                player.setRate(gapRate)
+            }
+        }
+
+        /** Ends a fast-forwarded gap; with [soundAt], rewinds to just before the sound came back. */
+        private fun endGap(soundAt: Double?) {
+            gapRate = 0f
+            quietSince = Double.NaN
+            val dsp = dsp
+            if (soundAt == null) {
+                // Not paused, so AVPlayer chose a rate of its own: back to real time.
+                if (player.rate != 0f) player.setRate(1f)
+                dsp?.muted = false
+                return
+            }
+            player.setRate(1f)
+            noGapBefore = soundAt
+            val back = (soundAt - GAP_REWIND_S).coerceAtLeast(0.0)
+            player.seekToTime(CMTimeMakeWithSeconds(back, 1000), kCMTimeZero.readValue(), kCMTimeZero.readValue()) { _ ->
+                dsp?.muted = false
+            }
         }
 
         /** Ends and starts are reported only for the deck being heard. */
@@ -204,6 +277,13 @@ internal class IosAudioEngine(
             loudnessDb = null
             knownDurationMs = 0L
             fade = 1f
+            resetGap()
+        }
+
+        fun resetGap() {
+            gapRate = 0f
+            quietSince = Double.NaN
+            noGapBefore = 0.0
         }
 
         fun clearObservers() {
@@ -310,6 +390,12 @@ internal class IosAudioEngine(
             while (true) {
                 delay(500)
                 refreshGains()
+            }
+        }
+        scope.launch {
+            while (true) {
+                delay(50)
+                active.skipSilence(IosSettings.skipSilence.flow.value)
             }
         }
         // An FFmpeg deck has no periodic time observer; this is its clock, at the same rate.
@@ -521,6 +607,7 @@ internal class IosAudioEngine(
     private var watchedFf: IosFfmpegPlayer? = null
     private var watchStartWall = 0L
     private var watchStartPos = 0L
+    private var watchStartSkipped = 0L
     private var lastDiagnostics = 0L
     private var stuckSince = 0L
 
@@ -552,11 +639,14 @@ internal class IosAudioEngine(
             watchedFf = ff.takeIf { it.isPlaying && _isPlaying.value }
             watchStartWall = now
             watchStartPos = pos
+            watchStartSkipped = ff.skippedMs
             return
         }
         val wall = now - watchStartWall
         if (wall < WATCH_WINDOW_MS) return
-        val advanced = pos - watchStartPos
+        // Silence that skip silence cut is a jump of the playhead, not running ahead.
+        val skipped = ff.skippedMs
+        val advanced = pos - watchStartPos - (skipped - watchStartSkipped)
         if (advanced > wall * 3 / 2 + 500) {
             TrackLog.w(TAG, "FFmpeg ran ahead: ${advanced}ms in ${wall}ms: ${ff.diagnostics()}")
             watchedFf = null
@@ -565,6 +655,7 @@ internal class IosAudioEngine(
         }
         watchStartWall = now
         watchStartPos = pos
+        watchStartSkipped = skipped
     }
 
     /**
@@ -596,6 +687,12 @@ internal class IosAudioEngine(
         const val FADE_STEP_MS = 40L
         const val TAG = "IosAudioEngine"
         const val EARLY_END_MS = 10_000L
+        /** Skip silence's floor, as on the phone: shorter gaps are musical and stay. */
+        const val MIN_SILENCE_S = 1.0
+        /** How fast a long gap goes by, muted, on AVPlayer. */
+        const val GAP_RATE = 8f
+        /** How far back a fast-forwarded gap rewinds once sound returns: more than it overshoots. */
+        const val GAP_REWIND_S = 1.0
         const val WATCH_WINDOW_MS = 3_000L
         const val DIAGNOSTICS_MS = 2_000L
         const val STUCK_MS = 8_000L

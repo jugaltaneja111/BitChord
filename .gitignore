@@ -51,3 +51,4 @@ AGENTS.md
 
 # Prebuilt FFmpeg for iOS, fetched by scripts/fetch-ffmpeg.sh
 iosKit/ffmpeg/
+.claude/worktrees/

@@ -89,6 +89,19 @@ internal class TapDsp {
     @Volatile
     var attached: Boolean = false
 
+    /**
+     * Skip silence's reading: set when a callback carries anything above the threshold, cleared by
+     * whoever reads it. Nothing heard between two reads means nothing but silence went by.
+     */
+    @Volatile
+    var heardSound: Boolean = false
+
+    /** Skip silence: output nothing while a gap is fast-forwarded; fades back in when cleared. */
+    @Volatile
+    var muted: Boolean = false
+
+    private var unmuteRamp = 1f
+
     private var sampleRate = 0
     private var channels = 0
     private var usable = false
@@ -141,6 +154,40 @@ internal class TapDsp {
     fun process(buffers: AudioBufferList, frames: Int) {
         if (!usable || frames <= 0) return
         if (!mapChannels(buffers)) return
+        if (!isQuiet(frames)) heardSound = true
+        if (muted) {
+            for (c in 0 until channels) {
+                val data = channelData[c] ?: return
+                for (f in 0 until frames) data[f * channelStride[c] + channelOffset[c]] = 0f
+            }
+            unmuteRamp = 0f
+            return
+        }
+        equalise(frames)
+        if (unmuteRamp < 1f) {
+            // Back from a skipped gap: ~5 ms up from nothing, so it doesn't click in.
+            val step = 1f / (sampleRate * 0.005f).coerceAtLeast(1f)
+            for (f in 0 until frames) {
+                unmuteRamp = (unmuteRamp + step).coerceAtMost(1f)
+                for (c in 0 until channels) {
+                    val data = channelData[c] ?: return
+                    data[f * channelStride[c] + channelOffset[c]] *= unmuteRamp
+                }
+            }
+        }
+    }
+
+    private fun isQuiet(frames: Int): Boolean {
+        for (c in 0 until channels) {
+            val data = channelData[c] ?: return false
+            for (f in 0 until frames) {
+                if (abs(data[f * channelStride[c] + channelOffset[c]]) > SILENCE_LEVEL) return false
+            }
+        }
+        return true
+    }
+
+    private fun equalise(frames: Int) {
         val tuning = IosEqTarget.target
         val gain = targetGain
         if (isFlat(tuning, gain) && isSettled(tuning, gain)) {
@@ -339,6 +386,8 @@ internal class TapDsp {
     }
 
     private companion object {
+        /** Skip silence's threshold, as on the phone: 1024 of 16-bit full scale. */
+        const val SILENCE_LEVEL = 1024f / 32768f
         const val GLIDE_FRAMES = 64
         const val GLIDE_RATE = 0.08f
         const val SETTLED_DB = 0.01f

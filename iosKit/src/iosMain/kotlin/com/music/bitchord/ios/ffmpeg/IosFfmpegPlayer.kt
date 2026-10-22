@@ -121,6 +121,13 @@ internal class IosFfmpegPlayer(
             node.setVolume(value.coerceIn(0f, 1f))
         }
 
+    /** Cut gaps longer than a second as they're decoded; read by the decode thread. */
+    @Volatile
+    var skipSilence = false
+
+    /** How much silence skip silence has cut from what has played, for the real-time watch. */
+    val skippedMs: Long get() = session?.skippedMs() ?: 0L
+
     /** The playhead, accurate to ~20 ms. */
     val positionMs: Long get() = session?.positionMs() ?: 0L
 
@@ -173,6 +180,9 @@ internal class IosFfmpegPlayer(
 
     private enum class Work { DECODE, SEEK, ENDED, EXIT }
 
+    /** A decoded chunk skip silence is holding back, and where in the track it starts. */
+    private class Held(val buffer: AVAudioPCMBuffer, val frames: Int, val startMs: Double)
+
     /**
      * One opened stream. Fields under [cond] are shared between the main thread, the decode
      * thread and the node's completion handlers; the FFmpeg state below them is the decode
@@ -202,6 +212,17 @@ internal class IosFfmpegPlayer(
         private var eofDecoded = false
         private var endedReported = false
         private var bufferGeneration = 0
+        /**
+         * Where skipped silence re-anchors the playhead: from scheduled frame [segFrames] on, the
+         * audio starts at [segMs]. Reset with the node; the last one at or before the played frame
+         * wins, and [baseMs] stands before the first.
+         */
+        private val segFrames = ArrayList<Long>()
+        private val segMs = ArrayList<Double>()
+        /** Silence cut so far this session, at each anchor; [baseSkippedMs] before the first. */
+        private val segSkipped = ArrayList<Double>()
+        private var baseSkippedMs = 0.0
+        private var skippedTotalMs = 0.0
         private var ready = false
         private var failed: String? = null
         private var decoded: DecodedInfo? = null
@@ -247,6 +268,12 @@ internal class IosFfmpegPlayer(
         /** Packets before this are skipped undecoded: a seek the demuxer couldn't do itself. */
         private var skipPacketsUntilMs: Double? = null
         private var readInterrupted = false
+        /** Skip silence: silent chunks waiting to learn whether their gap runs past a second. */
+        private val held = ArrayList<Held>()
+        private var silentRunMs = 0.0
+        private var skipping = false
+        /** Silence dropped since the last scheduled chunk, credited to the next one. */
+        private var droppedMs = 0.0
 
         init {
             listOf(formatSlot, ioSlot, codecSlot, packetSlot, frameSlot, swrSlot).forEach { it.value = null }
@@ -329,10 +356,37 @@ internal class IosFfmpegPlayer(
                 val played = playedFrames()
                 locked(cond) {
                     val rate = outRate
-                    val ms = if (rate > 0) baseMs + played * 1000.0 / rate else baseMs
+                    val i = segmentAt(played)
+                    val fromFrame = if (i >= 0) segFrames[i] else 0L
+                    val fromMs = if (i >= 0) segMs[i] else baseMs
+                    val ms = if (rate > 0) fromMs + (played - fromFrame) * 1000.0 / rate else fromMs
                     ms.toLong().coerceAtLeast(0L)
                 }
             }
+        }
+
+        /** Silence skip silence has cut from what has played so far. */
+        fun skippedMs(): Long {
+            val played = locked(transport) { playedFrames() }
+            return locked(cond) {
+                val i = segmentAt(played)
+                (if (i >= 0) segSkipped[i] else baseSkippedMs).toLong()
+            }
+        }
+
+        /** The last anchor at or before [frame], or -1. Holding [cond]. */
+        private fun segmentAt(frame: Long): Int {
+            var i = segFrames.size - 1
+            while (i >= 0 && segFrames[i] > frame) i--
+            return i
+        }
+
+        /** Forgets the anchors: the node was reset and [baseMs] now names its first frame. Holding [cond]. */
+        private fun resetSegments() {
+            segFrames.clear()
+            segMs.clear()
+            segSkipped.clear()
+            baseSkippedMs = skippedTotalMs
         }
 
         fun counters(): String = locked(cond) {
@@ -624,6 +678,8 @@ internal class IosFfmpegPlayer(
             receiveFrames()
             if (swrSlot.value != null) convert(null, 0)
             flushPending()
+            // A trailing gap ends on its last chunk, so the playhead still reaches the end.
+            releaseHeld()
             locked(cond) {
                 eofDecoded = true
                 cond.broadcast()
@@ -725,7 +781,7 @@ internal class IosFfmpegPlayer(
             return buffer
         }
 
-        /** Hands the pending buffer to the node: connected in its format, through the DSP, then queued. */
+        /** Hands the pending buffer on: to the node, or held back while skip silence weighs a gap. */
         private fun flushPending() {
             val buffer = pending ?: return
             val frames = pendingFilled
@@ -734,6 +790,63 @@ internal class IosFfmpegPlayer(
             pendingFilled = 0
             if (frames <= 0) return
             buffer.setFrameLength(frames.toUInt())
+            if (!skipSilence || !isSilent(buffer, frames)) {
+                releaseHeld()
+                schedule(buffer, frames, startMs)
+                return
+            }
+            // Like the phone's: gaps under a second are left alone; a longer one keeps a chunk at
+            // each end and loses the rest.
+            silentRunMs += frames * 1000.0 / buffer.format.sampleRate
+            if (skipping) {
+                held.forEach { droppedMs += it.frames * 1000.0 / it.buffer.format.sampleRate }
+                held.clear()
+                held += Held(buffer, frames, startMs)
+                return
+            }
+            held += Held(buffer, frames, startMs)
+            if (silentRunMs < MIN_SILENCE_MS) return
+            val lead = held.removeAt(0)
+            val dropped = held.toList()
+            held.clear()
+            skipping = true
+            schedule(lead.buffer, lead.frames, lead.startMs)
+            // Credited to the chunk after the cut, where the playhead jumps.
+            dropped.forEach { droppedMs += it.frames * 1000.0 / it.buffer.format.sampleRate }
+        }
+
+        /** Schedules what skip silence was holding: a short gap whole, or a long one's last chunk. */
+        private fun releaseHeld() {
+            val chunks = held.toList()
+            held.clear()
+            silentRunMs = 0.0
+            skipping = false
+            chunks.forEach { schedule(it.buffer, it.frames, it.startMs) }
+        }
+
+        /** Forgets what skip silence was holding: a seek or a restart. */
+        private fun dropHeld() {
+            held.clear()
+            silentRunMs = 0.0
+            skipping = false
+            droppedMs = 0.0
+        }
+
+        /** Whether every sample of [buffer] is below the phone's silence threshold. */
+        private fun isSilent(buffer: AVAudioPCMBuffer, frames: Int): Boolean {
+            val channels = buffer.floatChannelData ?: return false
+            for (c in 0 until buffer.format.channelCount.toInt()) {
+                val data = channels[c] ?: return false
+                for (f in 0 until frames) {
+                    val x = data[f]
+                    if (x > SILENCE_LEVEL || x < -SILENCE_LEVEL) return false
+                }
+            }
+            return true
+        }
+
+        /** Hands [buffer] to the node: connected in its format, through the DSP, then queued. */
+        private fun schedule(buffer: AVAudioPCMBuffer, frames: Int, startMs: Double) {
             if (!connect(buffer.format)) return
             locked(cond) { outRate = buffer.format.sampleRate }
             locked(transport) {
@@ -751,13 +864,23 @@ internal class IosFfmpegPlayer(
                         nodeStarted = false
                         needsRestart = false
                         baseMs = startMs
+                        skippedTotalMs += droppedMs
+                        resetSegments()
                     }
+                    droppedMs = 0.0
                 }
                 val generation = locked(cond) {
+                    if (droppedMs > 0) {
+                        skippedTotalMs += droppedMs
+                        segFrames += scheduledFrames
+                        segMs += startMs
+                        segSkipped += skippedTotalMs
+                    }
                     queuedFrames += frames
                     scheduledFrames += frames
                     bufferGeneration
                 }
+                droppedMs = 0.0
                 val count = frames.toLong()
                 node.scheduleBuffer(buffer, completionCallbackType = AVAudioPlayerNodeCompletionDataPlayedBack) { _ ->
                     completed(generation, count)
@@ -841,8 +964,10 @@ internal class IosFfmpegPlayer(
                     nodeStarted = false
                     needsRestart = true
                     baseMs = target.toDouble()
+                    resetSegments()
                 }
             }
+            dropHeld()
             pending = null
             pendingFilled = 0
             outMs = Double.NaN
@@ -943,6 +1068,10 @@ internal class IosFfmpegPlayer(
         const val MAX_PLANES = 64
         /** How far before a seek's target decoding starts, when packets are skipped to get there. */
         const val PREROLL_MS = 500.0
+        /** Skip silence's floor, as on the phone: shorter gaps are musical and stay. */
+        const val MIN_SILENCE_MS = 1_000.0
+        /** The phone's silence threshold: 1024 of 16-bit full scale. */
+        const val SILENCE_LEVEL = 1024f / 32768f
 
         fun mimeFor(codec: String?): String? = when {
             codec == null -> null
