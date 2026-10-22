@@ -597,7 +597,7 @@ internal fun SettingsPage(
         }
         item {
             Group("Language") {
-                Soon("App language")
+                AppLanguageRow()
             }
         }
         item {
@@ -996,4 +996,82 @@ internal fun ActionRow(title: String, destructive: Boolean = false, value: Strin
         Text(title, color = if (destructive) Color(0xFFFF6B6B) else Color.White, modifier = Modifier.weight(1f))
         value?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
+}
+
+/** The languages the app is translated into, as the phone lists them; iOS's tags, native names. */
+private val APP_LANGUAGES = listOf(
+    "en" to "English",
+    "es" to "Español",
+    "fr" to "Français",
+    "de" to "Deutsch",
+    "pl" to "Polski",
+    "pt" to "Português",
+    "id" to "Bahasa Indonesia",
+    "hi" to "हिन्दी",
+    "ja" to "日本語",
+    "ru" to "Русский",
+    "zh-Hans-CN" to "简体中文",
+    "zh-Hant-TW" to "繁體中文",
+    "he" to "עברית",
+    "it" to "Italiano",
+    "tr" to "Türkçe",
+    "th" to "ไทย",
+    "vi" to "Tiếng Việt",
+)
+
+/**
+ * The app's own language, apart from the phone's. iOS reads it from `AppleLanguages` in the app's
+ * defaults as it launches, so a change applies the next time BitChord opens; the same choice is
+ * offered in the iOS Settings app, under BitChord.
+ */
+@Composable
+private fun AppLanguageRow() {
+    val chosen by IosSettings.appLanguage.flow.collectAsState()
+    var picking by remember { mutableStateOf(false) }
+    var changed by remember { mutableStateOf(false) }
+    val name = APP_LANGUAGES.firstOrNull { it.first == chosen }?.second ?: "System default"
+    ActionRow("App language", value = name) { picking = true }
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("App language") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    val options = listOf("" to "System default") + APP_LANGUAGES
+                    options.forEach { (tag, label) ->
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    if (tag != chosen) {
+                                        setAppLanguage(tag)
+                                        changed = true
+                                    }
+                                    picking = false
+                                }.padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                                if (tag == chosen) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("Done") } },
+        )
+    }
+    if (changed) {
+        AlertDialog(
+            onDismissRequest = { changed = false },
+            title = { Text("Language changed") },
+            text = { Text("Close BitChord from the app switcher and open it again to see it in the new language.") },
+            confirmButton = { TextButton(onClick = { changed = false }) { Text("OK") } },
+        )
+    }
+}
+
+private fun setAppLanguage(tag: String) {
+    IosSettings.appLanguage.set(tag)
+    val defaults = NSUserDefaults.standardUserDefaults
+    if (tag.isEmpty()) defaults.removeObjectForKey("AppleLanguages") else defaults.setObject(listOf(tag), forKey = "AppleLanguages")
 }
