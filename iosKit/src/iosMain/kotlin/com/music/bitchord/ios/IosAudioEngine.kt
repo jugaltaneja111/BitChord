@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFAudio.setActive
@@ -185,6 +186,17 @@ internal class IosAudioEngine(
             quietSince = Double.NaN
             ff?.seekTo(positionMs) ?: player.seekToTime(CMTimeMakeWithSeconds(positionMs / 1000.0, 1000))
         }
+
+        /** Like [seekTo], but to the exact sample: a swap onto another copy has to line up. */
+        fun seekExactly(positionMs: Long) {
+            ff?.seekTo(positionMs) ?: player.seekToTime(
+                CMTimeMakeWithSeconds(positionMs / 1000.0, 1000), kCMTimeZero.readValue(), kCMTimeZero.readValue(),
+            )
+        }
+
+        /** Whether sound is coming out of it now, rather than it waiting on data. */
+        val sounding: Boolean
+            get() = ff?.isPlaying ?: (player.timeControlStatus == AVPlayerTimeControlStatusPlaying)
 
         /** The playhead in seconds, NaN when there is none yet. */
         val seconds: Double
@@ -424,6 +436,7 @@ internal class IosAudioEngine(
         /** Which player opens it; see [Route]. */
         route: Route = Route.of(url),
     ) {
+        abandonSwap()
         finishFade()
         if (!active.hold(url, headers, loudnessDb, key, durationMs, route)) return onFailed("bad stream URL")
         active.listen()
@@ -444,6 +457,7 @@ internal class IosAudioEngine(
         durationMs: Long = 0L,
         route: Route = Route.of(url),
     ) {
+        abandonSwap()
         if (spare === outgoing) finishFade()
         spare.fade = 0f
         if (!spare.hold(url, headers, loudnessDb, key, durationMs, route)) spare.clear()
@@ -470,6 +484,7 @@ internal class IosAudioEngine(
      * over [fadeMs] while the old track fades out under it.
      */
     fun startNext(fadeMs: Long) {
+        abandonSwap()
         finishFade()
         val previous = active
         active = spare
@@ -507,6 +522,102 @@ internal class IosAudioEngine(
             fadeJob = null
             finishFade()
         }
+    }
+
+    /**
+     * Moves the track being heard onto another copy of it — a better one found after it started —
+     * at the same point. The waiting player opens it there, silent; once it is sounding it is put
+     * back in step with the heard one and the two blend over [SWAP_FADE_MS], so the swap is heard
+     * as a moment's overlap of the same music rather than a break. Refused while a crossfade runs or
+     * the next track is already waiting. [onDone] says whether it happened.
+     */
+    fun swapStream(
+        url: String,
+        headers: Map<String, String>,
+        loudnessDb: Double?,
+        durationMs: Long,
+        route: Route,
+        onDone: (Boolean) -> Unit,
+    ) {
+        if (isBlending || spare.holding || swapJob?.isActive == true) return onDone(false)
+        val key = active.key
+        val incoming = spare
+        incoming.fade = 0f
+        if (!incoming.hold(url, headers, loudnessDb, key, durationMs, route)) {
+            incoming.clear()
+            return onDone(false)
+        }
+        incoming.applyGain()
+        swapJob = scope.launch {
+            var swapped = false
+            try {
+                val lead = (active.seconds * 1000).toLong() + SWAP_LEAD_MS
+                incoming.seekExactly(lead)
+                if (_isPlaying.value) incoming.play()
+                // Ready means sounding when playing; when paused, opened and not failed.
+                var waited = 0L
+                while (waited < SWAP_READY_MS) {
+                    if (active.key != key || isBlending || incoming !== spare || incoming.failed()) return@launch
+                    // Follows a pause or a resume meanwhile.
+                    if (_isPlaying.value) incoming.play() else incoming.pause()
+                    val ready = if (_isPlaying.value) incoming.sounding else incoming.item?.status == AVPlayerItemStatusReadyToPlay || incoming.ff?.isReady == true
+                    if (ready) break
+                    delay(100)
+                    waited += 100
+                }
+                if (waited >= SWAP_READY_MS) return@launch
+                if (_isPlaying.value) {
+                    // Back in step: it started late by however long it took to sound.
+                    incoming.seekExactly((active.seconds * 1000).toLong())
+                    delay(SWAP_SETTLE_MS)
+                    if (active.key != key || isBlending || incoming !== spare) return@launch
+                } else {
+                    incoming.seekExactly((active.seconds * 1000).toLong())
+                }
+                val previous = active
+                active = incoming
+                spare = previous
+                active.listen()
+                previous.clearObservers()
+                swapped = true
+                if (!_isPlaying.value) {
+                    previous.clear()
+                    active.fade = 1f
+                    active.applyGain()
+                    return@launch
+                }
+                outgoing = previous
+                fadeJob = scope.launch {
+                    var elapsed = 0L
+                    while (elapsed < SWAP_FADE_MS) {
+                        delay(FADE_STEP_MS)
+                        elapsed += FADE_STEP_MS
+                        val t = (elapsed.toDouble() / SWAP_FADE_MS).coerceIn(0.0, 1.0)
+                        active.fade = sin(t * PI / 2).toFloat()
+                        previous.fade = cos(t * PI / 2).toFloat()
+                        active.applyGain()
+                        previous.applyGain()
+                    }
+                    fadeJob = null
+                    finishFade()
+                }
+            } finally {
+                // Unless abandonSwap already let it go and gave the waiting player to something else.
+                if (!swapped && swapJob === coroutineContext[Job] && incoming === spare) incoming.clear()
+                if (swapJob === coroutineContext[Job]) swapJob = null
+                onDone(swapped)
+            }
+        }
+    }
+
+    private var swapJob: Job? = null
+
+    /** Gives up a swap still waiting on its copy, freeing the waiting player at once. */
+    private fun abandonSwap() {
+        val job = swapJob ?: return
+        swapJob = null
+        job.cancel()
+        spare.clear()
     }
 
     /** Ends a blend at once: the new track at full volume, the old one gone. */
@@ -549,6 +660,7 @@ internal class IosAudioEngine(
     }
 
     fun stop() {
+        abandonSwap()
         finishFade()
         active.clear()
         _isPlaying.value = false
@@ -693,6 +805,14 @@ internal class IosAudioEngine(
         const val GAP_RATE = 8f
         /** How far back a fast-forwarded gap rewinds once sound returns: more than it overshoots. */
         const val GAP_REWIND_S = 1.0
+        /** A swap onto a better copy: how long the two copies overlap. */
+        const val SWAP_FADE_MS = 300L
+        /** How long the better copy may take to start sounding before the swap is given up. */
+        const val SWAP_READY_MS = 25_000L
+        /** Opened a little ahead of the playhead, so it is buffered where it will be wanted. */
+        const val SWAP_LEAD_MS = 500L
+        /** Time after re-aligning for the better copy to be playing smoothly again. */
+        const val SWAP_SETTLE_MS = 400L
         const val WATCH_WINDOW_MS = 3_000L
         const val DIAGNOSTICS_MS = 2_000L
         const val STUCK_MS = 8_000L

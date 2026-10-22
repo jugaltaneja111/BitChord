@@ -20,6 +20,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Deferred
+import com.music.bitchord.data.sources.StreamFormat
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -51,6 +53,12 @@ import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 internal object IosPlayer {
     private const val TAG = "IosPlayer"
     private const val SUBSTITUTE_WAIT_MS = 6_000L
+    /** How long a source lookup that lost the start may go on, to become an upgrade instead. */
+    private const val SUBSTITUTE_LOOKUP_MS = 20_000L
+    /** How long a track plays before a better copy is looked for: started, its length settled. */
+    private const val UPGRADE_SETTLE_MS = 8_000L
+    /** No upgrade with less than this left: the swap would cost more than it gives. */
+    private const val UPGRADE_MIN_REMAINING_MS = 20_000L
     private const val LOW_KBPS = 64
 
     /** How long before a track ends the next one is fetched into the waiting player. */
@@ -584,6 +592,7 @@ internal object IosPlayer {
                 servedBy[audio.videoId] = stream.source to stream.kbps
                 engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
+                noteUpgradeLead(audio.videoId, stream)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -607,9 +616,11 @@ internal object IosPlayer {
         if (autoplayOn && _queue.value.size > 1 && index >= _queue.value.size - 2) {
             extendWithRadio(playNext = false)
         }
+        upgradeJob?.cancel()
         engine.startNext(fadeMs)
         // The engine never stops between the two tracks, so the new one is started here.
         IosScrobbler.onPlaying(engine.isPlaying.value, 0L)
+        lookForBetterCopy(song)
     }
 
     /** The last song's radio after the queue; played straight away when the queue has run out. */
@@ -676,6 +687,7 @@ internal object IosPlayer {
         }
         engine.stop()
         loadJob?.cancel()
+        upgradeJob?.cancel()
         loadJob = scope.launch {
             _resolving.value = true
             try {
@@ -683,6 +695,7 @@ internal object IosPlayer {
                 onPhone(song.videoId)?.let { (path, loudness) ->
                     TrackLog.i(TAG, "${song.videoId}: from the phone")
                     engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song), startMs, startPlaying)
+                    lookForBetterCopy(song)
                     return@launch
                 }
                 val audio = musicOnly(song)
@@ -696,6 +709,7 @@ internal object IosPlayer {
                     _song.value = audio
                     onPhone(audio.videoId)?.let { (path, loudness) ->
                         engine.load(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio), startMs, startPlaying)
+                        lookForBetterCopy(audio)
                         return@launch
                     }
                 }
@@ -708,6 +722,8 @@ internal object IosPlayer {
                 servedBy[audio.videoId] = stream.source to stream.kbps
                 engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, startPlaying, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
+                noteUpgradeLead(audio.videoId, stream)
+                lookForBetterCopy(audio)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -745,7 +761,83 @@ internal object IosPlayer {
         val fromYouTube: Boolean,
         /** Which player opens it: FFmpeg for Opus, Vorbis, WebM, Ogg and DASH. */
         val route: IosAudioEngine.Route,
+        val codec: String? = null,
+    ) {
+        /** The source lookup that lost the start to YouTube, still going; see [lookForBetterCopy]. */
+        var lookup: Deferred<ResolvedStream?>? = null
+    }
+
+    /** What a YouTube-served track was started on, for [lookForBetterCopy] once it plays. */
+    private class UpgradeLead(
+        val lookup: Deferred<ResolvedStream?>?,
+        val playing: StreamFormat?,
+        val servedBy: String?,
     )
+
+    private val upgradeLeads = HashMap<String, UpgradeLead>()
+    private var upgradeJob: Job? = null
+
+    private fun noteUpgradeLead(videoId: String, stream: Picked) {
+        if (!stream.fromYouTube) return
+        upgradeLeads.remove(videoId)?.lookup?.cancel()
+        upgradeLeads[videoId] = UpgradeLead(stream.lookup, StreamFormat(codec = stream.codec, kbps = stream.kbps), null)
+    }
+
+    /**
+     * The phone's quality upgrade: a track that started on YouTube (or its cached copy) because no
+     * better source answered in time is swapped, mid-play and at the same point, onto a better copy
+     * when one turns up — the lookup that lost the start if it finishes with one, else a fresh ask
+     * of every source ranked above YouTube. Only a copy worth the swap (lossless, or 96 kbps more)
+     * of the same recording (length within two seconds), and only with 20 s or more still to play.
+     */
+    private fun lookForBetterCopy(song: Song) {
+        upgradeJob?.cancel()
+        val key = song.videoId
+        val lead = upgradeLeads.remove(key)
+            ?: if (servedBy[key]?.first == "Song cache") UpgradeLead(null, null, null) else return
+        if (song.isVideo || inParty || IosSources.isSourceTrack(song)) {
+            lead.lookup?.cancel()
+            return
+        }
+        val request = IosSources.requestFor(IosSettings.effectiveAudioQuality)
+        if (!IosSources.canSubstituteForYouTube(request)) {
+            lead.lookup?.cancel()
+            return
+        }
+        upgradeJob = scope.launch {
+            try {
+                delay(UPGRADE_SETTLE_MS)
+                if (_song.value?.videoId != key) return@launch
+                val lengthMs = engine.durationMs.value.takeIf { it > 0 } ?: trackLength(null, song)
+                val lengthSec = (lengthMs / 1000).toInt().takeIf { it > 0 }
+                val raced = lead.lookup?.await()?.takeIf {
+                    IosSources.worthSwapping(it.format, lead.playing) &&
+                        IosSources.sameRecordingAs(it.durationMs?.let { ms -> (ms / 1000).toInt() }, lengthSec)
+                }
+                val found = raced ?: runCatching {
+                    IosSources.upgradeFor(song.copy(durationText = lengthSec?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: song.durationText), request, lead.playing, lead.servedBy)
+                }.getOrNull() ?: return@launch
+                if (_song.value?.videoId != key) return@launch
+                val remaining = lengthMs - engine.position.positionMs
+                if (remaining < UPGRADE_MIN_REMAINING_MS || engine.isBlending) {
+                    TrackLog.d(TAG, "$key: upgrade to ${found.sourceName} passed over (${remaining}ms left)")
+                    return@launch
+                }
+                val stream = found.picked(song)
+                TrackLog.i(TAG, "$key: upgrading to ${found.sourceName}, ${found.format.summary}")
+                engine.swapStream(stream.url, stream.headers, stream.loudnessDb, stream.durationMs, stream.route) { swapped ->
+                    if (swapped && _song.value?.videoId == key) {
+                        servedBy[key] = found.sourceName to found.format.kbps
+                        TrackLog.i(TAG, "$key: upgraded to ${found.sourceName}")
+                    } else {
+                        TrackLog.w(TAG, "$key: upgrade to ${found.sourceName} didn't take")
+                    }
+                }
+            } finally {
+                lead.lookup?.cancel()
+            }
+        }
+    }
 
     /**
      * The stream for [audio], as the phone's resolver picks it, under the ceiling for the
@@ -765,16 +857,34 @@ internal object IosPlayer {
             return@coroutineScope youtube(id, audio, cap, opusAllowed(request, audio.videoId))
         }
         val fromYouTube = async { youtube(audio.videoId, audio, cap, opusAllowed(request, audio.videoId)) }
-        if (!audio.isVideo && IosSources.canSubstituteForYouTube(request)) {
-            val substitute = kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_WAIT_MS) {
-                runCatching { IosSources.substituteForYouTube(audio, request) }.getOrNull()
+        // In the player's scope rather than this one: a lookup that loses the start goes on, to
+        // become the track's upgrade (see lookForBetterCopy).
+        val lookup = if (!audio.isVideo && IosSources.canSubstituteForYouTube(request)) {
+            scope.async {
+                kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_LOOKUP_MS) {
+                    runCatching { IosSources.substituteForYouTube(audio, request) }.getOrNull()
+                }
             }
+        } else {
+            null
+        }
+        if (lookup != null) {
+            val substitute = kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_WAIT_MS) { lookup.await() }
             if (substitute != null) {
                 fromYouTube.cancel()
                 return@coroutineScope substitute.picked(audio)
             }
         }
-        fromYouTube.await()
+        val picked = try {
+            fromYouTube.await()
+        } catch (e: Throwable) {
+            lookup?.cancel()
+            throw e
+        }
+        picked?.also { it.lookup = lookup } ?: run {
+            lookup?.cancel()
+            null
+        }
     }
 
     /**
@@ -800,6 +910,7 @@ internal object IosPlayer {
                     kbps = best.kbps.takeIf { it > 0 },
                     fromYouTube = true,
                     route = IosAudioEngine.Route.of(best.url, best.mimeType),
+                    codec = best.mimeType?.let { if ("opus" in it) "opus" else if ("mp4a" in it || "mp4" in it) "aac" else null },
                 )
             }
         }
@@ -816,6 +927,7 @@ internal object IosPlayer {
             kbps = stream.kbps.takeIf { it > 0 },
             fromYouTube = true,
             route = IosAudioEngine.Route.AVPLAYER,
+            codec = "aac",
         )
     }
 
