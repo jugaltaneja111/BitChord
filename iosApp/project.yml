@@ -83,6 +83,9 @@ targets:
         embed: true
       - framework: ../iosKit/ffmpeg/FFmpegBuild/Sources/AetherLibzvbi.xcframework
         embed: true
+      # Automix's analyzer, built below; iosKit dlopens it as it does FFmpeg (IosAnalyzerNative).
+      - target: BitChordAnalysis
+        embed: true
       # The Replay poster's Save button; linked explicitly, as the Kotlin framework is static.
       - sdk: Photos.framework
     preBuildScripts:
@@ -91,3 +94,33 @@ targets:
         script: |
           cd "$SRCROOT/.."
           ./gradlew :iosKit:embedAndSignAppleFrameworkForXcode
+  # Automix's native DSP analyzer: the C++ Android and the desktop compile (native/analyzer, whose
+  # CMakeLists are app/src/main/cpp and desktopApp/native), with a C bridge in place of their JNI
+  # one. A dynamic framework rather than sources of the app, so its exported functions stay exported
+  # and unstripped for iosKit's dlsym, exactly as FFmpeg's do. Only the DSP pass: no Beat This! or
+  # open-unmix model, which need ONNX Runtime.
+  BitChordAnalysis:
+    type: framework
+    platform: iOS
+    # The .cpp files only: the headers are reached by relative #include, and listing them would
+    # copy them into the framework as public headers for no reader.
+    sources:
+      - path: ../native/analyzer/audio_analysis.cpp
+      - path: ../native/analyzer/tempo_analysis.cpp
+      - path: ../native/analyzer/ios/bitchord_analysis_ios.cpp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord.analysis
+        PRODUCT_NAME: BitChordAnalysis
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: "YES"
+        DEFINES_MODULE: "NO"
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        CLANG_CXX_LIBRARY: libc++
+        # Optimised in Debug too, as the CMake builds are (-O2/-O3): an -O0 analysis would hold a
+        # core for many seconds per track while music plays. Not -ffast-math, which the analyzer's
+        # arithmetic is tuned against (see app/src/main/cpp/CMakeLists.txt).
+        GCC_OPTIMIZATION_LEVEL: "2"
+        # Hidden unless marked: only the bridge's BITCHORD_EXPORT functions are exported.
+        GCC_SYMBOLS_PRIVATE_EXTERN: "YES"

@@ -13,6 +13,8 @@ on:
       - 'sharedUi/**'
       - 'iosKit/**'
       - 'iosApp/**'
+      # Automix's analyzer, which the app builds as BitChordAnalysis.framework.
+      - 'native/analyzer/**'
       - '*.gradle.kts'
       - 'gradle/**'
       - '.github/workflows/ios.yml'
@@ -59,6 +61,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - run: chmod +x gradlew
+
+      # The app's BitChordAnalysis.framework is only built on macOS, by the IPA job. Its sources and
+      # C bridge are plain C++17, so they are compiled and linked here with the host's compiler on
+      # every push, and the four functions iosKit dlsyms checked to be exported.
+      - name: Build the Automix analyzer's iOS bridge
+        run: |
+          lib="$RUNNER_TEMP/libbitchord_analysis.so"
+          g++ -std=c++17 -O1 -Wall -shared -fPIC -fvisibility=hidden -Wl,--no-undefined \
+            native/analyzer/audio_analysis.cpp native/analyzer/tempo_analysis.cpp \
+            native/analyzer/ios/bitchord_analysis_ios.cpp -o "$lib"
+          for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free; do
+            nm -D --defined-only "$lib" | grep -qw "$symbol" || { echo "$symbol is not exported"; exit 1; }
+          done
 
       # Started by hand, the live YouTube test runs here too: on the JVM, from GitHub's network,
       # which tells a CI network problem apart from an iOS one without spending macOS minutes.
@@ -204,6 +219,17 @@ jobs:
             || gh release create "$GITHUB_REF_NAME" --prerelease --title "BitChord iOS $GITHUB_REF_NAME" \
                  --notes "Unsigned IPA for sideloading (AltStore, SideStore, Sideloadly)."
           gh release upload "$GITHUB_REF_NAME" build/BitChord-unsigned.ipa --clobber
+
+      # iosKit finds the analyzer by dlopen and dlsym, so a framework left out of the app, or one
+      # whose bridge isn't exported, only shows as Automix never measuring anything: checked here,
+      # after the IPA is out, like the smoke run.
+      - name: Check the Automix analyzer is embedded
+        if: github.event_name != 'workflow_dispatch' || inputs.app
+        run: |
+          lib=build/ios-device/Build/Products/Release-iphoneos/BitChord.app/Frameworks/BitChordAnalysis.framework/BitChordAnalysis
+          for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free; do
+            nm -gU "$lib" | grep -q " _$symbol\$" || { echo "$symbol is not exported by $lib"; exit 1; }
+          done
 
       # After the IPA, so a smoke failure never costs the deliverable. Plays a track with no taps
       # (see iosKit's Autoplay.kt) and passes when the playhead moves.

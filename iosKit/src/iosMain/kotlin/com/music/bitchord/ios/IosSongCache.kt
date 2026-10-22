@@ -125,6 +125,13 @@ internal object IosSongCache {
     }
 
     /**
+     * The cached file for [videoId], or null, without marking it played: for Automix's analyser,
+     * which reads tracks that may never play and must not keep them from being let go.
+     */
+    fun peek(videoId: String): String? =
+        entries.firstOrNull { it.videoId == videoId }?.let { "$dir/${it.file}" }?.takeIf { files.fileExistsAtPath(it) }
+
+    /**
      * A track has started from the network: keep a copy, unless the cache is off, it is already
      * kept, it is a download, or this is mobile data.
      */
