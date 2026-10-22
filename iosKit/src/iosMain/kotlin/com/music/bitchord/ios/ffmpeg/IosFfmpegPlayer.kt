@@ -75,6 +75,10 @@ internal class IosFfmpegPlayer(
     /** The format the node is connected in; guarded by [transport]. */
     private var connectedFormat: AVAudioFormat? = null
 
+    /** The engine generation the node is attached in, -1 when it isn't; written holding [transport]. */
+    @Volatile
+    private var attachedTo = -1
+
     /** Guarded by [transport]: once set, no session touches the node again. */
     private var nodeReleased = false
 
@@ -158,6 +162,7 @@ internal class IosFfmpegPlayer(
             node.stop()
             FfmpegAudioEngine.detach(node)
             connectedFormat = null
+            attachedTo = -1
         }
         dsp.attached = false
     }
@@ -789,11 +794,11 @@ internal class IosFfmpegPlayer(
             fun matches(): Boolean = locked(transport) {
                 val current = connectedFormat
                 current != null && current.sampleRate == format.sampleRate &&
-                    current.channelCount == format.channelCount && FfmpegAudioEngine.isAttached(node)
+                    current.channelCount == format.channelCount && FfmpegAudioEngine.isAttached(attachedTo)
             }
             if (matches()) return true
             locked(cond) {
-                while (queuedFrames > 0 && !cancelled && pendingSeekMs == null && FfmpegAudioEngine.isAttached(node)) cond.wait()
+                while (queuedFrames > 0 && !cancelled && pendingSeekMs == null && FfmpegAudioEngine.isAttached(attachedTo)) cond.wait()
                 if (cancelled || pendingSeekMs != null) return false
             }
             locked(transport) {
@@ -808,7 +813,7 @@ internal class IosFfmpegPlayer(
                     queuedFrames = 0
                     nodeStarted = false
                 }
-                FfmpegAudioEngine.connect(node, format)
+                attachedTo = FfmpegAudioEngine.connect(node, format, attachedTo)
                 connectedFormat = format
                 format.streamDescription?.let { dsp.prepare(it.pointed) }
             }

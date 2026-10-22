@@ -551,7 +551,11 @@ internal object IosPlayer {
             servedBy[videoId] = "Downloaded" to track?.kbps?.takeIf { it > 0 }
             return path to track?.loudnessDb
         }
-        return IosSongCache.audio(videoId)?.also { servedBy[videoId] = "Song cache" to null }
+        val cached = IosSongCache.audio(videoId) ?: return null
+        // A track FFmpeg couldn't play goes to AVPlayer, which can't open the cache's Opus copy.
+        if (videoId in avPlayerOnly && IosAudioEngine.Route.of(cached.first).ffmpeg) return null
+        servedBy[videoId] = "Song cache" to null
+        return cached
     }
 
     private fun prepare(song: Song) {

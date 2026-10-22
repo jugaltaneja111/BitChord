@@ -122,21 +122,27 @@ internal object FfmpegAudioEngine {
 
     /**
      * Attaches [node] (to the current engine) and connects it to the main mixer in [format],
-     * replacing any earlier connection. The node must be stopped.
+     * replacing any earlier connection. The node must be stopped. [attachedTo] is the engine
+     * [generation] the node was last attached in (or -1); the one it is attached in now comes back.
+     *
+     * Attachment is tracked by generation, never by comparing `node.engine` with the engine: the
+     * Kotlin wrappers of one ObjC object aren't reliably `===`, and a check that always failed
+     * re-attached the node for every buffer, which dropped each one unheard.
      */
-    fun connect(node: AVAudioPlayerNode, format: AVAudioFormat) = locked {
+    fun connect(node: AVAudioPlayerNode, format: AVAudioFormat, attachedTo: Int): Int = locked {
         val engine = engine()
-        if (node.engine !== engine) {
+        if (attachedTo != generation) {
             node.engine?.let { old -> runCatching { old.detachNode(node) } }
             engine.attachNode(node)
         } else {
             engine.disconnectNodeOutput(node)
         }
         engine.connect(node, to = engine.mainMixerNode, format = format)
+        generation
     }
 
-    /** Whether [node] is attached to the engine in use now. */
-    fun isAttached(node: AVAudioPlayerNode): Boolean = locked { current != null && node.engine === current }
+    /** Whether a node attached in engine generation [attachedTo] is attached to the engine in use now. */
+    fun isAttached(attachedTo: Int): Boolean = locked { current != null && attachedTo == generation }
 
     fun detach(node: AVAudioPlayerNode) = locked {
         node.engine?.let { engine -> runCatching { engine.detachNode(node) } }
