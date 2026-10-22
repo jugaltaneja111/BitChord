@@ -240,6 +240,11 @@ internal object IosSettings {
      * the FFmpeg path has been heard on a phone; AAC is what every YouTube track played before it.
      */
     val youtubeOpus = BoolPref("${PREFIX}youtube_opus", false)
+    val skipSilence = BoolPref("${PREFIX}skip_silence", false)
+    /** SYSTEM, LIGHT or DARK, as the phone stores it. */
+    val themeMode = StringPref("${PREFIX}theme_mode", "DARK")
+    /** A BCP 47 tag, or empty for the phone's own language. */
+    val appLanguage = StringPref("${PREFIX}app_language", "")
     /** The phone's per-connection ceilings, by name; Lossless by default, as there. */
     val audioQualityWifi = StringPref("${PREFIX}audio_quality_wifi", AudioQuality.LOSSLESS.name)
     val audioQualityCellular = StringPref("${PREFIX}audio_quality_cellular", AudioQuality.LOSSLESS.name)
@@ -492,7 +497,7 @@ internal fun SettingsPage(
                 Divider()
                 Soon("Automix", "Times and blends transitions automatically, without a slider")
                 Divider()
-                Soon("Skip silence", "Trim gaps longer than a second")
+                Toggle("Skip silence", "Trim gaps longer than a second", IosSettings.skipSilence)
                 Divider()
                 val equalizerOn by IosSettings.equalizerEnabled.flow.collectAsState()
                 ActionRow("Equalizer", value = if (equalizerOn) "On" else "Off", onClick = onOpenEqualizer)
