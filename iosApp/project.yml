@@ -37,6 +37,17 @@ targets:
         UIViewControllerBasedStatusBarAppearance: false
         UIStatusBarStyle: UIStatusBarStyleDefault
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # An iPad turns every way, and with all four (and the launch screen) it can share the screen
+        # in Split View and Stage Manager; the player takes its two-column shape in landscape.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # One window: the player, the queue and every page are the app's one set, so a second iPad
+        # window would be a second view of them fighting over the same state.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
         # Listen Together invites: bitchord://party/CODE, as the phone's intent filter takes them.
         CFBundleURLTypes:
           - CFBundleURLName: com.music.bitchord.party
@@ -56,7 +67,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord
         PRODUCT_NAME: BitChord
-        TARGETED_DEVICE_FAMILY: "1"
+        # iPhone and iPad.
+        TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # The Liquid Glass icons the Settings page offers (UIApplication.setAlternateIconName);
@@ -113,7 +125,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord.analysis
         PRODUCT_NAME: BitChordAnalysis
         GENERATE_INFOPLIST_FILE: "YES"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: "YES"
         DEFINES_MODULE: "NO"
         CLANG_CXX_LANGUAGE_STANDARD: c++17

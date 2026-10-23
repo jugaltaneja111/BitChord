@@ -15,7 +15,6 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.create
 import platform.Foundation.stringWithContentsOfURL
 import platform.Foundation.writeToFile
-import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController
@@ -77,8 +76,7 @@ internal object IosBackup {
             val path = NSTemporaryDirectory() + "bitchord-backup-${now.take(10)}.json"
             NSString.create(string = json.encodeToString(BackupFile.serializer(), file))
                 .writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
-            val controller = UIActivityViewController(activityItems = listOf(NSURL.fileURLWithPath(path)), applicationActivities = null)
-            topController()?.presentViewController(controller, animated = true, completion = null)
+            presentShareSheet(listOf(NSURL.fileURLWithPath(path)))
         }.onFailure {
             TrackLog.w("IosBackup", "export failed: ${it.message}")
             IosPlayerHost.showMessage("Couldn’t export your data")

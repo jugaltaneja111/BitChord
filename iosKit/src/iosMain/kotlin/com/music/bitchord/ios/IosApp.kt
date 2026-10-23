@@ -46,6 +46,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import com.music.bitchord.ui.components.FLOATING_BAR_MAX_WIDTH
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -198,9 +200,11 @@ internal fun IosApp() {
                         .padding(top = statusBar + (TOP_BAR_HEIGHT - 46.dp) / 2, end = 16.dp),
                 )
             }
+            // On an iPad the mini player and the tabs stop growing and centre, as on a tablet.
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
+                    .widthIn(max = FLOATING_BAR_MAX_WIDTH)
                     .fillMaxWidth()
                     .onSizeChanged { barsHeight = it.height },
             ) {
@@ -290,7 +294,8 @@ internal fun IosApp() {
             IosToast.Host(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = with(density) { barsHeight.toDp() } + 12.dp, start = 24.dp, end = 24.dp),
+                    .padding(bottom = with(density) { barsHeight.toDp() } + 12.dp, start = 24.dp, end = 24.dp)
+                    .widthIn(max = FLOATING_BAR_MAX_WIDTH),
             )
         }
     }

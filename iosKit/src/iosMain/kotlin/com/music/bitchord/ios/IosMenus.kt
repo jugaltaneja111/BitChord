@@ -88,9 +88,6 @@ import com.music.bitchord.data.model.SongMenu
 import com.music.bitchord.data.model.UserPlaylist
 import com.music.bitchord.ui.theme.rememberArtworkPalette
 import kotlinx.coroutines.launch
-import platform.UIKit.UIActivityViewController
-import platform.UIKit.UIApplication
-import platform.UIKit.UIViewController
 
 /** A track's menu, and the playlist it was opened from when that playlist is the account's own. */
 /** A track's menu. [fromPlayer] adds what only applies to the playing track, like lyrics timing. */
@@ -139,12 +136,7 @@ internal fun browseLink(browseId: String) = when {
 }
 
 /** The system share sheet, over whatever is on top. */
-internal fun shareLink(text: String) {
-    val controller = UIActivityViewController(activityItems = listOf(text), applicationActivities = null)
-    var top: UIViewController? = UIApplication.sharedApplication.keyWindow?.rootViewController
-    while (top?.presentedViewController != null) top = top.presentedViewController
-    top?.presentViewController(controller, animated = true, completion = null)
-}
+internal fun shareLink(text: String) = presentShareSheet(listOf(text))
 
 private val SheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 private val Danger = Color(0xFFFF6B6B)

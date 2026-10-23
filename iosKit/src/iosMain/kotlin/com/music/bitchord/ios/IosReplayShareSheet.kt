@@ -66,9 +66,6 @@ import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHAuthorizationStatusAuthorized
 import platform.Photos.PHAuthorizationStatusLimited
 import platform.Photos.PHPhotoLibrary
-import platform.UIKit.UIActivityViewController
-import platform.UIKit.UIApplication
-import platform.UIKit.UIViewController
 import kotlin.coroutines.resume
 
 /** A share sheet's subject: the whole Replay when [page] is null, else that one card. */
@@ -277,12 +274,7 @@ private fun writePoster(image: org.jetbrains.skia.Image, label: String): String 
 }
 
 /** The system share sheet with the PNG, over whatever is on top. */
-private fun sharePoster(path: String) {
-    val controller = UIActivityViewController(activityItems = listOf(NSURL.fileURLWithPath(path)), applicationActivities = null)
-    var top: UIViewController? = UIApplication.sharedApplication.keyWindow?.rootViewController
-    while (top?.presentedViewController != null) top = top.presentedViewController
-    top?.presentViewController(controller, animated = true, completion = null)
-}
+private fun sharePoster(path: String) = presentShareSheet(listOf(NSURL.fileURLWithPath(path)))
 
 private enum class PhotoSave { SAVED, DENIED, FAILED }
 

@@ -54,6 +54,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.music.bitchord.data.YtMusicRepository
@@ -130,10 +135,10 @@ internal fun IosPageHost(
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
             IosPage.LocalMusic -> LocalMusicPage(navigator, contentPadding, underBack)
             is IosPage.LocalMusicGroup -> LocalMusicGroupPage(page, contentPadding, underBack)
-            IosPage.Settings -> SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenTranslationLanguage = { navigator.open(IosPage.TranslationLanguage) }, onOpenSources = { navigator.open(IosPage.Sources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) }, onOpenListenTogether = { navigator.open(IosPage.ListenTogether()) })
-            IosPage.Integrations -> IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) }, onOpenDiscord = { navigator.open(IosPage.Discord) })
+            IosPage.Settings -> FormWidth { SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenTranslationLanguage = { navigator.open(IosPage.TranslationLanguage) }, onOpenSources = { navigator.open(IosPage.Sources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) }, onOpenListenTogether = { navigator.open(IosPage.ListenTogether()) }) }
+            IosPage.Integrations -> FormWidth { IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) }, onOpenDiscord = { navigator.open(IosPage.Discord) }) }
             IosPage.Spotify -> SpotifyPage(navigator, contentPadding, underBack)
-            IosPage.Discord -> DiscordPage(contentPadding, underBack)
+            IosPage.Discord -> FormWidth { DiscordPage(contentPadding, underBack) }
             is IosPage.ListenTogether -> {
                 var invite by remember(page) { mutableStateOf(page.inviteCode to page.inviteServer) }
                 com.music.bitchord.ios.party.ListenTogetherPage(
@@ -146,14 +151,27 @@ internal fun IosPageHost(
                 )
             }
             is IosPage.SpotifyPlaylist -> SpotifyPlaylistPage(page, contentPadding, underBack, onOpen = navigator::open)
-            IosPage.Equalizer -> EqualizerPage(contentPadding, underBack)
-            IosPage.LyricsSources -> LyricsSourcesPage(contentPadding, underBack)
-            IosPage.TranslationLanguage -> TranslationLanguagePage(contentPadding, underBack)
-            IosPage.Sources -> com.music.bitchord.ios.sources.SourcesPage(contentPadding, underBack)
+            IosPage.Equalizer -> FormWidth { EqualizerPage(contentPadding, underBack) }
+            IosPage.LyricsSources -> FormWidth { LyricsSourcesPage(contentPadding, underBack) }
+            IosPage.TranslationLanguage -> FormWidth { TranslationLanguagePage(contentPadding, underBack) }
+            IosPage.Sources -> FormWidth { com.music.bitchord.ios.sources.SourcesPage(contentPadding, underBack) }
         }
         BackButton(onClick = { navigator.back() }, modifier = Modifier.padding(top = topInset + 4.dp, start = 8.dp))
     }
 }
+
+/**
+ * A page of settings rows, held to a readable column and centred on an iPad's wide screen rather
+ * than run from edge to edge; a phone is narrower than the cap, so nothing changes there.
+ */
+@Composable
+private fun FormWidth(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.widthIn(max = FORM_MAX_WIDTH).fillMaxSize()) { content() }
+    }
+}
+
+private val FORM_MAX_WIDTH = 720.dp
 
 @Composable
 private fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -415,9 +433,11 @@ internal fun CollectionHeader(
         Modifier.fillMaxWidth().padding(top = topInset + 56.dp, start = PAGE_GUTTER, end = PAGE_GUTTER, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // As on the phone, held to half the window's height, so an iPad still shows the title under it.
         Box(
             Modifier
                 .fillMaxWidth(0.68f)
+                .widthIn(max = windowHeight() * 0.5f)
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -601,7 +621,8 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
 /** The photograph, full width, with the name across the foot of it. */
 @Composable
 private fun ArtistBanner(url: String?, name: String, video: CanvasArtwork?) {
-    Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surface)) {
+    // Square on a phone; on an iPad no taller than 60% of the window, as the phone's tablet layout.
+    Box(Modifier.fillMaxWidth().squareUpTo(windowHeight() * 0.6f).background(MaterialTheme.colorScheme.surface)) {
         AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         video?.let { HeaderClip(it, Modifier.fillMaxSize()) }
         Box(
@@ -882,3 +903,15 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
 
 /** The words a release's subtitle uses for what it is, which are not who made it. */
 private val RELEASE_KINDS = setOf("album", "single", "ep", "playlist", "artist", "podcast", "episode", "song", "video")
+
+/** The window's height, for capping what a phone sizes from the width alone. */
+@Composable
+internal fun windowHeight(): Dp = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+
+/** As wide as it is offered and as tall, but never taller than [maxHeight]. */
+private fun Modifier.squareUpTo(maxHeight: Dp) = layout { measurable, constraints ->
+    val width = constraints.maxWidth
+    val height = minOf(width, maxHeight.roundToPx())
+    val placeable = measurable.measure(Constraints.fixed(width, height))
+    layout(width, height) { placeable.place(0, 0) }
+}
