@@ -40,6 +40,8 @@ internal class FfmpegMonoDecoder(
     private val rate: Int,
     /** A ceiling, so a mis-tagged eight-hour upload can't take the phone's memory. */
     private val maxSamples: Int,
+    /** The file is only a song's opening, cut off mid-packet; where it stops is its end. */
+    private val partial: Boolean = false,
 ) {
     class Decoded(
         /** The first [count] are the audio. */
@@ -116,7 +118,7 @@ internal class FfmpegMonoDecoder(
                 if (result == FfmpegLayout.ERROR_EAGAIN) continue
                 if (result < 0) {
                     if (cancelled) error("cancelled")
-                    if (result != FfmpegLayout.ERROR_EOF) error("read failed: ${Av.describe(result)}")
+                    if (result != FfmpegLayout.ERROR_EOF && !(partial && count > 0)) error("read failed: ${Av.describe(result)}")
                     break
                 }
                 try {

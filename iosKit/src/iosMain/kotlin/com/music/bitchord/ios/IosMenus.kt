@@ -80,6 +80,10 @@ import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaylistPrivacy
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.ios.party.IosListenTogether
+import com.music.bitchord.ios.sources.IosSources
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Videocam
 import com.music.bitchord.data.model.SongMenu
 import com.music.bitchord.data.model.UserPlaylist
 import com.music.bitchord.ui.theme.rememberArtworkPalette
@@ -291,8 +295,33 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
 
     val localPlaylistId = request.fromPlaylistId?.takeIf(IosLocalPlaylists::isLocal)
 
+    // The player's Convert to audio / video: only for the track playing, once its other cut is known.
+    val playing by IosPlayer.song.collectAsState()
+    val party by IosListenTogether.state.collectAsState()
+    val canSwitch = request.fromPlayer && playing?.videoId == song.videoId && !onDevice &&
+        !IosSources.isSourceTrack(song) && !party.inParty
+    var alternate by remember(song.videoId) { mutableStateOf<Song?>(null) }
+    var alternateLoaded by remember(song.videoId) { mutableStateOf(false) }
+    LaunchedEffect(song.videoId, canSwitch) {
+        if (!canSwitch) return@LaunchedEffect
+        alternate = IosPlayer.alternateVersion(song)
+        alternateLoaded = true
+    }
+
     TintedSheet(song.thumbnailUrl, onDismiss) { colors ->
         SheetHeader(song.title, song.artist, song.thumbnailUrl, colors)
+        if (canSwitch && (!alternateLoaded || alternate != null)) {
+            MenuRow(
+                if (song.isVideo) Icons.Rounded.MusicNote else Icons.Rounded.Videocam,
+                if (song.isVideo) "Convert to audio" else "Convert to video",
+                colors,
+                loading = !alternateLoaded,
+            ) {
+                alternate ?: return@MenuRow
+                leave { IosPlayer.switchVersion() }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
+        }
         if (signedIn && !onDevice) {
             val liked = likeStatus == LikeStatus.LIKE
             val disliked = likeStatus == LikeStatus.DISLIKE

@@ -246,6 +246,9 @@ internal object IosSettings {
     /** Automix; the phone's key, which still calls it smart fade. */
     val automix = BoolPref("${PREFIX}smart_fade_enabled", false)
 
+    /** Smart audio alignment, the phone's: a version switch lands on the same moment of the music. */
+    val smartAlignment = BoolPref("${PREFIX}smart_version_alignment", true)
+
     /** iOS's own: Automix fetches a track it has no copy of only on Wi-Fi. */
     val automixWifiOnly = BoolPref("${PREFIX}automix_analysis_wifi_only", false)
     /** SYSTEM, LIGHT or DARK, as the phone stores it. */
@@ -654,7 +657,11 @@ internal fun SettingsPage(
                     IosPlayerHost.showMessage("Playback log copied")
                 }
                 Divider()
-                Soon("Smart audio alignment")
+                Toggle(
+                    "Smart audio alignment",
+                    "Analyze audio waveforms to match the exact corresponding playback moment",
+                    IosSettings.smartAlignment,
+                )
             }
         }
         item {

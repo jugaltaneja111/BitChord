@@ -545,6 +545,10 @@ internal class IosAudioEngine(
      * back in step with the heard one and the two blend over [SWAP_FADE_MS], so the swap is heard
      * as a moment's overlap of the same music rather than a break. Refused while a crossfade runs or
      * the next track is already waiting. [onDone] says whether it happened.
+     *
+     * A version switch (the video and its audio release) passes the other cut's [newKey] and the
+     * [offsetMs] its music runs ahead of this one by — smart audio alignment's measurement — so it
+     * comes in on the same moment of the song, over [fadeMs].
      */
     fun swapStream(
         url: String,
@@ -552,13 +556,16 @@ internal class IosAudioEngine(
         loudnessDb: Double?,
         durationMs: Long,
         route: Route,
+        newKey: String? = null,
+        offsetMs: Long = 0L,
+        fadeMs: Long = SWAP_FADE_MS,
         onDone: (Boolean) -> Unit,
     ) {
         if (isBlending || spare.holding || swapJob?.isActive == true) return onDone(false)
         val key = active.key
         val incoming = spare
         incoming.fade = 0f
-        if (!incoming.hold(url, headers, loudnessDb, key, durationMs, route)) {
+        if (!incoming.hold(url, headers, loudnessDb, newKey ?: key, durationMs, route)) {
             incoming.clear()
             return onDone(false)
         }
@@ -566,8 +573,8 @@ internal class IosAudioEngine(
         swapJob = scope.launch {
             var swapped = false
             try {
-                val lead = (active.seconds * 1000).toLong() + SWAP_LEAD_MS
-                incoming.seekExactly(lead)
+                fun inStep() = ((active.seconds * 1000).toLong() + offsetMs).coerceAtLeast(0L)
+                incoming.seekExactly(inStep() + SWAP_LEAD_MS)
                 if (_isPlaying.value) incoming.play()
                 // Ready means sounding when playing; when paused, opened and not failed.
                 var waited = 0L
@@ -583,11 +590,11 @@ internal class IosAudioEngine(
                 if (waited >= SWAP_READY_MS) return@launch
                 if (_isPlaying.value) {
                     // Back in step: it started late by however long it took to sound.
-                    incoming.seekExactly((active.seconds * 1000).toLong())
+                    incoming.seekExactly(inStep())
                     delay(SWAP_SETTLE_MS)
                     if (active.key != key || isBlending || incoming !== spare) return@launch
                 } else {
-                    incoming.seekExactly((active.seconds * 1000).toLong())
+                    incoming.seekExactly(inStep())
                 }
                 val previous = active
                 active = incoming
@@ -595,6 +602,11 @@ internal class IosAudioEngine(
                 active.listen()
                 previous.clearObservers()
                 swapped = true
+                // The other cut's clock: the bar and the lyrics jump to it rather than glide.
+                if (newKey != null && newKey != key) {
+                    _durationMs.value = 0L
+                    position.seeks++
+                }
                 if (!_isPlaying.value) {
                     previous.clear()
                     active.fade = 1f
@@ -604,10 +616,10 @@ internal class IosAudioEngine(
                 outgoing = previous
                 fadeJob = scope.launch {
                     var elapsed = 0L
-                    while (elapsed < SWAP_FADE_MS) {
+                    while (elapsed < fadeMs) {
                         delay(FADE_STEP_MS)
                         elapsed += FADE_STEP_MS
-                        val t = (elapsed.toDouble() / SWAP_FADE_MS).coerceIn(0.0, 1.0)
+                        val t = (elapsed.toDouble() / fadeMs).coerceIn(0.0, 1.0)
                         active.fade = sin(t * PI / 2).toFloat()
                         previous.fade = cos(t * PI / 2).toFloat()
                         active.applyGain()
@@ -626,6 +638,9 @@ internal class IosAudioEngine(
     }
 
     private var swapJob: Job? = null
+
+    /** Whether [swapStream] is still bringing its copy in; the waiting player is its until then. */
+    val isSwapping: Boolean get() = swapJob?.isActive == true
 
     /** Gives up a swap still waiting on its copy, freeing the waiting player at once. */
     private fun abandonSwap() {

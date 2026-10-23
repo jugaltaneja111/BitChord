@@ -287,7 +287,7 @@ internal object IosAutomixAnalysis {
     }
 
     /** [song]'s copy on the phone and where it came from, or null when it has to be fetched. */
-    private fun localCopy(song: Song): Pair<String, String>? =
+    internal fun localCopy(song: Song): Pair<String, String>? =
         IosDownloads.audioPath(song.videoId)?.let { it to "download" }
             ?: IosSongCache.peek(song.videoId)?.let { it to "song cache" }
             ?: song.localPath?.takeIf { files.fileExistsAtPath(it) }?.let { it to "local file" }
@@ -330,7 +330,7 @@ internal object IosAutomixAnalysis {
      * the UI, with room on its stack for the analyzer. Cancelling calls [onCancel] and stops waiting;
      * the thread finishes on its own and its result is dropped.
      */
-    private suspend fun <T> onAnalysisThread(onCancel: () -> Unit, block: () -> T): T =
+    internal suspend fun <T> onAnalysisThread(onCancel: () -> Unit, block: () -> T): T =
         suspendCancellableCoroutine { continuation ->
             val thread = NSThread(block = { continuation.resumeWith(runCatching(block)) })
             thread.setName("BitChord Analysis")
@@ -343,8 +343,10 @@ internal object IosAutomixAnalysis {
     /**
      * [song]'s YouTube copy at the lowest rung, into [scratch]; the path. On the main thread, as
      * IosDownloads fetches: the requests suspend rather than block, and each chunk's write is small.
+     * [maxBytes] stops at the song's opening, which is all smart audio alignment reads; the caller
+     * removes the file.
      */
-    private suspend fun fetch(song: Song): String {
+    internal suspend fun fetch(song: Song, maxBytes: Long? = null): String {
         val id = song.videoId
         val youTubeId = if (IosSources.isSourceTrack(song)) {
             IosSources.youtubeFallback(song) ?: error("no YouTube copy to measure")
@@ -353,7 +355,8 @@ internal object IosAutomixAnalysis {
         }
         if (youTubeId != id) TrackLog.i(TAG, "automix: measuring '${song.title}' on YouTube's $youTubeId", about = id)
         val stream = InnerTubeXResolver.extract(youTubeId, maxKbps = FETCH_KBPS) ?: error("no stream to measure")
-        val total = contentLength(stream.url, stream.headers) ?: error("no length to fetch")
+        val length = contentLength(stream.url, stream.headers) ?: error("no length to fetch")
+        val total = maxBytes?.let { minOf(it, length) } ?: length
         if (total > MAX_FETCH_BYTES) error("too long to measure (${total / (1024 * 1024)} MB)")
         TrackLog.i(TAG, "automix: fetching ${stream.mimeType} ${stream.kbps} kbps, ${total / 1024} KB to measure", about = id)
         val started = MonotonicClock.nowMs()

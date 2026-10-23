@@ -45,6 +45,7 @@ internal fun IosNowPlaying(
     val song = current ?: return
     val isPlaying by IosPlayer.isPlaying.collectAsState()
     val playerLoading by IosPlayer.isLoading.collectAsState()
+    val versionSwitching by IosPlayer.versionSwitching.collectAsState()
     val party by IosListenTogether.state.collectAsState()
     // A party play waits for the server's start: the spinner covers that wait.
     val isLoading = playerLoading || party.awaitingStart
@@ -111,7 +112,7 @@ internal fun IosNowPlaying(
             isLoading = isLoading,
             position = IosPlayer.position,
             durationMs = durationMs,
-            audioVersionSwitching = false,
+            audioVersionSwitching = versionSwitching,
             qualityUpgraded = false,
             queue = queue,
             queueIndex = index,

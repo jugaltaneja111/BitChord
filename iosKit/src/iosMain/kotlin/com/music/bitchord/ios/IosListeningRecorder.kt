@@ -56,6 +56,11 @@ internal object IosListeningRecorder {
         }
     }
 
+    /** A version switch: the same listen goes on under the other cut's id, its time and play kept. */
+    fun switched(fromId: String, toId: String) {
+        if (currentId == fromId) currentId = toId
+    }
+
     /** Paused or stopped: the next sample starts the clock again rather than counting the gap. */
     fun onStopped() {
         currentId = null

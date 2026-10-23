@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import com.music.bitchord.ios.automix.IosAutomixAnalysis
+import com.music.bitchord.ios.automix.IosVersionAligner
 import com.music.bitchord.playback.smart.CrossfadeMode
 import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.TransitionTrackInfo
@@ -60,6 +61,9 @@ internal object IosPlayer {
     private const val SUBSTITUTE_WAIT_MS = 6_000L
     /** How long a source lookup that lost the start may go on, to become an upgrade instead. */
     private const val SUBSTITUTE_LOOKUP_MS = 20_000L
+
+    /** A version switch's blend, the phone's. */
+    private const val VERSION_FADE_MS = 550L
     /** How long a track plays before a better copy is looked for: started, its length settled. */
     private const val UPGRADE_SETTLE_MS = 8_000L
     /** No upgrade with less than this left: the swap would cost more than it gives. */
@@ -538,7 +542,8 @@ internal object IosPlayer {
      */
     private fun watchTransition() {
         val song = _song.value ?: return
-        if (_resolving.value || !engine.isPlaying.value || engine.isBlending) return
+        // A swap onto another copy holds the waiting player until it lands.
+        if (_resolving.value || !engine.isPlaying.value || engine.isBlending || engine.isSwapping) return
         val duration = engine.durationMs.value
         if (duration <= 0L) return
         val remaining = duration - engine.position.positionMs
@@ -809,6 +814,124 @@ internal object IosPlayer {
                 fail(e.message ?: e.toString())
             } finally {
                 _resolving.value = false
+            }
+        }
+    }
+
+    /** The other cut of each track switched by [switchVersion], both ways, so switching back is instant. */
+    private val otherCut = HashMap<String, Song>()
+    private var versionJob: Job? = null
+
+    private val _versionSwitching = MutableStateFlow(false)
+
+    /** A version switch is finding the other cut and its stream. */
+    val versionSwitching: StateFlow<Boolean> = _versionSwitching.asStateFlow()
+
+    private val _versionAligning = MutableStateFlow(false)
+
+    /** Smart audio alignment is fetching and measuring the other cut; the player draws it on the bar. */
+    val versionAligning: StateFlow<Boolean> = _versionAligning.asStateFlow()
+
+    /**
+     * [song]'s other cut: a music video's catalogue audio release, or a song's music video. Null
+     * when there is none, and for a file on the phone or a source's track, which have no other.
+     */
+    suspend fun alternateVersion(song: Song): Song? {
+        otherCut[song.videoId]?.let { return it }
+        if (IosLocalMusic.isLocal(song) || IosSources.isSourceTrack(song)) return null
+        val other = runCatching {
+            if (song.isVideo) YtMusicRepository.resolveAudio(song) else YtMusicRepository.resolveVideo(song)
+        }.getOrNull()
+        return other?.takeIf { it.videoId != song.videoId }
+    }
+
+    /**
+     * The phone's Convert to audio / Convert to video: the playing track moves onto its other cut
+     * mid-play, blended over [VERSION_FADE_MS]. With smart audio alignment on, the two openings are
+     * measured first and the other cut comes in on the same moment of the music — past a video's
+     * intro skit, say — rather than the same second; without it, or when the measurement fails, at
+     * the same second. Not in a party, where everyone hears one cut.
+     */
+    fun switchVersion() {
+        val song = _song.value ?: return
+        if (inParty || _versionSwitching.value) return
+        if (engine.isBlending) {
+            IosPlayerHost.showMessage("Try again once this transition ends")
+            return
+        }
+        versionJob?.cancel()
+        versionJob = scope.launch {
+            _versionSwitching.value = true
+            try {
+                val found = alternateVersion(song)
+                if (found == null) {
+                    IosPlayerHost.showMessage(if (song.isVideo) "No audio version found" else "No video version found")
+                    return@launch
+                }
+                val target = found.copy(
+                    isVideoOrigin = song.isVideoOrigin || song.isVideo,
+                    queueTier = song.queueTier,
+                    queueEntryId = song.queueEntryId,
+                    radioName = song.radioName,
+                    playbackSource = song.playbackSource,
+                    playbackSourceType = song.playbackSourceType,
+                    playbackSourceId = song.playbackSourceId,
+                )
+                TrackLog.i(TAG, "${song.videoId}: switching to ${if (target.isVideo) "the video" else "the audio"} ${target.videoId}")
+                val offsetMs = if (IosSettings.smartAlignment.flow.value) {
+                    _versionAligning.value = true
+                    try {
+                        IosVersionAligner.offsetMs(song, target) ?: 0L
+                    } finally {
+                        _versionAligning.value = false
+                    }
+                } else {
+                    0L
+                }
+                if (_song.value?.videoId != song.videoId) return@launch
+                val local = onPhone(target.videoId)
+                val stream = if (local == null) networkStream(target) else null
+                if (local == null && stream == null) {
+                    IosPlayerHost.showMessage("Couldn’t load the other version")
+                    return@launch
+                }
+                if (_song.value?.videoId != song.videoId) return@launch
+                val url = local?.first ?: stream!!.url
+                val headers = stream?.headers ?: emptyMap()
+                val loudness = local?.second ?: stream?.loudnessDb
+                val duration = stream?.durationMs ?: trackLength(null, target)
+                val route = stream?.route ?: IosAudioEngine.Route.of(url)
+                // The waiting player is the swap's; the next track is readied again afterwards.
+                prepareJob?.cancel()
+                preparing = null
+                engine.clearPrepared()
+                upgradeJob?.cancel()
+                val done = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                engine.swapStream(url, headers, loudness, duration, route, target.videoId, offsetMs, VERSION_FADE_MS) { done.complete(it) }
+                val swapped = done.await()
+                if (_song.value?.videoId != song.videoId) return@launch
+                if (!swapped) {
+                    TrackLog.w(TAG, "${song.videoId}: the blend didn't take; switching straight over")
+                    val at = (engine.position.positionMs + offsetMs).coerceAtLeast(0L)
+                    engine.load(url, headers, loudness, target.videoId, duration, at, engine.isPlaying.value, route)
+                }
+                otherCut[song.videoId] = target
+                otherCut[target.videoId] = song
+                stream?.let {
+                    servedBy[target.videoId] = it.source to it.kbps
+                    if (it.fromYouTube) IosSongCache.remember(target.videoId, it.url, it.headers, it.loudnessDb, it.route.ffmpeg)
+                }
+                val at = _index.value
+                if (_queue.value.getOrNull(at)?.videoId == song.videoId) {
+                    _queue.value = _queue.value.toMutableList().also { it[at] = target }
+                }
+                playedThisSession += target.videoId
+                IosListeningRecorder.switched(song.videoId, target.videoId)
+                _song.value = target
+                TrackLog.i(TAG, "${target.videoId}: switched, ${offsetMs} ms shift")
+            } finally {
+                _versionSwitching.value = false
+                _versionAligning.value = false
             }
         }
     }

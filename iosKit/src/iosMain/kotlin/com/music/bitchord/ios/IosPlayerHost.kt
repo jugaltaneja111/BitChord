@@ -144,7 +144,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val spotifyCanvasAutoHide = IosSettings.spotifyCanvasAutoHide.flow
     override val syncedLyrics = IosSettings.syncedLyrics.flow
     override val translationLanguage = IosSettings.translationLanguage.flow
-    override val versionAlignmentInProgress = MutableStateFlow(false)
+    override val versionAlignmentInProgress = IosPlayer.versionAligning
 
     override fun setLastPlayerScreen(value: LastPlayerScreen) {
         lastPlayerScreen.value = value
