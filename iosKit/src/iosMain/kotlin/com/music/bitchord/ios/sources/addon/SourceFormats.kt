@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.sources.addon
 
+import com.music.bitchord.ios.tr
 import com.music.bitchord.data.TrackLog
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -67,7 +68,7 @@ internal object SourceFormats {
         if (parsed == null || parsed.host.isBlank() || parsed.protocol.name !in setOf("http", "https") ||
             !url.contains("://")
         ) {
-            return Result.success(DetectedFormat.Unsupported("That is not a web address BitChord can open"))
+            return Result.success(DetectedFormat.Unsupported(tr("That is not a web address BitChord can open")))
         }
 
         val base = AddonClient.normalizeBase(url)
@@ -103,7 +104,7 @@ internal object SourceFormats {
         // Report what was actually found over the transport error from a URL
         // the user never typed.
         firstUnsupported?.let { return Result.success(it) }
-        return Result.failure(lastFailure ?: AddonUnavailable("Nothing answered at that address"))
+        return Result.failure(lastFailure ?: AddonUnavailable(tr("Nothing answered at that address")))
     }
 
     /**
@@ -116,11 +117,11 @@ internal object SourceFormats {
      */
     fun detect(body: String, url: String = ""): DetectedFormat {
         val root = runCatching { addonJson.parseToJsonElement(body) }.getOrNull()
-            ?: return DetectedFormat.Unsupported("That address did not return JSON")
+            ?: return DetectedFormat.Unsupported(tr("That address did not return JSON"))
 
         val obj = root as? JsonObject
             ?: return DetectedFormat.Unsupported(
-                "That JSON is a list, and every format BitChord reads is an object",
+                tr("That JSON is a list, and every format BitChord reads is an object"),
             )
 
         // 1. A module index: JS plugins filed under "category:*" keys. Its
@@ -128,8 +129,7 @@ internal object SourceFormats {
         //    that this app cannot: every entry is a script to run.
         if (obj.keys.any { it.startsWith("category:") }) {
             return DetectedFormat.Unsupported(
-                "That is a module index. Modules are JavaScript plugins, which only the Android app can " +
-                    "run — on iPhone, add an addon instead",
+                tr("That is a module index. Modules are JavaScript plugins, which only the Android app can run — on iPhone, add an addon instead"),
             )
         }
 
@@ -142,7 +142,7 @@ internal object SourceFormats {
         if (looksLikeManifest) {
             val manifest = runCatching { addonJson.decodeFromJsonElement(AddonManifest.serializer(), obj) }
                 .getOrNull()
-                ?: return DetectedFormat.Unsupported("That looks like an addon manifest, but it could not be read")
+                ?: return DetectedFormat.Unsupported(tr("That looks like an addon manifest, but it could not be read"))
 
             // The one thing genuinely required. Everything this app does with
             // an addon starts by asking it for a track by name, so an addon
@@ -152,7 +152,7 @@ internal object SourceFormats {
             // what it does; silence is not a claim to refuse over.
             if (manifest.resources.isNotEmpty() && !manifest.declares("search")) {
                 val declared = manifest.resources.joinToString(", ")
-                return DetectedFormat.Unsupported("This addon declares $declared — BitChord needs search")
+                return DetectedFormat.Unsupported(tr("This addon declares {0} — BitChord needs search", declared))
             }
             return DetectedFormat.Addon(manifest, AddonClient.normalizeBase(url))
         }
@@ -164,11 +164,11 @@ internal object SourceFormats {
         val listKey = obj.entries
             .firstOrNull { it.value is JsonArray && (it.value as JsonArray).isNotEmpty() }?.key
         if (listKey != null) {
-            return DetectedFormat.Unsupported("That JSON lists \"$listKey\", which is not a format BitChord reads")
+            return DetectedFormat.Unsupported(tr("That JSON lists \"{0}\", which is not a format BitChord reads", listKey))
         }
 
         val keys = obj.keys.take(4).joinToString(", ").ifBlank { "nothing" }
-        return DetectedFormat.Unsupported("Unrecognised JSON — it holds $keys")
+        return DetectedFormat.Unsupported(tr("Unrecognised JSON — it holds {0}", keys))
     }
 
     /**

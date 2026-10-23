@@ -62,7 +62,7 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
     ) {
         item {
             Text(
-                "Account & integrations",
+                tr("Account & integrations"),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -71,39 +71,39 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
         item {
             val spotify by IosSettings.spotifySpdc.flow.collectAsState()
             Group("Spotify") {
-                ActionRow("Spotify", value = if (spotify.isNotBlank()) "Connected" else "Tap to connect", onClick = onOpenSpotify)
+                ActionRow("Spotify", value = if (spotify.isNotBlank()) tr("Connected") else tr("Tap to connect"), onClick = onOpenSpotify)
                 Divider()
-                ActionRow("Import a playlist link", onClick = { IosOverlays.spotifyImport = true })
+                ActionRow(tr("Import a playlist link"), onClick = { IosOverlays.spotifyImport = true })
                 if (spotify.isNotBlank()) {
                     Divider()
-                    ActionRow("Disconnect Spotify", destructive = true, onClick = IosSpotify::disconnect)
+                    ActionRow(tr("Disconnect Spotify"), destructive = true, onClick = IosSpotify::disconnect)
                 }
             }
-            Footer("Sign in to load your playlists. Playback uses YouTube Music.")
+            Footer(tr("Sign in to load your playlists. Playback uses YouTube Music."))
         }
         item {
             val discordToken by IosSettings.discordToken.flow.collectAsState()
             val discordOn by IosSettings.discordRpcEnabled.flow.collectAsState()
             val discordUser by IosSettings.discordUsername.flow.collectAsState()
-            Group("Rich presence") {
+            Group(tr("Rich presence")) {
                 ActionRow(
                     "Discord",
                     value = when {
-                        discordToken.isBlank() -> "Tap to connect"
-                        !discordOn -> "Connected, presence off"
-                        discordUser.isNotBlank() -> "Sharing as $discordUser"
-                        else -> "Sharing your listens"
+                        discordToken.isBlank() -> tr("Tap to connect")
+                        !discordOn -> tr("Connected, presence off")
+                        discordUser.isNotBlank() -> tr("Sharing as {0}", discordUser)
+                        else -> tr("Sharing your listens")
                     },
                     onClick = onOpenDiscord,
                 )
             }
-            Footer("Show what you are playing on your Discord profile.")
+            Footer(tr("Show what you are playing on your Discord profile."))
         }
         item {
-            Group("Scrobbling") {
+            Group(tr("Scrobbling")) {
                 SwitchRow(
                     title = "ListenBrainz",
-                    subtitle = if (lbEnabled && lbToken.isNotBlank()) "Connected" else "Enter a token to enable",
+                    subtitle = if (lbEnabled && lbToken.isNotBlank()) tr("Connected") else tr("Enter a token to enable"),
                     checked = lbEnabled && lbToken.isNotBlank(),
                     onCheckedChange = { on ->
                         if (on && lbToken.isBlank()) editingToken = true else IosSettings.listenBrainzEnabled.set(on)
@@ -112,14 +112,14 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
                 )
                 if (lbEnabled && lbToken.isNotBlank()) {
                     Divider()
-                    Toggle("Only scrobble primary artist", "Use the first artist when a track credits multiple artists", IosSettings.listenBrainzPrimaryArtistOnly)
+                    Toggle(tr("Only scrobble primary artist"), tr("Use the first artist when a track credits multiple artists"), IosSettings.listenBrainzPrimaryArtistOnly)
                 }
                 Divider()
                 SwitchRow(
                     title = "Last.fm",
                     subtitle = when {
-                        lastfmSession.isNotBlank() -> "Signed in as $lastfmUser · tap to sign out"
-                        else -> "Tap to sign in"
+                        lastfmSession.isNotBlank() -> tr("Signed in as {0} · tap to sign out", lastfmUser)
+                        else -> tr("Tap to sign in")
                     },
                     checked = lastfmEnabled && lastfmSession.isNotBlank(),
                     onCheckedChange = { on ->
@@ -139,30 +139,30 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
                 )
                 if (lastfmEnabled && lastfmSession.isNotBlank()) {
                     Divider()
-                    Toggle("Scrobble tracks", "Log plays to your Last.fm timeline", IosSettings.lastfmScrobbleEnabled)
+                    Toggle(tr("Scrobble tracks"), tr("Log plays to your Last.fm timeline"), IosSettings.lastfmScrobbleEnabled)
                     Divider()
-                    Toggle("Only scrobble primary artist", "Use the first artist when a track credits multiple artists", IosSettings.lastfmPrimaryArtistOnly)
+                    Toggle(tr("Only scrobble primary artist"), tr("Use the first artist when a track credits multiple artists"), IosSettings.lastfmPrimaryArtistOnly)
                     Divider()
-                    Toggle("Now playing", "Update Last.fm with what you are listening to", IosSettings.lastfmNowPlaying)
+                    Toggle(tr("Now playing"), tr("Update Last.fm with what you are listening to"), IosSettings.lastfmNowPlaying)
                 }
             }
-            Footer("Scrobble your listens to Last.fm and ListenBrainz.")
+            Footer(tr("Scrobble your listens to Last.fm and ListenBrainz."))
         }
         if (lastfmEnabled && lastfmSession.isNotBlank()) {
             item {
                 val minDuration by IosSettings.scrobbleMinDuration.flow.collectAsState()
                 val delayPercent by IosSettings.scrobbleDelayPercent.flow.collectAsState()
                 val delaySeconds by IosSettings.scrobbleDelaySeconds.flow.collectAsState()
-                Group("Scrobble timing") {
-                    SliderSetting("Minimum song duration", "Shorter songs will not scrobble", "${minDuration}s", minDuration.toFloat(), 15f..120f, 20) {
+                Group(tr("Scrobble timing")) {
+                    SliderSetting(tr("Minimum song duration"), tr("Shorter songs will not scrobble"), "${minDuration}s", minDuration.toFloat(), 15f..120f, 20) {
                         IosSettings.scrobbleMinDuration.set(it.roundToInt())
                     }
                     Divider()
-                    SliderSetting("Scrobble delay", "How far into a song to scrobble it", "${(delayPercent * 100).roundToInt()}%", delayPercent, 0.1f..1f, 8) {
+                    SliderSetting(tr("Scrobble delay"), tr("How far into a song to scrobble it"), "${(delayPercent * 100).roundToInt()}%", delayPercent, 0.1f..1f, 8) {
                         IosSettings.scrobbleDelayPercent.set(it)
                     }
                     Divider()
-                    SliderSetting("Maximum delay", "Maximum scrobble delay in seconds", "${delaySeconds}s", delaySeconds.toFloat(), 30f..300f, 26) {
+                    SliderSetting(tr("Maximum delay"), tr("Maximum scrobble delay in seconds"), "${delaySeconds}s", delaySeconds.toFloat(), 30f..300f, 26) {
                         IosSettings.scrobbleDelaySeconds.set(it.roundToInt())
                     }
                 }
@@ -174,13 +174,13 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
         var token by remember { mutableStateOf(lbToken) }
         AlertDialog(
             onDismissRequest = { editingToken = false },
-            title = { Text("ListenBrainz token") },
+            title = { Text(tr("ListenBrainz token")) },
             text = {
                 Column {
-                    Text("Paste your ListenBrainz user token to enable scrobbling.", style = MaterialTheme.typography.bodyMedium)
+                    Text(tr("Paste your ListenBrainz user token to enable scrobbling."), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(value = token, onValueChange = { token = it }, singleLine = true, label = { Text("Token") })
-                    TextButton(onClick = { openUrl("https://listenbrainz.org/settings/") }) { Text("Find your token") }
+                    OutlinedTextField(value = token, onValueChange = { token = it }, singleLine = true, label = { Text(tr("Token")) })
+                    TextButton(onClick = { openUrl("https://listenbrainz.org/settings/") }) { Text(tr("Find your token")) }
                 }
             },
             confirmButton = {
@@ -188,9 +188,9 @@ internal fun IntegrationsPage(contentPadding: PaddingValues, topPadding: Dp, onO
                     IosSettings.listenBrainzToken.set(token.trim())
                     IosSettings.listenBrainzEnabled.set(token.isNotBlank())
                     editingToken = false
-                }) { Text("Save") }
+                }) { Text(tr("Save")) }
             },
-            dismissButton = { TextButton(onClick = { editingToken = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { editingToken = false }) { Text(tr("Cancel")) } },
         )
     }
 
@@ -212,26 +212,26 @@ private fun LastfmSignIn(onDone: () -> Unit) {
     val next = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false)
     AlertDialog(
         onDismissRequest = { if (!loading) onDone() },
-        title = { Text("Sign in to Last.fm") },
+        title = { Text(tr("Sign in to Last.fm")) },
         text = {
             // Scrolls, so the password stays reachable above the keyboard.
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (needsKey) {
                     Text(
-                        "This build has no Last.fm API key. Create one free at last.fm/api, then paste its key and shared secret here.",
+                        tr("This build has no Last.fm API key. Create one free at last.fm/api, then paste its key and shared secret here."),
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    TextButton(onClick = { openUrl("https://www.last.fm/api/account/create") }) { Text("Create an API account") }
-                    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, singleLine = true, label = { Text("API key") }, keyboardOptions = next)
-                    OutlinedTextField(value = secret, onValueChange = { secret = it }, singleLine = true, label = { Text("Shared secret") }, keyboardOptions = next)
+                    TextButton(onClick = { openUrl("https://www.last.fm/api/account/create") }) { Text(tr("Create an API account")) }
+                    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, singleLine = true, label = { Text(tr("API key")) }, keyboardOptions = next)
+                    OutlinedTextField(value = secret, onValueChange = { secret = it }, singleLine = true, label = { Text(tr("Shared secret")) }, keyboardOptions = next)
                     Spacer(Modifier.height(8.dp))
                 }
-                OutlinedTextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text("Username") }, keyboardOptions = next)
+                OutlinedTextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text(tr("Username")) }, keyboardOptions = next)
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
                     singleLine = true,
-                    label = { Text("Password") },
+                    label = { Text(tr("Password")) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 )
@@ -261,13 +261,13 @@ private fun LastfmSignIn(onDone: () -> Unit) {
                                 IosArtistFacts.start()
                                 onDone()
                             }
-                            .onFailure { error = it.message ?: "Sign-in failed" }
+                            .onFailure { error = it.message ?: tr("Sign-in failed") }
                         loading = false
                     }
                 },
-            ) { Text(if (loading) "Signing in…" else "Sign in") }
+            ) { Text(if (loading) tr("Signing in…") else tr("Sign in")) }
         },
-        dismissButton = { TextButton(enabled = !loading, onClick = onDone) { Text("Cancel") } },
+        dismissButton = { TextButton(enabled = !loading, onClick = onDone) { Text(tr("Cancel")) } },
     )
 }
 

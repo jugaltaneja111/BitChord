@@ -382,14 +382,14 @@ internal fun SettingsPage(
     ) {
         item {
             Text(
-                "Settings",
+                tr("Settings"),
                 style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
         item {
-            Group("Account & integrations") {
+            Group(tr("Account & integrations")) {
                 if (signedIn) {
                     Row(
                         Modifier.fillMaxWidth().clickable { IosOverlays.switcher = true }.padding(16.dp, 12.dp),
@@ -412,13 +412,13 @@ internal fun SettingsPage(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        Text("Switch", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(tr("Switch"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Divider()
-                    ActionRow("Add account") { IosOverlays.login = true }
+                    ActionRow(tr("Add account")) { IosOverlays.login = true }
                     Divider()
-                    ActionRow(if (accounts.size > 1) "Sign out of all accounts" else "Sign out", destructive = true) {
+                    ActionRow(if (accounts.size > 1) tr("Sign out of all accounts") else tr("Sign out"), destructive = true) {
                         IosAccount.signOut()
                     }
                 } else {
@@ -429,9 +429,9 @@ internal fun SettingsPage(
                         Icon(Icons.Rounded.Person, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Sign in to YouTube Music", color = MaterialTheme.colorScheme.onSurface)
+                            Text(tr("Sign in to YouTube Music"), color = MaterialTheme.colorScheme.onSurface)
                             Text(
-                                "Your library, likes and personal Home",
+                                tr("Your library, likes and personal Home"),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -442,20 +442,20 @@ internal fun SettingsPage(
                 Divider()
                 ActionRow("Spotify, Last.fm, ListenBrainz, Discord", onClick = onOpenIntegrations)
                 Divider()
-                ActionRow("Listen together", onClick = onOpenListenTogether)
+                ActionRow(tr("Listen together"), onClick = onOpenListenTogether)
             }
         }
         item {
-            Group("Audio quality") {
-                ActionRow("Sources", value = "Where audio comes from", onClick = onOpenSources)
+            Group(tr("Audio quality")) {
+                ActionRow(tr("Sources"), value = tr("Where audio comes from"), onClick = onOpenSources)
                 Divider()
-                QualityRow("On Wi-Fi", IosSettings.audioQualityWifi)
+                QualityRow(tr("On Wi-Fi"), IosSettings.audioQualityWifi)
                 Divider()
-                QualityRow("On mobile data", IosSettings.audioQualityCellular)
+                QualityRow(tr("On mobile data"), IosSettings.audioQualityCellular)
                 Divider()
                 Toggle(
-                    "YouTube in Opus",
-                    "About 160 kbps instead of 128 kbps AAC, decoded with FFmpeg; a track that won’t play falls back to AAC",
+                    tr("YouTube in Opus"),
+                    tr("About 160 kbps instead of 128 kbps AAC, decoded with FFmpeg; a track that won’t play falls back to AAC"),
                     IosSettings.youtubeOpus,
                 )
             }
@@ -464,13 +464,13 @@ internal fun SettingsPage(
             val downloadKbps by IosSettings.downloadKbps.flow.collectAsState()
             val downloaded by IosDownloads.tracks.collectAsState()
             var confirmDelete by remember { mutableStateOf(false) }
-            Group("Downloads") {
-                ActionRow("Download quality", value = if (downloadKbps >= 256) "High" else "Normal") {
+            Group(tr("Downloads")) {
+                ActionRow(tr("Download quality"), value = if (downloadKbps >= 256) tr("High") else tr("Normal")) {
                     IosSettings.downloadKbps.set(if (downloadKbps >= 256) 128 else 320)
                 }
                 Divider()
                 ActionRow(
-                    "Downloaded songs",
+                    tr("Downloaded songs"),
                     value = "${downloaded.size} · ${megabytes(downloaded.sumOf { it.bytes })}",
                     onClick = onOpenDownloads,
                 )
@@ -478,17 +478,17 @@ internal fun SettingsPage(
                 val wifiOnly by IosSettings.downloadWifiOnly.flow.collectAsState()
                 val metered by IosNetwork.metered.collectAsState()
                 Toggle(
-                    "Download over Wi-Fi only",
-                    if (wifiOnly && metered == true) "Blocking: downloads wait for Wi-Fi" else "Downloads wait for Wi-Fi instead of using mobile data",
+                    tr("Download over Wi-Fi only"),
+                    if (wifiOnly && metered == true) tr("Blocking: downloads wait for Wi-Fi") else tr("Downloads wait for Wi-Fi instead of using mobile data"),
                     IosSettings.downloadWifiOnly,
                 )
                 if (downloaded.isNotEmpty()) {
                     Divider()
-                    ActionRow(if (confirmDelete) "Tap again to delete every download" else "Delete all downloads", destructive = true) {
+                    ActionRow(if (confirmDelete) tr("Tap again to delete every download") else tr("Delete all downloads"), destructive = true) {
                         if (confirmDelete) {
                             IosDownloads.removeAll()
                             confirmDelete = false
-                            IosPlayerHost.showMessage("Downloads deleted")
+                            IosPlayerHost.showMessage(tr("Downloads deleted"))
                         } else {
                             confirmDelete = true
                         }
@@ -497,14 +497,14 @@ internal fun SettingsPage(
             }
         }
         item {
-            Group("Playback") {
-                Toggle("Autoplay", "Keep playing similar songs when the queue ends", IosSettings.autoplay)
+            Group(tr("Playback")) {
+                Toggle(tr("Autoplay"), tr("Keep playing similar songs when the queue ends"), IosSettings.autoplay)
                 Divider()
-                Toggle("Prefer music-only version", "For music videos, show the video details while finding and loading the catalogue audio version", IosSettings.preferMusicOnly)
+                Toggle(tr("Prefer music-only version"), tr("For music videos, show the video details while finding and loading the catalogue audio version"), IosSettings.preferMusicOnly)
                 Divider()
-                Toggle("Loudness normalization", "Levels every track to the same loudness", IosSettings.loudnessNormalization)
+                Toggle(tr("Loudness normalization"), tr("Levels every track to the same loudness"), IosSettings.loudnessNormalization)
                 Divider()
-                Toggle("Disable on Phone Speaker", "The phone’s own speaker plays every track as it was mastered", IosSettings.loudnessOffOnSpeaker)
+                Toggle(tr("Disable on Phone Speaker"), tr("The phone’s own speaker plays every track as it was mastered"), IosSettings.loudnessOffOnSpeaker)
                 Divider()
                 val automixOn by IosSettings.automix.flow.collectAsState()
                 // As on the phone, Automix times its own blends and the slider gives way to it.
@@ -513,162 +513,162 @@ internal fun SettingsPage(
                     Divider()
                 }
                 Toggle(
-                    "Automix (beta)",
-                    if (automixOn) "Times and blends transitions from each song’s beat and structure" else "Times and blends transitions automatically, without a slider",
+                    tr("Automix (beta)"),
+                    if (automixOn) tr("Times and blends transitions from each song’s beat and structure") else tr("Times and blends transitions automatically, without a slider"),
                     IosSettings.automix,
                 )
                 Divider()
                 if (automixOn) {
                     Toggle(
-                        "Analyse on Wi-Fi only",
-                        "Songs that aren’t downloaded or cached are fetched for analysis only on Wi-Fi",
+                        tr("Analyse on Wi-Fi only"),
+                        tr("Songs that aren’t downloaded or cached are fetched for analysis only on Wi-Fi"),
                         IosSettings.automixWifiOnly,
                     )
                     Divider()
                 }
-                Toggle("Skip silence", "Trim gaps longer than a second", IosSettings.skipSilence)
+                Toggle(tr("Skip silence"), tr("Trim gaps longer than a second"), IosSettings.skipSilence)
                 Divider()
                 val equalizerOn by IosSettings.equalizerEnabled.flow.collectAsState()
-                ActionRow("Equalizer", value = if (equalizerOn) "On" else "Off", onClick = onOpenEqualizer)
+                ActionRow(tr("Equalizer"), value = if (equalizerOn) tr("On") else tr("Off"), onClick = onOpenEqualizer)
             }
         }
         item {
-            Group("Appearance") {
+            Group(tr("Appearance")) {
                 ThemeRow()
                 Divider()
-                Toggle("Reduce animation", "Freezes the main player's gradient instead of drifting", IosSettings.reduceAnimation)
+                Toggle(tr("Reduce animation"), tr("Freezes the main player's gradient instead of drifting"), IosSettings.reduceAnimation)
                 Divider()
-                Toggle("Reduce dynamic blur", "Swaps frosted glass for solid fills across the app", IosSettings.reduceDynamicBlur)
+                Toggle(tr("Reduce dynamic blur"), tr("Swaps frosted glass for solid fills across the app"), IosSettings.reduceDynamicBlur)
                 Divider()
-                Toggle("Full-screen cover art", "Runs the cover to the edges of the player instead of a square sleeve", IosSettings.fullBleedArtwork)
+                Toggle(tr("Full-screen cover art"), tr("Runs the cover to the edges of the player instead of a square sleeve"), IosSettings.fullBleedArtwork)
                 Divider()
-                Toggle("Legacy mesh gradient", "Brings back the drifting colour blobs behind the player from v1.5", IosSettings.legacyMeshGradient)
+                Toggle(tr("Legacy mesh gradient"), tr("Brings back the drifting colour blobs behind the player from v1.5"), IosSettings.legacyMeshGradient)
                 Divider()
-                Toggle("Animated cover art", "Plays the looping video some releases ship instead of a still sleeve", IosSettings.animatedCanvas)
+                Toggle(tr("Animated cover art"), tr("Plays the looping video some releases ship instead of a still sleeve"), IosSettings.animatedCanvas)
                 val animated by IosSettings.animatedCanvas.flow.collectAsState()
                 if (animated) {
                     Divider()
-                    Toggle("Play animated cover over cellular", "Clips use data; off, they play on Wi-Fi only", IosSettings.canvasOverCellular)
+                    Toggle(tr("Play animated cover over cellular"), tr("Clips use data; off, they play on Wi-Fi only"), IosSettings.canvasOverCellular)
                     Divider()
-                    Toggle("Prioritize Spotify Canvas", "Try Spotify before Apple Music and other animated cover providers (needs Spotify connected)", IosSettings.prioritizeSpotifyCanvas)
+                    Toggle(tr("Prioritize Spotify Canvas"), tr("Try Spotify before Apple Music and other animated cover providers (needs Spotify connected)"), IosSettings.prioritizeSpotifyCanvas)
                     Divider()
-                    Toggle("Auto-hide player controls", "Collapse the half-player after 5 seconds while Spotify Canvas is playing", IosSettings.spotifyCanvasAutoHide)
+                    Toggle(tr("Auto-hide player controls"), tr("Collapse the half-player after 5 seconds while Spotify Canvas is playing"), IosSettings.spotifyCanvasAutoHide)
                 }
                 Divider()
-                Toggle("Synced lyrics", "Lights up the words on the player as they’re sung", IosSettings.syncedLyrics)
+                Toggle(tr("Synced lyrics"), tr("Lights up the words on the player as they’re sung"), IosSettings.syncedLyrics)
                 Divider()
-                Toggle("Blur other lines", "Softens the lyric lines that aren’t being sung", IosSettings.lyricsBlur)
+                Toggle(tr("Blur other lines"), tr("Softens the lyric lines that aren’t being sung"), IosSettings.lyricsBlur)
                 Divider()
-                Toggle("Prefer word-by-word timing", "Keeps looking past a line-timed answer for one timed by the word", IosSettings.prioritizeSyllableSync)
+                Toggle(tr("Prefer word-by-word timing"), tr("Keeps looking past a line-timed answer for one timed by the word"), IosSettings.prioritizeSyllableSync)
                 Divider()
-                ActionRow("Lyrics sources", value = "${lyricsSourceCount}", onClick = onOpenLyricsSources)
+                ActionRow(tr("Lyrics sources"), value = "${lyricsSourceCount}", onClick = onOpenLyricsSources)
                 Divider()
                 ActionRow(
-                    "Translation language",
+                    tr("Translation language"),
                     value = translationLanguage.ifBlank { null }?.let { translationLanguageName(it, deviceLanguageTag()) }
-                        ?: "App language",
+                        ?: tr("App language"),
                     onClick = onOpenTranslationLanguage,
                 )
             }
         }
         item {
-            Group("App icon") { AppIconPicker() }
+            Group(tr("App icon")) { AppIconPicker() }
         }
         item {
             val folderName by IosLocalMusic.folderName.collectAsState()
             val localScanning by IosLocalMusic.scanning.collectAsState()
             val localSongs by IosLocalMusic.songs.collectAsState()
-            Group("Local music") {
-                ActionRow("Music folder", value = folderName ?: "Choose…", onClick = IosLocalMusic::chooseFolder)
+            Group(tr("Local music")) {
+                ActionRow(tr("Music folder"), value = folderName ?: tr("Choose…"), onClick = IosLocalMusic::chooseFolder)
                 if (folderName != null) {
                     Divider()
-                    ActionRow("Forget folder", destructive = true, onClick = IosLocalMusic::forgetFolder)
+                    ActionRow(tr("Forget folder"), destructive = true, onClick = IosLocalMusic::forgetFolder)
                 }
                 Divider()
                 // Files dropped in BitChord's own folder are found without picking anything.
-                ActionRow("BitChord’s folder in Files", value = "Music", onClick = IosLocalMusic::openInFiles)
+                ActionRow(tr("BitChord’s folder in Files"), value = tr("Music"), onClick = IosLocalMusic::openInFiles)
                 Divider()
                 ActionRow(
-                    "Rescan",
-                    value = if (localScanning) "Scanning…" else "${localSongs.size} ${if (localSongs.size == 1) "song" else "songs"}",
+                    tr("Rescan"),
+                    value = if (localScanning) tr("Scanning…") else "${localSongs.size} ${if (localSongs.size == 1) "song" else "songs"}",
                     onClick = IosLocalMusic::rescan,
                 )
                 Divider()
-                Toggle("Hide short and non-music audio", "Leaves out clips under 30 seconds, ringtones and recordings", IosSettings.hideNonMusicAudio)
+                Toggle(tr("Hide short and non-music audio"), tr("Leaves out clips under 30 seconds, ringtones and recordings"), IosSettings.hideNonMusicAudio)
             }
         }
         item {
             var imageCache by remember { mutableStateOf(imageCacheSize()) }
-            Group("Storage") {
-                ActionRow("Clear image cache", value = imageCache.takeIf { it > 0 }?.let(::megabytes)) {
+            Group(tr("Storage")) {
+                ActionRow(tr("Clear image cache"), value = imageCache.takeIf { it > 0 }?.let(::megabytes)) {
                     scope.launch {
                         clearImageCache()
                         imageCache = imageCacheSize()
-                        IosPlayerHost.showMessage("Image cache cleared")
+                        IosPlayerHost.showMessage(tr("Image cache cleared"))
                     }
                 }
                 Divider()
                 SongCacheRow()
                 Divider()
                 val songCache by IosSongCache.bytes.collectAsState()
-                ActionRow("Clear song cache", value = songCache.takeIf { it > 0 }?.let(::megabytes)) {
+                ActionRow(tr("Clear song cache"), value = songCache.takeIf { it > 0 }?.let(::megabytes)) {
                     IosSongCache.clear()
-                    IosPlayerHost.showMessage("Song cache cleared")
+                    IosPlayerHost.showMessage(tr("Song cache cleared"))
                 }
             }
         }
         item {
-            Group("Your data") {
-                ActionRow("Replay", value = "Top songs, artists, albums", onClick = onOpenReplay)
+            Group(tr("Your data")) {
+                ActionRow(tr("Replay"), value = tr("Top songs, artists, albums"), onClick = onOpenReplay)
                 Divider()
-                ActionRow("Clear search history") {
+                ActionRow(tr("Clear search history")) {
                     onClearSearchHistory()
-                    IosPlayerHost.showMessage("Search history cleared")
+                    IosPlayerHost.showMessage(tr("Search history cleared"))
                 }
                 Divider()
-                ActionRow("Export data", value = "Settings and listening", onClick = IosBackup::export)
+                ActionRow(tr("Export data"), value = tr("Settings and listening"), onClick = IosBackup::export)
                 Divider()
-                ActionRow("Import data", onClick = IosBackup::import)
+                ActionRow(tr("Import data"), onClick = IosBackup::import)
             }
         }
         item {
-            Group("Miscellaneous") {
-                Toggle("Play next on swipe", "A swiped song plays next instead of joining the end of the queue", IosSettings.swipePlayNext)
+            Group(tr("Miscellaneous")) {
+                Toggle(tr("Play next on swipe"), tr("A swiped song plays next instead of joining the end of the queue"), IosSettings.swipePlayNext)
                 Divider()
-                Toggle("Don’t repeat songs in current session", "AutoPlay won’t suggest a song already played this session", IosSettings.dontRepeatSongs)
+                Toggle(tr("Don’t repeat songs in current session"), tr("AutoPlay won’t suggest a song already played this session"), IosSettings.dontRepeatSongs)
                 Divider()
-                Toggle("Show queue history", "Show up to 25 previously played songs above Now playing in the queue", IosSettings.showQueueHistory)
+                Toggle(tr("Show queue history"), tr("Show up to 25 previously played songs above Now playing in the queue"), IosSettings.showQueueHistory)
                 Divider()
-                Toggle("Hide song status", "Hides the “Playing from” or “Played by” text in the main player", IosSettings.hideSongStatus)
+                Toggle(tr("Hide song status"), tr("Hides the “Playing from” or “Played by” text in the main player"), IosSettings.hideSongStatus)
             }
         }
         item {
-            Group("Language") {
+            Group(tr("Language")) {
                 AppLanguageRow()
             }
         }
         item {
-            Group("Advanced & experimental") {
-                Toggle("Show stats for nerds", "Codec, bitrate and sample rate on the player", IosSettings.showNerdStats)
+            Group(tr("Advanced & experimental")) {
+                Toggle(tr("Show stats for nerds"), tr("Codec, bitrate and sample rate on the player"), IosSettings.showNerdStats)
                 Divider()
                 // The phone's "Copy log": what the player did, to paste into a bug report.
-                ActionRow("Copy playback log") {
+                ActionRow(tr("Copy playback log")) {
                     platform.UIKit.UIPasteboard.generalPasteboard.string = com.music.bitchord.data.TrackLog.all()
-                    IosPlayerHost.showMessage("Playback log copied")
+                    IosPlayerHost.showMessage(tr("Playback log copied"))
                 }
                 Divider()
                 Toggle(
-                    "Smart audio alignment",
-                    "Analyze audio waveforms to match the exact corresponding playback moment",
+                    tr("Smart audio alignment"),
+                    tr("Analyze audio waveforms to match the exact corresponding playback moment"),
                     IosSettings.smartAlignment,
                 )
             }
         }
         item {
             val version = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
-            Group("About") {
+            Group(tr("About")) {
                 Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Version", color = MaterialTheme.colorScheme.onSurface)
+                    Text(tr("Version"), color = MaterialTheme.colorScheme.onSurface)
                     Text(version ?: "–", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -692,13 +692,13 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
     ) {
         item {
             Text(
-                "Lyrics sources",
+                tr("Lyrics sources"),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
             Text(
-                "Every source that’s on is asked at the same time; the first one in this list to answer wins. Word-timed sources light up each word as it’s sung.",
+                tr("Every source that’s on is asked at the same time; the first one in this list to answer wins. Word-timed sources light up each word as it’s sung."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp),
@@ -716,16 +716,16 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
                         Column(Modifier.weight(1f)) {
                             Text(source.label, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
                             Text(
-                                (if (source.wordSynced) "Word by word · " else "Line by line · ") + source.detail,
+                                (if (source.wordSynced) tr("Word by word · ") else tr("Line by line · ")) + source.detail,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         IconButton(onClick = { IosSettings.lyricsSourceOrder.set(order.moved(index, index - 1)) }, enabled = index > 0) {
-                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = if (index > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = tr("Move up"), tint = if (index > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                         }
                         IconButton(onClick = { IosSettings.lyricsSourceOrder.set(order.moved(index, index + 1)) }, enabled = index < order.lastIndex) {
-                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = if (index < order.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Move down"), tint = if (index < order.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                         }
                         Switch(
                             checked = on,
@@ -747,18 +747,18 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
         item {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 20.dp).clip(GroupShape).background(GroupColor)) {
                 ActionRow(
-                    "PaxSenix API key",
-                    value = if (paxSenixKey.isBlank()) "Optional" else "Configured",
+                    tr("PaxSenix API key"),
+                    value = if (paxSenixKey.isBlank()) tr("Optional") else tr("Configured"),
                     onClick = { editingKey = true },
                 )
                 Divider()
-                ActionRow("Reset to default") {
+                ActionRow(tr("Reset to default")) {
                     IosSettings.lyricsSourceOrder.set(LyricsSource.offered)
                     IosSettings.lyricsSources.set(LyricsSource.offered)
                 }
             }
             Text(
-                "The key unlocks PaxSenix’s Spotify and Musixmatch sources. It stays on this iPhone, in the Keychain.",
+                tr("The key unlocks PaxSenix’s Spotify and Musixmatch sources. It stays on this iPhone, in the Keychain."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
@@ -769,7 +769,7 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
         var input by remember(paxSenixKey) { mutableStateOf(paxSenixKey) }
         AlertDialog(
             onDismissRequest = { editingKey = false },
-            title = { Text("PaxSenix API key") },
+            title = { Text(tr("PaxSenix API key")) },
             text = {
                 OutlinedTextField(
                     value = input,
@@ -784,9 +784,9 @@ internal fun LyricsSourcesPage(contentPadding: PaddingValues, topPadding: androi
                 TextButton(onClick = {
                     IosSettings.setPaxSenixApiKey(input)
                     editingKey = false
-                }) { Text("Save") }
+                }) { Text(tr("Save")) }
             },
-            dismissButton = { TextButton(onClick = { editingKey = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { editingKey = false }) { Text(tr("Cancel")) } },
         )
     }
 }
@@ -809,13 +809,13 @@ internal fun TranslationLanguagePage(contentPadding: PaddingValues, topPadding: 
     ) {
         item {
             Text(
-                "Translation language",
+                tr("Translation language"),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
             Text(
-                "The language the translate button turns lyrics into.",
+                tr("The language the translate button turns lyrics into."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp),
@@ -824,14 +824,14 @@ internal fun TranslationLanguagePage(contentPadding: PaddingValues, topPadding: 
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                placeholder = { Text("Search languages") },
+                placeholder = { Text(tr("Search languages")) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             )
         }
         item {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp).clip(GroupShape).background(GroupColor)) {
                 if (query.isBlank()) {
-                    LanguageRow("App language", selected.isBlank()) { IosSettings.translationLanguage.set("") }
+                    LanguageRow(tr("App language"), selected.isBlank()) { IosSettings.translationLanguage.set("") }
                 }
                 shown.forEach { (code, name) ->
                     Divider()
@@ -846,7 +846,7 @@ internal fun TranslationLanguagePage(contentPadding: PaddingValues, topPadding: 
 private fun LanguageRow(name: String, checked: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(name, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-        if (checked) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
+        if (checked) Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = Color(0xFF34C759))
     }
 }
 
@@ -886,17 +886,17 @@ private fun QualityRow(title: String, pref: StringPref) {
                             Column(Modifier.weight(1f)) {
                                 Text(option.label, color = MaterialTheme.colorScheme.onSurface)
                                 Text(
-                                    if (option == AudioQuality.MEDIUM) "Best available · ~128 kbps AAC" else option.detail,
+                                    if (option == AudioQuality.MEDIUM) tr("Best available · ~128 kbps AAC") else option.detail,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            if (option == quality) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
+                            if (option == quality) Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = Color(0xFF34C759))
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { picking = false }) { Text("Done") } },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text(tr("Done")) } },
         )
     }
 }
@@ -906,13 +906,13 @@ private fun QualityRow(title: String, pref: StringPref) {
 private fun ThemeRow() {
     val mode by IosSettings.themeMode.flow.collectAsState()
     Column(Modifier.fillMaxWidth().padding(16.dp, 12.dp)) {
-        Text("Theme", color = MaterialTheme.colorScheme.onSurface)
+        Text(tr("Theme"), color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(10.dp))
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PlaceholderColor).padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            listOf("System" to "SYSTEM", "Light" to "LIGHT", "Dark" to "DARK").forEach { (label, value) ->
+            listOf(tr("System") to "SYSTEM", tr("Light") to "LIGHT", tr("Dark") to "DARK").forEach { (label, value) ->
                 val chosen = mode == value
                 Box(
                     Modifier
@@ -939,16 +939,16 @@ private fun ThemeRow() {
 private fun SongCacheRow() {
     val mb by IosSettings.songCacheMb.flow.collectAsState()
     val label = when (mb) {
-        0 -> "Off"
-        IosSongCache.UNLIMITED_MB -> "Unlimited"
+        0 -> tr("Off")
+        IosSongCache.UNLIMITED_MB -> tr("Unlimited")
         else -> if (mb >= 1024) "${mb / 1024}.${(mb % 1024) * 10 / 1024} GB" else "$mb MB"
     }
     Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Song cache", color = MaterialTheme.colorScheme.onSurface)
+                Text(tr("Song cache"), color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    "Keeps songs you’ve played on this iPhone for instant replays, saved over Wi-Fi only",
+                    tr("Keeps songs you’ve played on this iPhone for instant replays, saved over Wi-Fi only"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -980,10 +980,10 @@ private fun CrossfadeRow() {
     Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Crossfade", color = MaterialTheme.colorScheme.onSurface)
-                Text("Blends one track into the next", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Crossfade"), color = MaterialTheme.colorScheme.onSurface)
+                Text(tr("Blends one track into the next"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(if (seconds == 0) "Off" else "${seconds}s", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (seconds == 0) tr("Off") else "${seconds}s", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Slider(
             value = seconds.toFloat(),
@@ -1012,7 +1012,7 @@ internal fun Soon(title: String, subtitle: String? = null) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text("Coming soon", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(tr("Coming soon"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1113,15 +1113,15 @@ private fun AppLanguageRow() {
     val chosen by IosSettings.appLanguage.flow.collectAsState()
     var picking by remember { mutableStateOf(false) }
     var changed by remember { mutableStateOf(false) }
-    val name = APP_LANGUAGES.firstOrNull { it.first == chosen }?.second ?: "System default"
-    ActionRow("App language", value = name) { picking = true }
+    val name = APP_LANGUAGES.firstOrNull { it.first == chosen }?.second ?: tr("System default")
+    ActionRow(tr("App language"), value = name) { picking = true }
     if (picking) {
         AlertDialog(
             onDismissRequest = { picking = false },
-            title = { Text("App language") },
+            title = { Text(tr("App language")) },
             text = {
                 LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    val options = listOf("" to "System default") + APP_LANGUAGES
+                    val options = listOf("" to tr("System default")) + APP_LANGUAGES
                     options.forEach { (tag, label) ->
                         item {
                             Row(
@@ -1135,21 +1135,21 @@ private fun AppLanguageRow() {
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                                if (tag == chosen) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF34C759))
+                                if (tag == chosen) Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = Color(0xFF34C759))
                             }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { picking = false }) { Text("Done") } },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text(tr("Done")) } },
         )
     }
     if (changed) {
         AlertDialog(
             onDismissRequest = { changed = false },
-            title = { Text("Language changed") },
-            text = { Text("Close BitChord from the app switcher and open it again to see it in the new language.") },
-            confirmButton = { TextButton(onClick = { changed = false }) { Text("OK") } },
+            title = { Text(tr("Language changed")) },
+            text = { Text(tr("Close BitChord from the app switcher and open it again to see it in the new language.")) },
+            confirmButton = { TextButton(onClick = { changed = false }) { Text(tr("OK")) } },
         )
     }
 }

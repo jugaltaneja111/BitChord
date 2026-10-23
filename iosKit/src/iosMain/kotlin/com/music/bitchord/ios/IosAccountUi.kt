@@ -88,7 +88,7 @@ internal fun TopActions(onOpenHistory: () -> Unit, onOpenSettings: () -> Unit, m
                 Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onOpenHistory),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.History, contentDescription = "History", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+                Icon(Icons.Rounded.History, contentDescription = tr("History"), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
             }
             Spacer(Modifier.width(4.dp))
         }
@@ -103,14 +103,14 @@ internal fun TopActions(onOpenHistory: () -> Unit, onOpenSettings: () -> Unit, m
             if (signedIn && avatar != null) {
                 AsyncImage(
                     model = avatar,
-                    contentDescription = "Switch account",
+                    contentDescription = tr("Switch account"),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(32.dp).clip(CircleShape),
                 )
             } else {
                 Icon(
                     Icons.Rounded.Person,
-                    contentDescription = if (signedIn) "Switch account" else "Settings",
+                    contentDescription = if (signedIn) tr("Switch account") else tr("Settings"),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(22.dp),
                 )
@@ -164,7 +164,7 @@ internal fun AccountSwitcher(
             LazyColumn(Modifier.heightIn(max = 560.dp)) {
                 item {
                     Text(
-                        "Switch account",
+                        tr("Switch account"),
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp),
@@ -173,7 +173,7 @@ internal fun AccountSwitcher(
                 accounts.forEach { account ->
                     item(key = "header:${account.id}") {
                         Text(
-                            account.email.ifBlank { account.name.ifBlank { "Account" } },
+                            account.email.ifBlank { account.name.ifBlank { tr("Account") } },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(20.dp, 12.dp, 20.dp, 4.dp),
@@ -200,18 +200,18 @@ internal fun AccountSwitcher(
                     }
                 }
                 item {
-                    SelectorAction(Icons.Rounded.Add, "Add account") {
+                    SelectorAction(Icons.Rounded.Add, tr("Add account")) {
                         onDismiss()
                         IosOverlays.login = true
                     }
                 }
                 item {
-                    SelectorAction(Icons.Rounded.ManageAccounts, if (managing) "Done" else "Manage accounts") {
+                    SelectorAction(Icons.Rounded.ManageAccounts, if (managing) tr("Done") else tr("Manage accounts")) {
                         managing = !managing
                     }
                 }
                 item {
-                    SelectorAction(Icons.Rounded.Settings, "Settings") {
+                    SelectorAction(Icons.Rounded.Settings, tr("Settings")) {
                         onDismiss()
                         onOpenSettings()
                     }
@@ -251,7 +251,7 @@ private fun ProfileRow(profile: IosProfile, selected: Boolean, managing: Boolean
         Column(Modifier.weight(1f)) {
             Text(profile.name, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                profile.handle.ifBlank { if (profile.brand) "Brand account" else "Personal" },
+                profile.handle.ifBlank { if (profile.brand) tr("Brand account") else tr("Personal") },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -259,8 +259,8 @@ private fun ProfileRow(profile: IosProfile, selected: Boolean, managing: Boolean
             )
         }
         when {
-            managing -> Text("Sign out", color = Color(0xFFFF6B6B))
-            selected -> Icon(Icons.Rounded.Check, contentDescription = "Selected account", tint = MaterialTheme.colorScheme.onSurface)
+            managing -> Text(tr("Sign out"), color = Color(0xFFFF6B6B))
+            selected -> Icon(Icons.Rounded.Check, contentDescription = tr("Selected account"), tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 }

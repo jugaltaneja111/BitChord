@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.party
 
+import com.music.bitchord.ios.tr
 import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.appHttpClient
 import com.music.bitchord.data.listentogether.ApiError
@@ -272,20 +273,20 @@ internal object IosListenTogether {
     fun normalizeServerUrl(value: String): Result<String> = runCatching {
         val trimmed = value.trim()
         if (trimmed.isEmpty()) return@runCatching ""
-        if (trimmed.any(Char::isWhitespace)) throw PartyException("bad_server", "Remove spaces from the server address.")
+        if (trimmed.any(Char::isWhitespace)) throw PartyException("bad_server", tr("Remove spaces from the server address."))
         val candidate = if ("://" in trimmed) trimmed else "https://$trimmed"
         val scheme = candidate.substringBefore("://").lowercase()
         if (scheme != "http" && scheme != "https") {
-            throw PartyException("bad_server", "Use an http or https party server address.")
+            throw PartyException("bad_server", tr("Use an http or https party server address."))
         }
         if (candidate.contains('?') || candidate.contains('#')) {
-            throw PartyException("bad_server", "The server address can't include credentials, a query, or a fragment.")
+            throw PartyException("bad_server", tr("The server address can't include credentials, a query, or a fragment."))
         }
         // Read off the text rather than the parsed URL: Ktor refuses an out-of-range port with a
         // generic parse failure, and the listener deserves to be told which part was wrong.
         val authority = candidate.substringAfter("://").substringBefore('/')
         if ('@' in authority) {
-            throw PartyException("bad_server", "The server address can't include credentials, a query, or a fragment.")
+            throw PartyException("bad_server", tr("The server address can't include credentials, a query, or a fragment."))
         }
         val portText = if (authority.startsWith("[")) {
             authority.substringAfter("]", "").removePrefix(":")
@@ -295,30 +296,30 @@ internal object IosListenTogether {
             ""
         }
         if (portText.isNotEmpty() && (portText.any { !it.isDigit() } || portText.toLongOrNull() !in 1L..65535L)) {
-            throw PartyException("bad_server", "The server address has an invalid port.")
+            throw PartyException("bad_server", tr("The server address has an invalid port."))
         }
         val url = runCatching { Url(candidate) }.getOrElse {
-            throw PartyException("bad_server", "Enter a valid party server address.")
+            throw PartyException("bad_server", tr("Enter a valid party server address."))
         }
         val rawHost = url.host.removePrefix("[").removeSuffix("]")
-        if (rawHost.isBlank()) throw PartyException("bad_server", "Use an http or https party server address.")
+        if (rawHost.isBlank()) throw PartyException("bad_server", tr("Use an http or https party server address."))
         if (url.user != null) {
-            throw PartyException("bad_server", "The server address can't include credentials, a query, or a fragment.")
+            throw PartyException("bad_server", tr("The server address can't include credentials, a query, or a fragment."))
         }
         val path = candidate.substringAfter("://").let { rest ->
             if ('/' in rest) "/" + rest.substringAfter('/') else ""
         }.trimEnd('/')
         if (path.split('/').any { it == "." || it == ".." }) {
-            throw PartyException("bad_server", "The server address has an invalid path.")
+            throw PartyException("bad_server", tr("The server address has an invalid path."))
         }
         val host = rawHost.lowercase()
         if (host != "localhost" && ':' !in host && '.' !in host) {
-            throw PartyException("bad_server", "Enter a complete party server hostname.")
+            throw PartyException("bad_server", tr("Enter a complete party server hostname."))
         }
         if (':' !in host && host != "localhost") {
             val validLabel = Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
             if (host.split('.').any { it.isEmpty() || it.length > 63 || !validLabel.matches(it) }) {
-                throw PartyException("bad_server", "Enter a valid party server hostname.")
+                throw PartyException("bad_server", tr("Enter a valid party server hostname."))
             }
         }
         val hostPart = if (':' in host) "[$host]" else host
@@ -482,7 +483,7 @@ internal object IosListenTogether {
     suspend fun joinParty(code: String, nickname: String = nickname()): Result<String> {
         val trimmed = cleanCode(code)
         if (trimmed.length != CODE_LENGTH) {
-            return Result.failure(PartyException("bad_code", "A party code is six letters or digits."))
+            return Result.failure(PartyException("bad_code", tr("A party code is six letters or digits.")))
         }
         return runCatching { refuseIfRecentlyKicked(trimmed) }.fold(
             onSuccess = {
@@ -502,9 +503,9 @@ internal object IosListenTogether {
         request: suspend (Identity, String) -> PartyMembership,
     ): Result<String> = membershipMutex.withLock {
         val who = identity(nickname)
-            ?: return@withLock Result.failure(PartyException("not_signed_in", "Sign in to listen together."))
+            ?: return@withLock Result.failure(PartyException("not_signed_in", tr("Sign in to listen together.")))
         if (!hasServer) {
-            return@withLock Result.failure(PartyException("no_server", "Set the party server address first."))
+            return@withLock Result.failure(PartyException("no_server", tr("Set the party server address first.")))
         }
         var usedFallback = false
         val primary = withContext(Dispatchers.IO) { resolveIdleServer() }
@@ -552,16 +553,16 @@ internal object IosListenTogether {
         nickname: String = nickname(),
     ): Result<String> = membershipMutex.withLock {
         runCatching {
-            val who = identity(nickname) ?: throw PartyException("not_signed_in", "Sign in to listen together.")
+            val who = identity(nickname) ?: throw PartyException("not_signed_in", tr("Sign in to listen together."))
             val target = when {
                 targetServer == null -> _customServer.value.ifBlank { effectiveIdleServerBase.ifBlank { DEFAULT_SERVER } }
                 targetServer.isBlank() -> DEFAULT_SERVER
                 else -> normalizeServerUrl(targetServer).getOrNull()?.ifBlank { null }
-                    ?: throw PartyException("bad_server", "Target server address is invalid.")
+                    ?: throw PartyException("bad_server", tr("Target server address is invalid."))
             }
-            if (target.isBlank()) throw PartyException("no_server", "Target server address is invalid or missing.")
+            if (target.isBlank()) throw PartyException("no_server", tr("Target server address is invalid or missing."))
             val cleaned = cleanCode(code)
-            if (cleaned.length != CODE_LENGTH) throw PartyException("bad_code", "A party code is six letters or digits.")
+            if (cleaned.length != CODE_LENGTH) throw PartyException("bad_code", tr("A party code is six letters or digits."))
             refuseIfRecentlyKicked(cleaned)
 
             val membership = withContext(Dispatchers.IO) {
@@ -1024,7 +1025,7 @@ internal object IosListenTogether {
     suspend fun previewParty(code: String, server: String? = null): Result<PartyPreview> {
         val cleaned = cleanCode(code)
         if (cleaned.length != CODE_LENGTH) {
-            return Result.failure(PartyException("bad_code", "A party code is six letters or digits."))
+            return Result.failure(PartyException("bad_code", tr("A party code is six letters or digits.")))
         }
         return runCatching {
             refuseIfRecentlyKicked(cleaned)
@@ -1033,9 +1034,9 @@ internal object IosListenTogether {
                     server == null -> resolveIdleServer()
                     server.isBlank() -> DEFAULT_SERVER
                     else -> normalizeServerUrl(server).getOrNull()?.ifBlank { null }
-                        ?: throw PartyException("bad_server", "Target server address is invalid.")
+                        ?: throw PartyException("bad_server", tr("Target server address is invalid."))
                 }
-                if (base.isBlank()) throw PartyException("no_server", "Set the party server address first.")
+                if (base.isBlank()) throw PartyException("no_server", tr("Set the party server address first."))
                 val response = http.get("$base/api/parties/$cleaned/preview") {
                     timeout { requestTimeoutMillis = REQUEST_TIMEOUT_MS }
                 }
@@ -1067,8 +1068,8 @@ internal object IosListenTogether {
         return PartyException(
             code = parsed?.code.orEmpty().ifBlank { "http_${status.value}" },
             message = parsed?.message?.takeIf { it.isNotBlank() }
-                ?: if (status.value == 422) "This account can't be used to jam."
-                else "The party server said ${status.value}.",
+                ?: if (status.value == 422) tr("This account can't be used to jam.")
+                else tr("The party server said {0}.", status.value),
             statusCode = status.value,
         )
     }
@@ -1202,7 +1203,7 @@ internal object IosListenTogether {
         if (cleanCode(code) in recentKicks()) {
             throw PartyException(
                 "recently_kicked",
-                "Couldn't let you in — you've recently been removed from this party.",
+                tr("Couldn't let you in — you've recently been removed from this party."),
             )
         }
     }

@@ -47,7 +47,7 @@ internal data class LocalPlaylist(val id: String, val title: String, val songs: 
     /** The first track with artwork lends the playlist its cover, as on the phone. */
     val thumbnailUrl: String? get() = songs.firstOrNull { !it.thumbnailUrl.isNullOrBlank() }?.thumbnailUrl
 
-    val subtitle: String get() = "${if (songs.size == 1) "1 song" else "${songs.size} songs"} · On this device"
+    val subtitle: String get() = tr("{0} · On this device", trPlural(songs.size, "{0} song", "{0} songs"))
 }
 
 /** What a local playlist's browse id starts with, as the phone names it. */
@@ -93,7 +93,7 @@ internal object IosLocalPlaylists {
     fun create(title: String, songs: List<Song>): LocalPlaylist {
         var id = "sp_local_${wallClockMs()}"
         while (_playlists.value.any { it.id == id }) id += "_"
-        val playlist = LocalPlaylist(id, title.trim().ifBlank { "New playlist" }, songs.map(::portable))
+        val playlist = LocalPlaylist(id, title.trim().ifBlank { tr("New playlist") }, songs.map(::portable))
         update(listOf(playlist) + _playlists.value)
         return playlist
     }

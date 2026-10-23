@@ -56,15 +56,23 @@ WavPack and DSD are still passed over, the legacy JS modules are not ported, and
 nerds read the decoded format off the AVPlayerItem's track. Skip silence cuts gaps past a second: the FFmpeg player drops the silent chunks before scheduling
 them; AVPlayer, which can't drop samples, plays a long gap muted at 8x and rewinds a second once
 sound returns. Theme (System / Light / Dark) uses the phone's light scheme, the player and Replay
-stories staying dark; app language writes `AppleLanguages`, applied at the next launch, and only
-the shared screens are translated so far (iosKit's own strings are still English). Local playlists
+stories staying dark; app language writes `AppleLanguages`, applied at the next launch; the shared screens
+translate through their Compose resources and iosKit's own words through `tr()`/`trPlural()`
+over iOS's Localizable.strings (iosApp/iosApp/Localization, keyed by the English, the Android
+app's translations where it has the same string and new ones for the rest). Local playlists
 are kept on the phone when signed out (and when a YouTube create fails), and the Replay poster is
 drawn with Skia and shared or saved to Photos. Automix analyses each track with the phone's C++
 analyzer (native/analyzer, built into an embedded BitChordAnalysis framework and loaded with
 dlopen; decoded through FFmpeg to 11 kHz mono; no ONNX beat or vocal models, so beats come from
 the DSP tracker) and plans with the shared planner; the phone's filters, echo and tempo ramps are
 not rendered. A track started on YouTube is upgraded mid-play onto a better copy (a 300 ms blend).
-Local music plays files from a folder picked in Files and from BitChord's own folder there. Not
+Local music plays files from a folder picked in Files and from BitChord's own folder there.
+Analysis can be held to Wi-Fi. The player's menu converts the playing track between its music
+video and audio release, blended over 550 ms; smart audio alignment first cross-correlates the
+two openings' energy envelopes (the phone's `VersionAudioAligner`) so the other cut comes in on
+the same moment of the song. The app is universal: on an iPad it turns every way, multitasks, and
+gets the shared player's tablet layouts, with the bars, headers and settings pages held to the
+widths the phone's tablet layout uses. Not
 yet: https invite links (they need the invite site's associated-domains file). The manual `iOS` workflow builds the unsigned IPA, then on the simulator plays a
 track and walks every page with no taps (`BITCHORD_AUTOPLAY`, `BITCHORD_TOUR`), screenshotting
 each, as a smoke test.

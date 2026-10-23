@@ -123,7 +123,7 @@ internal fun ReplayShareSheet(request: ReplayShareRequest, onDismiss: () -> Unit
                 .padding(bottom = 20.dp),
         ) {
             Text(
-                text = "Share my Replay",
+                text = tr("Share my Replay"),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.W800,
                 color = Color.White,
@@ -131,9 +131,9 @@ internal fun ReplayShareSheet(request: ReplayShareRequest, onDismiss: () -> Unit
             )
             Text(
                 text = if (request.page == null) {
-                    "A full picture with songs, artists, albums, genres, and habits."
+                    tr("A full picture with songs, artists, albums, genres, and habits.")
                 } else {
-                    "A polished card with your main listening highlights."
+                    tr("A polished card with your main listening highlights.")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.6f),
@@ -154,12 +154,12 @@ internal fun ReplayShareSheet(request: ReplayShareRequest, onDismiss: () -> Unit
                 when {
                     image != null -> Image(
                         bitmap = image,
-                        contentDescription = "Your Replay",
+                        contentDescription = tr("Your Replay"),
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     failed -> Text(
-                        text = "Could not create the picture",
+                        text = tr("Could not create the picture"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.6f),
                         textAlign = TextAlign.Center,
@@ -176,7 +176,7 @@ internal fun ReplayShareSheet(request: ReplayShareRequest, onDismiss: () -> Unit
             val path = file
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ShareAction(
-                    label = if (saved) "Saved" else "Save",
+                    label = if (saved) tr("Saved") else tr("Save"),
                     icon = if (saved) Icons.Rounded.Check else Icons.Rounded.Download,
                     accent = false,
                     enabled = path != null && !saved && !saving,
@@ -188,14 +188,14 @@ internal fun ReplayShareSheet(request: ReplayShareRequest, onDismiss: () -> Unit
                     scope.launch {
                         when (saveToPhotos(target)) {
                             PhotoSave.SAVED -> saved = true
-                            PhotoSave.DENIED -> note = "Allow BitChord to add photos in Settings to save it."
-                            PhotoSave.FAILED -> note = "Couldn’t save the picture."
+                            PhotoSave.DENIED -> note = tr("Allow BitChord to add photos in Settings to save it.")
+                            PhotoSave.FAILED -> note = tr("Couldn’t save the picture.")
                         }
                         saving = false
                     }
                 }
                 ShareAction(
-                    label = "Share",
+                    label = tr("Share"),
                     icon = Icons.Rounded.IosShare,
                     accent = true,
                     enabled = path != null,

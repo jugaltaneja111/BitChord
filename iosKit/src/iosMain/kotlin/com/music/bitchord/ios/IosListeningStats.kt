@@ -749,10 +749,10 @@ internal data class RankedSong(val song: Song, val ms: Long, val plays: Int)
 
 /** How far back a Replay reaches. */
 internal enum class ReplayPeriod(val chip: String) {
-    THIS_WEEK("This week"),
-    THIS_MONTH("This month"),
-    THIS_YEAR("This year"),
-    ALL_TIME("All time"),
+    THIS_WEEK(tr("This week")),
+    THIS_MONTH(tr("This month")),
+    THIS_YEAR(tr("This year")),
+    ALL_TIME(tr("All time")),
     ;
 
     /** The inclusive date range this period covers. Null for ALL_TIME. */
@@ -774,10 +774,10 @@ internal enum class ReplayPeriod(val chip: String) {
     fun needsDayFilter(): Boolean = this == THIS_WEEK
 
     fun label(today: Day): String = when (this) {
-        THIS_WEEK -> "This week"
+        THIS_WEEK -> tr("This week")
         THIS_MONTH -> "${today.monthKey.name} ${today.year}"
         THIS_YEAR -> today.year.toString()
-        ALL_TIME -> "All time"
+        ALL_TIME -> tr("All time")
     }
 }
 

@@ -194,7 +194,7 @@ internal object IosDownloads {
                 waiting.none { it.videoId == song.videoId }
         }
         if (fresh.isEmpty()) {
-            if (songs.isNotEmpty()) IosPlayerHost.showMessage("Already downloaded")
+            if (songs.isNotEmpty()) IosPlayerHost.showMessage(tr("Already downloaded"))
             return
         }
         fresh.forEach {
@@ -202,7 +202,7 @@ internal object IosDownloads {
             titles[it.videoId] = "${it.title} · ${it.artist}"
         }
         _progress.update { map -> map + fresh.associate { it.videoId to DownloadProgress.Queued } }
-        IosPlayerHost.showMessage(if (fresh.size == 1) "Downloading “${fresh.first().title}”" else "Downloading ${fresh.size} songs")
+        IosPlayerHost.showMessage(if (fresh.size == 1) tr("Downloading “{0}”", fresh.first().title) else trPlural(fresh.size, "Downloading {0} song", "Downloading {0} songs"))
         if (worker?.isActive != true) worker = scope.launch { drain() }
     }
 
@@ -276,13 +276,13 @@ internal object IosDownloads {
             } catch (e: Exception) {
                 TrackLog.w(TAG, "${song.videoId}: ${e.message}")
                 files.removeItemAtPath("$dir/${song.videoId}.part", null)
-                _progress.update { it + (song.videoId to DownloadProgress.Failed(e.message ?: "Download failed")) }
-                IosPlayerHost.showMessage("Couldn’t download “${song.title}”")
+                _progress.update { it + (song.videoId to DownloadProgress.Failed(e.message ?: tr("Download failed"))) }
+                IosPlayerHost.showMessage(tr("Couldn’t download “{0}”", song.title))
             } finally {
                 if (current == song.videoId) current = null
             }
         }
-        if (_progress.value.isEmpty()) IosPlayerHost.showMessage("Downloads finished")
+        if (_progress.value.isEmpty()) IosPlayerHost.showMessage(tr("Downloads finished"))
     }
 
     private suspend fun fetch(song: Song): DownloadedTrack {

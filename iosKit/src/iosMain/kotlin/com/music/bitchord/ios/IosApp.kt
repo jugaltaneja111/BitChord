@@ -216,7 +216,7 @@ internal fun IosApp() {
                         isPlaying = isPlaying,
                         isLoading = loading || party.awaitingStart,
                         controlsLocked = party.controlsLocked,
-                        onBlockedControl = { IosPlayerHost.showMessage("Only the host can change what’s playing") },
+                        onBlockedControl = { IosPlayerHost.showMessage(tr("Only the host can change what’s playing")) },
                         hazeState = hazeState,
                         onPlayPause = IosPlayer::togglePlayPause,
                         onNext = IosPlayer::next,
@@ -324,7 +324,7 @@ private fun HomePage(
         onRefresh = feeds::loadHome,
         pullState = rememberPullToRefreshState(),
         contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
-        title = "Listen Now",
+        title = tr("Listen Now"),
         signedIn = signedIn,
         onSignIn = { IosOverlays.login = true },
         onLoadMore = feeds::loadMoreHome,
@@ -375,8 +375,8 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
         links = listOf(
             LibraryLink(
                 item = ShelfItem(
-                    title = "Downloads",
-                    subtitle = "Songs on this iPhone",
+                    title = tr("Downloads"),
+                    subtitle = tr("Songs on this iPhone"),
                     thumbnailUrl = null,
                     videoId = null,
                     browseId = DOWNLOADS_LINK,
@@ -385,8 +385,8 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
             ),
             LibraryLink(
                 item = ShelfItem(
-                    title = "Local music",
-                    subtitle = "Your own audio files",
+                    title = tr("Local music"),
+                    subtitle = tr("Your own audio files"),
                     thumbnailUrl = null,
                     videoId = null,
                     browseId = LOCAL_MUSIC_LINK,
@@ -542,7 +542,7 @@ private fun SearchSourceSwitch(selected: IosSearch.Source, onSelect: (IosSearch.
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        listOf("YouTube Music" to IosSearch.Source.YOUTUBE, "Addons" to IosSearch.Source.ADDONS, "Library" to IosSearch.Source.LIBRARY).forEach { (label, value) ->
+        listOf("YouTube Music" to IosSearch.Source.YOUTUBE, tr("Addons") to IosSearch.Source.ADDONS, tr("Library") to IosSearch.Source.LIBRARY).forEach { (label, value) ->
             val chosen = selected == value
             Box(
                 Modifier
@@ -561,10 +561,10 @@ private fun SearchSourceSwitch(selected: IosSearch.Source, onSelect: (IosSearch.
 
 private val IosTab.label: String
     get() = when (this) {
-        IosTab.HOME -> "Home"
-        IosTab.EXPLORE -> "Explore"
-        IosTab.LIBRARY -> "Library"
-        IosTab.SEARCH -> "Search"
+        IosTab.HOME -> tr("Home")
+        IosTab.EXPLORE -> tr("Explore")
+        IosTab.LIBRARY -> tr("Library")
+        IosTab.SEARCH -> tr("Search")
     }
 
 private val IosTab.icon: ImageVector

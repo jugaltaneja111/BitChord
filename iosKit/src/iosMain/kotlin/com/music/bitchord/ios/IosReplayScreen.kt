@@ -108,10 +108,10 @@ internal fun ReplayScreen(
         val summary = state.summary
     val leadArtwork = summary?.songs?.firstOrNull()?.song?.thumbnailUrl
     val palette = rememberArtworkColors(leadArtwork)
-    val topSongs = "Top songs"
-    val topArtists = "Top artists"
-    val topAlbums = "Top albums"
-    val topGenres = "Top genres"
+    val topSongs = tr("Top songs")
+    val topArtists = tr("Top artists")
+    val topAlbums = tr("Top albums")
+    val topGenres = tr("Top genres")
 
     // Library cards open this same page, but category cards should land on the
     // corresponding chart rather than making the user find it again. Wait for
@@ -177,7 +177,7 @@ internal fun ReplayScreen(
                         )
                     }
                     item("open") {
-                        ReplayActionRow(BitChordIcons.Play, "Play your Replay", dark) {
+                        ReplayActionRow(BitChordIcons.Play, tr("Play your Replay"), dark) {
                             onOpenStory(ReplayStoryPage.INTRO)
                         }
                     }
@@ -223,7 +223,7 @@ internal fun ReplayScreen(
                     } else if (IosArtistFacts.genresAvailable) {
                         item("genres-pending") {
                             Note(
-                                text = "Genres will appear as your listening history grows",
+                                text = tr("Genres will appear as your listening history grows"),
                                 dark = dark,
                                 modifier = Modifier.padding(horizontal = PAGE_GUTTER + 4.dp),
                             )
@@ -234,7 +234,7 @@ internal fun ReplayScreen(
                     item("share") {
                         ReplayActionRow(
                             Icons.Rounded.IosShare,
-                            "Share my Replay",
+                            tr("Share my Replay"),
                             dark,
                             onShare,
                         )
@@ -254,7 +254,7 @@ private fun Heading(state: ReplayState, onPeriodChange: (ReplayPeriod) -> Unit, 
     Column(Modifier.padding(horizontal = PAGE_GUTTER + 4.dp)) {
         Spacer(Modifier.height(48.dp))
         Text(
-            text = "Replay",
+            text = tr("Replay"),
             style = MaterialTheme.typography.displayLarge,
             fontWeight = FontWeight.W800,
             color = textColor,
@@ -506,21 +506,21 @@ private fun ReplayChartRow(row: ReplayRow, circular: Boolean, dark: Boolean, onC
 @Composable
 private fun Habits(summary: ReplaySummary, dark: Boolean) {
         Column(Modifier.padding(horizontal = PAGE_GUTTER + 4.dp)) {
-        SectionTitleInline("Your listening pattern", dark)
+        SectionTitleInline(tr("Your listening pattern"), dark)
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile("Songs", summary.distinctSongs.toString(), dark, Modifier.weight(1f))
-            StatTile("Artists", summary.distinctArtists.toString(), dark, Modifier.weight(1f))
-            StatTile("Albums", summary.distinctAlbums.toString(), dark, Modifier.weight(1f))
+            StatTile(tr("Songs"), summary.distinctSongs.toString(), dark, Modifier.weight(1f))
+            StatTile(tr("Artists"), summary.distinctArtists.toString(), dark, Modifier.weight(1f))
+            StatTile(tr("Albums"), summary.distinctAlbums.toString(), dark, Modifier.weight(1f))
         }
         summary.peakHour?.let {
             Spacer(Modifier.height(10.dp))
-            Note("You listen most around ${formatHour(it)}.", dark)
+            Note(tr("You listen most around {0}.", formatHour(it)), dark)
         }
         summary.busiestDay?.let {
             Spacer(Modifier.height(6.dp))
             Note(
-                "Your biggest day was ${formatDay(it)} with ${formatListening(summary.busiestDayMs)} of listening.",
+                tr("Your biggest day was {0} with {1} of listening.", formatDay(it), formatListening(summary.busiestDayMs)),
                 dark,
             )
         }
@@ -591,7 +591,7 @@ private fun EmptyReplay(period: ReplayPeriod, dark: Boolean) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Not enough listening yet",
+            text = tr("Not enough listening yet"),
             style = MaterialTheme.typography.titleLarge,
             color = emptyColor,
             textAlign = TextAlign.Center,
@@ -599,9 +599,9 @@ private fun EmptyReplay(period: ReplayPeriod, dark: Boolean) {
         Spacer(Modifier.height(8.dp))
         Text(
             text = when (period) {
-                ReplayPeriod.THIS_WEEK -> "Play a few more songs this week to unlock your Replay."
-                ReplayPeriod.THIS_MONTH -> "Play a few more songs this month to unlock your Replay."
-                else -> "Listen a little more and BitChord will turn your history into a Replay."
+                ReplayPeriod.THIS_WEEK -> tr("Play a few more songs this week to unlock your Replay.")
+                ReplayPeriod.THIS_MONTH -> tr("Play a few more songs this month to unlock your Replay.")
+                else -> tr("Listen a little more and BitChord will turn your history into a Replay.")
             },
             style = MaterialTheme.typography.bodyMedium,
             color = emptyColor.copy(alpha = 0.6f),

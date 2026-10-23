@@ -51,13 +51,13 @@ import com.music.bitchord.ui.components.SearchField
 
 /** How the local songs are listed; stored by name. */
 internal enum class LocalMusicSort(val label: String) {
-    TITLE("Title"),
-    ARTIST("Artist"),
-    ALBUM("Album"),
-    RECENT("Recently added"),
+    TITLE(tr("Title")),
+    ARTIST(tr("Artist")),
+    ALBUM(tr("Album")),
+    RECENT(tr("Recently added")),
 }
 
-private enum class LocalMusicTab(val label: String) { SONGS("Songs"), ARTISTS("Artists"), ALBUMS("Albums") }
+private enum class LocalMusicTab(val label: String) { SONGS(tr("Songs")), ARTISTS(tr("Artists")), ALBUMS(tr("Albums")) }
 
 private const val LOCAL_SOURCE = "Local music"
 
@@ -139,9 +139,8 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
                     PageSpinner()
                 } else {
                     MessageState(
-                        "Play your own audio files. Choose a folder from the Files app, or copy songs into " +
-                            "On My iPhone › BitChord › Music in Files. Settings › Local music has both.",
-                        actionLabel = "Choose a folder",
+                        tr("Play your own audio files. Choose a folder from the Files app, or copy songs into On My iPhone › BitChord › Music in Files. Settings › Local music has both."),
+                        actionLabel = tr("Choose a folder"),
                         onAction = IosLocalMusic::chooseFolder,
                     )
                 }
@@ -153,7 +152,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
                 query = query,
                 onQueryChange = { query = it },
                 onSubmit = {},
-                placeholder = "Songs, artists and albums",
+                placeholder = tr("Songs, artists and albums"),
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
             )
         }
@@ -168,7 +167,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
         }
         when (tab) {
             LocalMusicTab.SONGS -> {
-                if (songs.isEmpty()) item(key = "none") { MessageState("Nothing here matches “${query.trim()}”") }
+                if (songs.isEmpty()) item(key = "none") { MessageState(tr("Nothing here matches “{0}”", query.trim())) }
                 itemsIndexed(songs, key = { _, song -> song.videoId }) { index, song ->
                     val isCurrent = current?.videoId == song.videoId
                     SongRow(song, isCurrent, isCurrent && isPlaying) { IosPlayer.playQueue(songs, index) }
@@ -176,7 +175,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
             }
             LocalMusicTab.ARTISTS -> {
                 val artists = songs.groupBy { it.artist }.entries.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.key })
-                if (artists.isEmpty()) item(key = "none") { MessageState("Nothing here matches “${query.trim()}”") }
+                if (artists.isEmpty()) item(key = "none") { MessageState(tr("Nothing here matches “{0}”", query.trim())) }
                 items(artists, key = { "artist:${it.key}" }) { (artist, tracks) ->
                     GroupRow(
                         title = artist,
@@ -189,12 +188,12 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
             LocalMusicTab.ALBUMS -> {
                 val albums = songs.filter { it.albumName != null }.groupBy { it.albumName!! }.entries
                     .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.key })
-                if (albums.isEmpty()) item(key = "none") { MessageState("No albums: these files’ tags don’t name one") }
+                if (albums.isEmpty()) item(key = "none") { MessageState(tr("No albums: these files’ tags don’t name one")) }
                 items(albums, key = { "album:${it.key}" }) { (album, tracks) ->
                     val artists = tracks.map { it.artist }.distinct()
                     GroupRow(
                         title = album,
-                        subtitle = if (artists.size == 1) artists.first() else "Various artists",
+                        subtitle = if (artists.size == 1) artists.first() else tr("Various artists"),
                         imageUrl = tracks.firstNotNullOfOrNull { it.thumbnailUrl },
                         round = false,
                     ) { navigator.open(IosPage.LocalMusicGroup(album = true, name = album)) }
@@ -227,8 +226,8 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
                 Text(page.name, style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     buildString {
-                        if (page.album) append(if (artists.size == 1) "${artists.first()} · " else "Various artists · ")
-                        append("${songs.size} ${if (songs.size == 1) "song" else "songs"} · On this iPhone")
+                        if (page.album) append(if (artists.size == 1) "${artists.first()} · " else tr("Various artists · "))
+                        append(tr("{0} · On this iPhone", trPlural(songs.size, "{0} song", "{0} songs")))
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -239,7 +238,7 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
                 }
             }
         }
-        if (songs.isEmpty()) item(key = "gone") { MessageState("These songs are no longer on this iPhone") }
+        if (songs.isEmpty()) item(key = "gone") { MessageState(tr("These songs are no longer on this iPhone")) }
         itemsIndexed(songs, key = { _, song -> song.videoId }) { index, song ->
             val isCurrent = current?.videoId == song.videoId
             SongRow(song, isCurrent, isCurrent && isPlaying, trackNumber = song.trackNumber.takeIf { page.album }) {
@@ -304,7 +303,7 @@ private fun SortButton(sort: LocalMusicSort) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(sort.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Sort", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Sort"), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             LocalMusicSort.entries.forEach { option ->

@@ -79,7 +79,7 @@ internal object IosBackup {
             presentShareSheet(listOf(NSURL.fileURLWithPath(path)))
         }.onFailure {
             TrackLog.w("IosBackup", "export failed: ${it.message}")
-            IosPlayerHost.showMessage("Couldn’t export your data")
+            IosPlayerHost.showMessage(tr("Couldn’t export your data"))
         }
     }
 
@@ -104,12 +104,12 @@ internal object IosBackup {
                 restore(text).fold(
                     onSuccess = { (months, settings, playlists) ->
                         if (playlists > 0) {
-                            "Restored $months months of listening, $settings settings and $playlists playlists"
+                            tr("Restored {0} months of listening, {1} settings and {2} playlists", months, settings, playlists)
                         } else {
-                            "Restored $months months of listening and $settings settings"
+                            tr("Restored {0} months of listening and {1} settings", months, settings)
                         }
                     },
-                    onFailure = { it.message ?: "Couldn’t read that backup" },
+                    onFailure = { it.message ?: tr("Couldn’t read that backup") },
                 ),
             )
             pickerDelegate = null

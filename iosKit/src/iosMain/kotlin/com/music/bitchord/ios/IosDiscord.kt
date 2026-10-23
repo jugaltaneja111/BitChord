@@ -322,15 +322,15 @@ internal fun IosDiscordLoginScreen(onClose: () -> Unit) {
             }
             if (token == null) {
                 // The client is still booting and hasn't written the key yet.
-                if (++attempts >= 24) status = "Signed in, but no token was found. Try entering one instead."
+                if (++attempts >= 24) status = tr("Signed in, but no token was found. Try entering one instead.")
                 continue
             }
-            status = "Connecting…"
+            status = tr("Connecting…")
             if (IosDiscord.connect(token)) {
-                IosPlayerHost.showMessage("Discord connected")
+                IosPlayerHost.showMessage(tr("Discord connected"))
                 onClose()
             } else {
-                status = "Discord didn’t accept that sign-in"
+                status = tr("Discord didn’t accept that sign-in")
             }
             break
         }
@@ -340,9 +340,9 @@ internal fun IosDiscordLoginScreen(onClose: () -> Unit) {
             Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface) }
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = tr("Close"), tint = MaterialTheme.colorScheme.onSurface) }
             Column(Modifier.weight(1f)) {
-                Text("Sign in to Discord", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(tr("Sign in to Discord"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
@@ -386,13 +386,13 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
             item {
                 Column(Modifier.padding(horizontal = 20.dp)) {
                     Text(
-                        "Show what you are playing on your Discord profile. Discord has no way for apps to do this, so BitChord signs in as you, like Discord’s own app; your token stays on this phone and goes only to Discord.",
+                        tr("Show what you are playing on your Discord profile. Discord has no way for apps to do this, so BitChord signs in as you, like Discord’s own app; your token stays on this phone and goes only to Discord."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { IosOverlays.discordLogin = true }) { Text("Sign in to Discord") }
-                    TextButton(onClick = { pastingToken = true }) { Text("Enter a token instead") }
+                    Button(onClick = { IosOverlays.discordLogin = true }) { Text(tr("Sign in to Discord")) }
+                    TextButton(onClick = { pastingToken = true }) { Text(tr("Enter a token instead")) }
                 }
             }
         } else {
@@ -412,42 +412,42 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
                         }
                     }
                     Divider()
-                    Toggle("Rich presence", "Show the song you’re playing on your profile", IosSettings.discordRpcEnabled)
+                    Toggle(tr("Rich presence"), tr("Show the song you’re playing on your profile"), IosSettings.discordRpcEnabled)
                     Divider()
-                    ActionRow("Disconnect", destructive = true, onClick = IosDiscord::disconnect)
+                    ActionRow(tr("Disconnect"), destructive = true, onClick = IosDiscord::disconnect)
                 }
             }
             item {
-                Group("Status") {
-                    listOf("online" to "Online", "idle" to "Idle", "dnd" to "Do not disturb", "invisible" to "Invisible").forEachIndexed { i, (value, label) ->
+                Group(tr("Status")) {
+                    listOf("online" to tr("Online"), "idle" to tr("Idle"), "dnd" to tr("Do not disturb"), "invisible" to tr("Invisible")).forEachIndexed { i, (value, label) ->
                         if (i > 0) Divider()
                         Choice(label, status == value) { IosSettings.discordStatus.set(value) }
                     }
                 }
             }
             item {
-                Group("Activity") {
-                    listOf("listening" to "Listening to", "playing" to "Playing", "watching" to "Watching", "competing" to "Competing in").forEachIndexed { i, (value, label) ->
+                Group(tr("Activity")) {
+                    listOf("listening" to tr("Listening to"), "playing" to tr("Playing"), "watching" to tr("Watching"), "competing" to tr("Competing in")).forEachIndexed { i, (value, label) ->
                         if (i > 0) Divider()
                         Choice(label, activityType == value) { IosSettings.discordActivityType.set(value) }
                     }
                     Divider()
-                    ActionRow("Activity name", value = activityName.ifBlank { "BitChord" }) { editing = "Activity name" to IosSettings.discordActivityName }
+                    ActionRow(tr("Activity name"), value = activityName.ifBlank { "BitChord" }) { editing = tr("Activity name") to IosSettings.discordActivityName }
                     Divider()
-                    Toggle("Show the song as the status", "Your status line reads the song instead of the activity name", IosSettings.discordUseDetails)
+                    Toggle(tr("Show the song as the status"), tr("Your status line reads the song instead of the activity name"), IosSettings.discordUseDetails)
                 }
             }
             item {
-                Group("Buttons") {
-                    Toggle("First button", button1.ifBlank { IosDiscord.DEFAULT_BUTTON_1 }, IosSettings.discordButton1Visible)
+                Group(tr("Buttons")) {
+                    Toggle(tr("First button"), button1.ifBlank { IosDiscord.DEFAULT_BUTTON_1 }, IosSettings.discordButton1Visible)
                     Divider()
-                    ActionRow("First button’s text", value = button1.ifBlank { "Default" }) { editing = "First button’s text" to IosSettings.discordButton1Text }
+                    ActionRow(tr("First button’s text"), value = button1.ifBlank { tr("Default") }) { editing = tr("First button’s text") to IosSettings.discordButton1Text }
                     Divider()
-                    Toggle("Second button", button2.ifBlank { IosDiscord.DEFAULT_BUTTON_2 }, IosSettings.discordButton2Visible)
+                    Toggle(tr("Second button"), button2.ifBlank { IosDiscord.DEFAULT_BUTTON_2 }, IosSettings.discordButton2Visible)
                     Divider()
-                    ActionRow("Second button’s text", value = button2.ifBlank { "Default" }) { editing = "Second button’s text" to IosSettings.discordButton2Text }
+                    ActionRow(tr("Second button’s text"), value = button2.ifBlank { tr("Default") }) { editing = tr("Second button’s text") to IosSettings.discordButton2Text }
                 }
-                Footer("Button text can use {song_name}, {artist_name} and {album_name}.")
+                Footer(tr("Button text can use {song_name}, {artist_name} and {album_name}."))
             }
         }
     }
@@ -459,12 +459,12 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
         var checking by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { if (!checking) pastingToken = false },
-            title = { Text("Discord token") },
+            title = { Text(tr("Discord token")) },
             text = {
                 Column {
-                    Text("Use this if the login page does not load.", style = MaterialTheme.typography.bodyMedium)
+                    Text(tr("Use this if the login page does not load."), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true, label = { Text("Token") })
+                    OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true, label = { Text(tr("Token")) })
                     error?.let { Text(it, color = Color(0xFFFF6B6B), style = MaterialTheme.typography.bodySmall) }
                 }
             },
@@ -472,12 +472,12 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
                 TextButton(enabled = input.isNotBlank() && !checking, onClick = {
                     checking = true
                     scope.launch {
-                        if (IosDiscord.connect(input.trim())) pastingToken = false else error = "Discord didn’t accept that token"
+                        if (IosDiscord.connect(input.trim())) pastingToken = false else error = tr("Discord didn’t accept that token")
                         checking = false
                     }
-                }) { Text(if (checking) "Checking…" else "Save") }
+                }) { Text(if (checking) tr("Checking…") else tr("Save")) }
             },
-            dismissButton = { TextButton(enabled = !checking, onClick = { pastingToken = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(enabled = !checking, onClick = { pastingToken = false }) { Text(tr("Cancel")) } },
         )
     }
 
@@ -486,9 +486,9 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text(title) },
-            text = { OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true, placeholder = { Text("Leave empty for the default") }) },
-            confirmButton = { TextButton(onClick = { pref.set(input.trim()); editing = null }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } },
+            text = { OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true, placeholder = { Text(tr("Leave empty for the default")) }) },
+            confirmButton = { TextButton(onClick = { pref.set(input.trim()); editing = null }) { Text(tr("Save")) } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(tr("Cancel")) } },
         )
     }
 }
@@ -497,6 +497,6 @@ internal fun DiscordPage(contentPadding: PaddingValues, topPadding: Dp) {
 private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-        if (selected) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFF0A84FF), modifier = Modifier.size(22.dp))
+        if (selected) Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = Color(0xFF0A84FF), modifier = Modifier.size(22.dp))
     }
 }

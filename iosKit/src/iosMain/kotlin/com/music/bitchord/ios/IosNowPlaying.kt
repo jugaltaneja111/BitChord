@@ -126,7 +126,7 @@ internal fun IosNowPlaying(
             likeStatus = likeStatus,
             onToggleLike = {
                 when {
-                    IosLocalMusic.isLocal(song) -> IosPlayerHost.showMessage("Songs on this iPhone can’t be liked on YouTube Music")
+                    IosLocalMusic.isLocal(song) -> IosPlayerHost.showMessage(tr("Songs on this iPhone can’t be liked on YouTube Music"))
                     signedIn -> IosAccount.toggleLike(song, likeStatus)
                     else -> leaveTo { IosOverlays.login = true }
                 }
@@ -134,7 +134,7 @@ internal fun IosNowPlaying(
             onPlayPause = IosPlayer::togglePlayPause,
             onNext = IosPlayer::next,
             onPrevious = IosPlayer::previous,
-            onBlockedControl = { IosPlayerHost.showMessage("Only the host can change what’s playing") },
+            onBlockedControl = { IosPlayerHost.showMessage(tr("Only the host can change what’s playing")) },
             onSeek = IosPlayer::seekTo,
             onSeekFraction = { fraction ->
                 val duration = IosPlayer.durationMs.value

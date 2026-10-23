@@ -183,7 +183,7 @@ private fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Back"), tint = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -233,7 +233,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                         ),
                     )
                 } else {
-                    UiState.Error(error.message ?: "Could not open this page")
+                    UiState.Error(error.message ?: tr("Could not open this page"))
                 }
             },
         )
@@ -303,8 +303,8 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                 subtitle = loaded?.subtitle ?: page.fallback?.subtitle.orEmpty(),
                 thumbnailUrl = loaded?.thumbnailUrl ?: page.fallback?.thumbnailUrl,
                 typeLabel = when (type) {
-                    BrowseType.ALBUM -> "Album"
-                    BrowseType.PLAYLIST -> "Playlist"
+                    BrowseType.ALBUM -> tr("Album")
+                    BrowseType.PLAYLIST -> tr("Playlist")
                     else -> ""
                 },
                 count = songs.size.takeIf { loaded != null },
@@ -325,7 +325,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
         when (val s = state) {
             UiState.Loading -> songListSkeleton()
             is UiState.Error -> item(key = "error") {
-                MessageState(s.message, actionLabel = "Retry", onAction = { reloads++ })
+                MessageState(s.message, actionLabel = tr("Retry"), onAction = { reloads++ })
             }
             is UiState.Success -> {
                 itemsIndexed(songs, key = { index, song -> "${song.videoId}:$index" }) { index, song ->
@@ -352,7 +352,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                     )
                 }
                 if (songs.isEmpty()) {
-                    item(key = "empty") { MessageState("Nothing to play on this page") }
+                    item(key = "empty") { MessageState(tr("Nothing to play on this page")) }
                 }
                 if (loadingMore) item(key = "more") { PageSpinner() }
             }
@@ -369,7 +369,7 @@ private fun LocalPlaylistPage(page: IosPage.Collection, contentPadding: PaddingV
     val playlists by IosLocalPlaylists.playlists.collectAsState()
     val playlist = remember(playlists, page.browseId) { IosLocalPlaylists.get(page.browseId) }
     val title = playlist?.title ?: page.fallback?.title.orEmpty()
-    val subtitle = "On this device"
+    val subtitle = tr("On this device")
     val thumbnailUrl = playlist?.thumbnailUrl ?: page.fallback?.thumbnailUrl
     // A file on this iPhone takes its cover from the latest scan, which the playlist doesn't keep.
     val localTracks by IosLocalMusic.tracks.collectAsState()
@@ -386,7 +386,7 @@ private fun LocalPlaylistPage(page: IosPage.Collection, contentPadding: PaddingV
                 title = title,
                 subtitle = subtitle,
                 thumbnailUrl = thumbnailUrl,
-                typeLabel = "Playlist",
+                typeLabel = tr("Playlist"),
                 count = songs.size,
                 topInset = topInset,
                 onPlay = { if (songs.isNotEmpty()) IosPlayer.playQueue(songs, 0) },
@@ -399,8 +399,8 @@ private fun LocalPlaylistPage(page: IosPage.Collection, contentPadding: PaddingV
             )
         }
         when {
-            playlist == null -> item(key = "gone") { MessageState("This playlist is no longer on this device") }
-            songs.isEmpty() -> item(key = "empty") { MessageState("No songs yet. Add some with Add to playlist in any song’s menu.") }
+            playlist == null -> item(key = "gone") { MessageState(tr("This playlist is no longer on this device")) }
+            songs.isEmpty() -> item(key = "empty") { MessageState(tr("No songs yet. Add some with Add to playlist in any song’s menu.")) }
             else -> itemsIndexed(songs, key = { index, song -> "${song.videoId}:$index" }) { index, song ->
                 val isCurrent = current?.videoId == song.videoId
                 SongRow(
@@ -461,7 +461,7 @@ internal fun CollectionHeader(
         )
         val meta = listOfNotNull(
             subtitle.takeIf(String::isNotBlank),
-            count?.takeIf { it > 0 }?.let { if (it == 1) "1 song" else "$it songs" },
+            count?.takeIf { it > 0 }?.let { trPlural(it, "{0} song", "{0} songs") },
         ).joinToString(" • ")
         if (meta.isNotBlank()) {
             Spacer(Modifier.height(6.dp))
@@ -497,10 +497,10 @@ internal fun PlayControls(onPlay: () -> Unit, onShuffle: () -> Unit, modifier: M
         ) {
             Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
             Spacer(Modifier.width(6.dp))
-            Text("Play", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleMedium)
+            Text(tr("Play"), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleMedium)
         }
-        CircleAction(BitChordIcons.Shuffle, "Shuffle", onShuffle)
-        onMore?.let { CircleAction(Icons.Rounded.MoreHoriz, "More", it) }
+        CircleAction(BitChordIcons.Shuffle, tr("Shuffle"), onShuffle)
+        onMore?.let { CircleAction(Icons.Rounded.MoreHoriz, tr("More"), it) }
     }
 }
 
@@ -529,7 +529,7 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                 PageCache.put(key, it)
                 state = UiState.Success(it)
             },
-            onFailure = { state = UiState.Error(it.message ?: "Could not open ${page.name}") },
+            onFailure = { state = UiState.Error(it.message ?: tr("Could not open {0}", page.name)) },
         )
     }
     val artist = (state as? UiState.Success)?.data
@@ -551,12 +551,12 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
         when (val s = state) {
             UiState.Loading -> songListSkeleton(count = 5)
             is UiState.Error -> item(key = "error") {
-                MessageState(s.message, actionLabel = "Retry", onAction = { reloads++ })
+                MessageState(s.message, actionLabel = tr("Retry"), onAction = { reloads++ })
             }
             is UiState.Success -> {
                 val stats = listOfNotNull(
-                    s.data.subscriberCountText?.let { "${it.substringBefore(' ')} subscribers" },
-                    s.data.monthlyListenerCount?.let { "${it.substringBefore(' ')} monthly listeners" },
+                    s.data.subscriberCountText?.let { tr("{0} subscribers", it.substringBefore(' ')) },
+                    s.data.monthlyListenerCount?.let { tr("{0} monthly listeners", it.substringBefore(' ')) },
                 ).joinToString(" • ")
                 item(key = "actions") {
                     Column(Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp)) {
@@ -574,7 +574,7 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                     }
                 }
                 if (top.isNotEmpty()) {
-                    item(key = "top-title") { PageSectionTitle("Top songs") }
+                    item(key = "top-title") { PageSectionTitle(tr("Top songs")) }
                     itemsIndexed(top, key = { index, song -> "top:${song.videoId}:$index" }) { index, song ->
                         val isCurrent = current?.videoId == song.videoId
                         SongRow(
@@ -603,7 +603,7 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                 s.data.description?.takeIf(String::isNotBlank)?.let { about ->
                     item(key = "about") {
                         Column {
-                            PageSectionTitle("About")
+                            PageSectionTitle(tr("About"))
                             Text(
                                 about,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -666,13 +666,13 @@ private fun CategoryPage(page: IosPage.Category, navigator: IosNavigator, conten
         YtMusicRepository.moodGenreShelves(item.browseId, item.params).fold(
             onSuccess = { shelves ->
                 if (shelves.isEmpty()) {
-                    state = UiState.Error("Nothing in ${item.title} right now")
+                    state = UiState.Error(tr("Nothing in {0} right now", item.title))
                 } else {
                     PageCache.put(key, shelves)
                     state = UiState.Success(shelves)
                 }
             },
-            onFailure = { state = UiState.Error(it.message ?: "Could not load this category") },
+            onFailure = { state = UiState.Error(it.message ?: tr("Could not load this category")) },
         )
     }
     MoodGenrePlaylistsScreen(
@@ -717,7 +717,7 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
         state = UiState.Loading
         state = YtMusicRepository.history().fold(
             onSuccess = { UiState.Success(it) },
-            onFailure = { UiState.Error(it.message ?: "Could not load your history") },
+            onFailure = { UiState.Error(it.message ?: tr("Could not load your history")) },
         )
     }
     val current by IosPlayer.song.collectAsState()
@@ -728,7 +728,7 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
     ) {
         item(key = "title") {
             Text(
-                "History",
+                tr("History"),
                 style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -737,12 +737,12 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
         when (val s = state) {
             UiState.Loading -> songListSkeleton(count = 10, keyPrefix = "skeleton:history")
             is UiState.Error -> item(key = "error") {
-                MessageState(s.message, actionLabel = "Retry", onAction = { reloads++ })
+                MessageState(s.message, actionLabel = tr("Retry"), onAction = { reloads++ })
             }
             is UiState.Success -> {
                 val songs = s.data
                 if (songs.isEmpty()) {
-                    item(key = "empty") { MessageState("Nothing played on this account yet") }
+                    item(key = "empty") { MessageState(tr("Nothing played on this account yet")) }
                 }
                 itemsIndexed(songs, key = { index, song -> "${song.videoId}:$index" }) { index, song ->
                     val isCurrent = current?.videoId == song.videoId
@@ -750,7 +750,7 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
                         song = song,
                         onClick = {
                             IosPlayer.playQueue(
-                                songs.map { it.copy(playbackSource = "History", playbackSourceType = PlaybackSourceType.HISTORY) },
+                                songs.map { it.copy(playbackSource = tr("History"), playbackSourceType = PlaybackSourceType.HISTORY) },
                                 index,
                             )
                         },
@@ -817,7 +817,7 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
     val songs = tracks.map { track ->
-        IosDownloads.song(track).copy(playbackSource = "Downloads", playbackSourceType = PlaybackSourceType.QUEUE)
+        IosDownloads.song(track).copy(playbackSource = tr("Downloads"), playbackSourceType = PlaybackSourceType.QUEUE)
     }
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -825,9 +825,9 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
     ) {
         item(key = "title") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text("Downloads", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onSurface)
+                Text(tr("Downloads"), style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    "${songs.size} ${if (songs.size == 1) "song" else "songs"} · ${(tracks.sumOf { it.bytes } / (1024 * 1024))} MB on this iPhone",
+                    tr("{0} · {1} MB on this iPhone", trPlural(songs.size, "{0} song", "{0} songs"), tracks.sumOf { it.bytes } / (1024 * 1024)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -843,7 +843,7 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
         if (progress.isNotEmpty()) {
             item(key = "pending:title") {
                 Text(
-                    "Downloading",
+                    tr("Downloading"),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
@@ -863,15 +863,15 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
                         )
                         Text(
                             when (state) {
-                                DownloadProgress.Queued -> "Waiting"
+                                DownloadProgress.Queued -> tr("Waiting")
                                 is DownloadProgress.Running -> "${(state.fraction * 100).toInt()}%"
-                                is DownloadProgress.Failed -> "Failed"
+                                is DownloadProgress.Failed -> tr("Failed")
                             },
                             color = if (state is DownloadProgress.Failed) Color(0xFFFF6B6B) else MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            if (state is DownloadProgress.Failed) "Dismiss" else "Cancel",
+                            if (state is DownloadProgress.Failed) tr("Dismiss") else tr("Cancel"),
                             color = PlayingAccent,
                             modifier = Modifier.clickable { IosDownloads.cancel(videoId) },
                         )
@@ -881,7 +881,7 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
         }
         if (songs.isEmpty() && progress.isEmpty()) {
             item(key = "empty") {
-                MessageState("Songs you download play here with no connection. Hold a song, or open an album’s ⋯, and choose Download.")
+                MessageState(tr("Songs you download play here with no connection. Hold a song, or open an album’s ⋯, and choose Download."))
             }
         }
         itemsIndexed(songs, key = { _, song -> song.videoId }) { index, song ->

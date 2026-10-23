@@ -404,8 +404,8 @@ internal object IosSpotify {
     /** What a save says once it lands: [doneMessage] for YouTube Music, otherwise where it went. */
     fun savedMessage(saved: SavedPlaylist, doneMessage: String): String = when {
         !saved.local -> doneMessage
-        IosAccount.signedIn.value -> "Couldn’t create it on YouTube Music, so “${saved.title}” was saved on this device instead"
-        else -> "Saved “${saved.title}” on this device"
+        IosAccount.signedIn.value -> tr("Couldn’t create it on YouTube Music, so “{0}” was saved on this device instead", saved.title)
+        else -> tr("Saved “{0}” on this device", saved.title)
     }
 }
 
@@ -444,7 +444,7 @@ internal fun IosSpotifyLoginScreen(onClose: () -> Unit) {
     val delegate = remember {
         SpotifyLoginDelegate { cookie ->
             IosSpotify.connect(cookie)
-            IosPlayerHost.showMessage("Spotify connected")
+            IosPlayerHost.showMessage(tr("Spotify connected"))
             onClose()
         }
     }
@@ -454,9 +454,9 @@ internal fun IosSpotifyLoginScreen(onClose: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Rounded.Close, contentDescription = tr("Close"), tint = MaterialTheme.colorScheme.onSurface)
             }
-            Text("Sign in to Spotify", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(tr("Sign in to Spotify"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
         }
         UIKitView(
             factory = {
@@ -493,7 +493,7 @@ internal fun SpotifyPage(navigator: IosNavigator, contentPadding: PaddingValues,
         error = null
         runCatching { SpotifyLibrary.playlists() }
             .onSuccess { playlists = it }
-            .onFailure { error = it.message ?: "Could not load your Spotify library" }
+            .onFailure { error = it.message ?: tr("Could not load your Spotify library") }
         loading = false
     }
     LazyColumn(
@@ -512,12 +512,12 @@ internal fun SpotifyPage(navigator: IosNavigator, contentPadding: PaddingValues,
             item {
                 Column(Modifier.padding(horizontal = 20.dp)) {
                     Text(
-                        "Sign in to load your playlists. Playback uses YouTube Music.",
+                        tr("Sign in to load your playlists. Playback uses YouTube Music."),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { IosOverlays.spotifyLogin = true }) { Text("Sign in to Spotify") }
+                    Button(onClick = { IosOverlays.spotifyLogin = true }) { Text(tr("Sign in to Spotify")) }
                 }
             }
         } else {
@@ -573,11 +573,11 @@ internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: 
         launch { runCatching { SpotifyLibrary.cover(page.id) }.getOrNull()?.let { cover = it } }
         val tracks = runCatching { SpotifyLibrary.tracks(page.id) { soFar -> rows = soFar.map { it.pending() } } }
             .getOrElse {
-                error = it.message ?: "Could not load this playlist"
+                error = it.message ?: tr("Could not load this playlist")
                 return@LaunchedEffect
             }
         if (tracks.isEmpty()) {
-            error = "This playlist has no tracks"
+            error = tr("This playlist has no tracks")
             return@LaunchedEffect
         }
         rows = tracks.map { it.pending() }
@@ -605,7 +605,7 @@ internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: 
                 title = page.title,
                 subtitle = "Spotify",
                 thumbnailUrl = cover,
-                typeLabel = "Playlist",
+                typeLabel = tr("Playlist"),
                 count = all.size.takeIf { rows != null },
                 topInset = topInset,
                 onPlay = { IosPlayer.playQueue(playable, 0) },
@@ -616,7 +616,7 @@ internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: 
                         saving = true
                         scope.launch {
                             val saved = IosSpotify.saveAsPlaylist(page.title, PlaylistPrivacy.PRIVATE, playable)
-                            IosPlayerHost.showMessage(IosSpotify.savedMessage(saved, "Saved “${page.title}” to your library"))
+                            IosPlayerHost.showMessage(IosSpotify.savedMessage(saved, tr("Saved “{0}” to your library", page.title)))
                             if (saved.local) onOpen(saved.page())
                             saving = false
                         }
@@ -633,7 +633,7 @@ internal fun SpotifyPlaylistPage(page: IosPage.SpotifyPlaylist, contentPadding: 
             val missing = song.videoId.startsWith(MISSING_PREFIX)
             val isCurrent = current?.videoId == song.videoId
             SongRow(
-                    song = if (missing) song.copy(artist = "Not on YouTube Music · ${song.artist}") else song,
+                    song = if (missing) song.copy(artist = tr("Not on YouTube Music · {0}", song.artist)) else song,
                     onClick = {
                         if (!waiting && !missing) {
                             IosPlayer.playQueue(playable, playable.indexOfFirst { it.videoId == song.videoId }.coerceAtLeast(0))
@@ -680,29 +680,29 @@ internal fun SpotifyImportDialog(onDismiss: () -> Unit, onOpen: (IosPage) -> Uni
     fun start() {
         val id = SpotifyImporter.extractPlaylistId(link)
         if (id == null) {
-            status = "That isn’t a Spotify playlist link"
+            status = tr("That isn’t a Spotify playlist link")
             failed = true
             return
         }
         working = true
         failed = false
-        status = "Reading the playlist…"
+        status = tr("Reading the playlist…")
         scope.launch {
             try {
                 val (name, tracks) = SpotifyImporter.fetchPlaylistTracks(id)
                 val (songs, missed) = SpotifyImporter.resolveToSongs(tracks) { done, total ->
-                    status = "Matching songs… $done of $total"
+                    status = tr("Matching songs… {0} of {1}", done, total)
                 }
                 if (songs.isEmpty()) error("None of its songs were found on YouTube Music")
-                status = "Saving…"
+                status = tr("Saving…")
                 val saved = IosSpotify.saveAsPlaylist(name, PlaylistPrivacy.PRIVATE, songs)
-                IosPlayerHost.showMessage(IosSpotify.savedMessage(saved, "Imported “$name”"))
+                IosPlayerHost.showMessage(IosSpotify.savedMessage(saved, tr("Imported “{0}”", name)))
                 if (saved.local) onOpen(saved.page())
                 if (missed.isEmpty()) onDismiss() else unmatched = missed
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                status = "Import failed: ${e.message.orEmpty()}"
+                status = tr("Import failed: {0}", e.message.orEmpty())
                 failed = true
             }
             working = false
@@ -711,12 +711,12 @@ internal fun SpotifyImportDialog(onDismiss: () -> Unit, onOpen: (IosPage) -> Uni
 
     AlertDialog(
         onDismissRequest = { if (!working) onDismiss() },
-        title = { Text("Import from Spotify") },
+        title = { Text(tr("Import from Spotify")) },
         text = {
             Column {
                 val missed = unmatched
                 if (missed != null) {
-                    Text("${missed.size} songs weren’t found on YouTube Music:", style = MaterialTheme.typography.bodyMedium)
+                    Text(trPlural(missed.size, "{0} song wasn’t found on YouTube Music:", "{0} songs weren’t found on YouTube Music:"), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                     Column(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
                         missed.forEach { track ->
@@ -728,9 +728,9 @@ internal fun SpotifyImportDialog(onDismiss: () -> Unit, onOpen: (IosPage) -> Uni
                         }
                     }
                 } else {
-                    Text("Paste a link to a public Spotify playlist. Its songs are found on YouTube Music and saved as a playlist ${if (signedIn) "in your library" else "on this device"}.", style = MaterialTheme.typography.bodyMedium)
+                    Text(if (signedIn) tr("Paste a link to a public Spotify playlist. Its songs are found on YouTube Music and saved as a playlist in your library.") else tr("Paste a link to a public Spotify playlist. Its songs are found on YouTube Music and saved as a playlist on this device."), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(value = link, onValueChange = { link = it }, singleLine = true, enabled = !working, label = { Text("Playlist link") })
+                    OutlinedTextField(value = link, onValueChange = { link = it }, singleLine = true, enabled = !working, label = { Text(tr("Playlist link")) })
                     status?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(it, style = MaterialTheme.typography.bodySmall, color = if (failed) Color(0xFFFF6B6B) else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -740,13 +740,13 @@ internal fun SpotifyImportDialog(onDismiss: () -> Unit, onOpen: (IosPage) -> Uni
         },
         confirmButton = {
             if (unmatched != null) {
-                TextButton(onClick = onDismiss) { Text("Done") }
+                TextButton(onClick = onDismiss) { Text(tr("Done")) }
             } else {
-                TextButton(enabled = !working && link.isNotBlank(), onClick = ::start) { Text(if (working) "Importing…" else "Import") }
+                TextButton(enabled = !working && link.isNotBlank(), onClick = ::start) { Text(if (working) tr("Importing…") else tr("Import")) }
             }
         },
         dismissButton = {
-            if (unmatched == null) TextButton(enabled = !working, onClick = onDismiss) { Text("Cancel") }
+            if (unmatched == null) TextButton(enabled = !working, onClick = onDismiss) { Text(tr("Cancel")) }
         },
     )
 }

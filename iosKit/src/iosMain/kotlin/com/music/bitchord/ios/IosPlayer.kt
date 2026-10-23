@@ -234,7 +234,7 @@ internal object IosPlayer {
     /** A guest in a party whose host keeps the controls: refused, and told why. */
     private fun refusedByHost(): Boolean {
         if (applyingParty || !IosListenTogether.state.value.controlsLocked) return false
-        IosPlayerHost.showMessage("Only the host can change what’s playing")
+        IosPlayerHost.showMessage(tr("Only the host can change what’s playing"))
         return true
     }
 
@@ -370,7 +370,7 @@ internal object IosPlayer {
         _queue.value = queue.take(index + 1) + songs + queue.drop(index + 1)
         unshuffled = unshuffled?.plus(songs)
         intent()
-        IosPlayerHost.showMessage(if (songs.size == 1) "Playing next" else "${songs.size} songs playing next")
+        IosPlayerHost.showMessage(if (songs.size == 1) tr("Playing next") else trPlural(songs.size, "{0} song will play next", "{0} songs will play next"))
     }
 
     /** [songs] at the end of the queue; they start now if nothing is playing. */
@@ -383,7 +383,7 @@ internal object IosPlayer {
         _queue.value = _queue.value + songs
         unshuffled = unshuffled?.plus(songs)
         intent()
-        IosPlayerHost.showMessage(if (songs.size == 1) "Added to queue" else "${songs.size} songs added to queue")
+        IosPlayerHost.showMessage(if (songs.size == 1) tr("Added to queue") else trPlural(songs.size, "Added {0} song to the queue", "Added {0} songs to the queue"))
     }
 
     /** A swiped row: the end of the queue, or next with "Play next on swipe". */
@@ -799,7 +799,7 @@ internal object IosPlayer {
                 }
                 val stream = networkStream(audio)
                 if (stream == null) {
-                    fail("No playable stream for this track")
+                    fail(tr("No playable stream for this track"))
                     return@launch
                 }
                 TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.kbps} kbps")
@@ -856,7 +856,7 @@ internal object IosPlayer {
         val song = _song.value ?: return
         if (inParty || _versionSwitching.value) return
         if (engine.isBlending) {
-            IosPlayerHost.showMessage("Try again once this transition ends")
+            IosPlayerHost.showMessage(tr("Try again once this transition ends"))
             return
         }
         versionJob?.cancel()
@@ -865,7 +865,7 @@ internal object IosPlayer {
             try {
                 val found = alternateVersion(song)
                 if (found == null) {
-                    IosPlayerHost.showMessage(if (song.isVideo) "No audio version found" else "No video version found")
+                    IosPlayerHost.showMessage(if (song.isVideo) tr("No audio version found") else tr("No video version found"))
                     return@launch
                 }
                 val target = found.copy(
@@ -892,7 +892,7 @@ internal object IosPlayer {
                 val local = onPhone(target.videoId)
                 val stream = if (local == null) networkStream(target) else null
                 if (local == null && stream == null) {
-                    IosPlayerHost.showMessage("Couldn’t load the other version")
+                    IosPlayerHost.showMessage(tr("Couldn’t load the other version"))
                     return@launch
                 }
                 if (_song.value?.videoId != song.videoId) return@launch

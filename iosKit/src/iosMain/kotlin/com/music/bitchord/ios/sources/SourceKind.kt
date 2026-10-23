@@ -1,5 +1,7 @@
 package com.music.bitchord.ios.sources
 
+import com.music.bitchord.ios.tr
+
 /**
  * The kinds of source this build knows how to talk to.
  *
@@ -63,10 +65,9 @@ internal enum class SourceKind(
      * app fell back to.
      */
     ADDON(
-        label = "Addon",
-        detail = "An addon server you host or were given a link to. Searched and streamed over " +
-            "plain HTTP — no code is downloaded or run.",
-        labels = listOf("FLAC", "Lossless", "Hi-Res"),
+        label = tr("Addon"),
+        detail = tr("An addon server you host or were given a link to. Searched and streamed over plain HTTP — no code is downloaded or run."),
+        labels = listOf("FLAC", tr("Lossless"), "Hi-Res"),
         needsServer = true,
         canServeLossless = true,
         // Literal, not [USER_ADDED]: an enum entry is constructed before
@@ -76,8 +77,8 @@ internal enum class SourceKind(
 
     JIOSAAVN(
         label = "JioSaavn",
-        detail = "Optional JioSaavn streams up to 320kbps AAC/MP4. Catalogue matching can select the wrong song.",
-        labels = listOf("High Quality", "320kbps"),
+        detail = tr("Optional JioSaavn streams up to 320kbps AAC/MP4. Catalogue matching can select the wrong song."),
+        labels = listOf(tr("High Quality"), "320kbps"),
         needsServer = false,
         canServeLossless = false,
         worthPrefetching = true,
@@ -95,9 +96,8 @@ internal enum class SourceKind(
      */
     YOUTUBE(
         label = "YouTube Music",
-        detail = "The full catalogue, as AAC up to about 256 kbps. Lossy — there is no " +
-            "lossless rendition to ask for.",
-        labels = listOf("Lossy", "Full catalogue", "Radio"),
+        detail = tr("The full catalogue, as AAC up to about 256 kbps. Lossy — there is no lossless rendition to ask for."),
+        labels = listOf(tr("Lossy"), tr("Full catalogue"), tr("Radio")),
         needsServer = false,
         canServeLossless = false,
         rank = 3,

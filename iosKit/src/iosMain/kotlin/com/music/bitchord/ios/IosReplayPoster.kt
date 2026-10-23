@@ -214,9 +214,9 @@ private fun drawHabits(canvas: Canvas, type: Type, summary: ReplaySummary, top: 
         type.body(42f, 0x99FFFFFF.toInt()).draw(canvas, label, MARGIN, y + 56f, CONTENT_W)
         y += 176f
     }
-    if (summary.distinctAlbums > 0) stat(grouped(summary.distinctAlbums.toLong()), "Different albums")
-    summary.busiestDay?.let { stat(formatDay(it), "Your biggest day: ${formatListening(summary.busiestDayMs)}") }
-    summary.peakHour?.let { stat(formatHour(it), "When you listen the most") }
+    if (summary.distinctAlbums > 0) stat(grouped(summary.distinctAlbums.toLong()), tr("Different albums"))
+    summary.busiestDay?.let { stat(formatDay(it), tr("Your biggest day: {0}", formatListening(summary.busiestDayMs))) }
+    summary.peakHour?.let { stat(formatHour(it), tr("When you listen the most")) }
 }
 
 private fun drawRecap(canvas: Canvas, type: Type, summary: ReplaySummary, top: Float) {
@@ -226,11 +226,11 @@ private fun drawRecap(canvas: Canvas, type: Type, summary: ReplaySummary, top: F
         type.body(52f, WHITE, bold = true).draw(canvas, value, MARGIN + 320f, y, CONTENT_W - 320f)
         y += 96f
     }
-    line("Minutes", formatMinutes(summary.totalMs))
-    summary.songs.firstOrNull()?.let { line("Top song", it.song.title) }
-    summary.artists.firstOrNull()?.let { line("Top artist", it.title) }
-    summary.albums.firstOrNull()?.let { line("Top album", it.title) }
-    summary.genres.firstOrNull()?.let { line("Top genre", it.title) }
+    line(tr("Minutes"), formatMinutes(summary.totalMs))
+    summary.songs.firstOrNull()?.let { line(tr("Top song"), it.song.title) }
+    summary.artists.firstOrNull()?.let { line(tr("Top artist"), it.title) }
+    summary.albums.firstOrNull()?.let { line(tr("Top album"), it.title) }
+    summary.genres.firstOrNull()?.let { line(tr("Top genre"), it.title) }
 }
 
 /** The covers the opening cards scatter: three sleeves, then three faces not already among them. */
@@ -340,7 +340,7 @@ private fun withAlpha(color: Int, alpha: Int): Int = (color and 0x00FFFFFF) or (
 
 private fun drawHeader(canvas: Canvas, type: Type, summary: ReplaySummary, holder: String, memberSince: String?): Float {
     val label = summary.localizedLabel()
-    val title = if (label.length == 4 && label.all { it.isDigit() }) "Replay ${label.takeLast(2)}" else "Replay · $label"
+    val title = if (label.length == 4 && label.all { it.isDigit() }) tr("Replay {0}", label.takeLast(2)) else tr("Replay · {0}", label)
     val brand = type.heading(46f, 0xE6FFFFFF.toInt())
     val wordWidth = brand.width(BRAND)
     brand.draw(canvas, BRAND, POSTER_W - MARGIN, 132f, rightAligned = true)
@@ -350,8 +350,8 @@ private fun drawHeader(canvas: Canvas, type: Type, summary: ReplaySummary, holde
     type.heading(46f, WHITE).draw(canvas, title, MARGIN, 132f, markLeft - MARGIN - 24f)
 
     val credit = listOfNotNull(
-        holder.ifBlank { "BitChord listener" },
-        memberSince?.let { "Member since $it" },
+        holder.ifBlank { tr("BitChord listener") },
+        memberSince?.let { tr("Member since {0}", it) },
     ).joinToString(" · ")
     type.label(24f, 0x8CFFFFFF.toInt()).draw(canvas, credit.uppercase(), MARGIN, 182f, CONTENT_W)
     return 300f
@@ -359,7 +359,7 @@ private fun drawHeader(canvas: Canvas, type: Type, summary: ReplaySummary, holde
 
 private fun drawTotals(canvas: Canvas, type: Type, summary: ReplaySummary, top: Float): Float {
     type.heading(148f, WHITE).draw(canvas, formatMinutes(summary.totalMs), MARGIN, top + 120f)
-    type.label(30f, 0xB3FFFFFF.toInt(), tracking = 0.14f).draw(canvas, "MINUTES LISTENED", MARGIN, top + 176f)
+    type.label(30f, 0xB3FFFFFF.toInt(), tracking = 0.14f).draw(canvas, tr("MINUTES LISTENED"), MARGIN, top + 176f)
     type.body(30f, 0x99FFFFFF.toInt()).draw(
         canvas,
         "${replayCount(summary.totalPlays, "replay_play_count")} · " +
@@ -384,8 +384,8 @@ private fun drawColumns(
     val columnWidth = (POSTER_W - MARGIN * 2 - COLUMN_GAP) / 2f
     val right = MARGIN + columnWidth + COLUMN_GAP
     val heading = type.label(28f, 0xB3FFFFFF.toInt(), tracking = 0.16f)
-    heading.draw(canvas, "TOP SONGS", MARGIN, top)
-    heading.draw(canvas, "TOP ARTISTS", right, top)
+    heading.draw(canvas, tr("TOP SONGS"), MARGIN, top)
+    heading.draw(canvas, tr("TOP ARTISTS"), right, top)
 
     var y = top + 54f
     repeat(maxOf(songs.size, artists.size)) { index ->
@@ -419,7 +419,7 @@ private fun drawRow(
 
 private fun drawAlbums(canvas: Canvas, type: Type, albums: List<ReplayRow>, covers: Map<String, SkiaImage>, top: Float): Float {
     if (albums.isEmpty()) return top
-    type.label(28f, 0xB3FFFFFF.toInt(), tracking = 0.16f).draw(canvas, "TOP ALBUMS", MARGIN, top)
+    type.label(28f, 0xB3FFFFFF.toInt(), tracking = 0.16f).draw(canvas, tr("TOP ALBUMS"), MARGIN, top)
     val size = 200f
     val gap = (POSTER_W - MARGIN * 2 - size * POSTER_ALBUMS) / (POSTER_ALBUMS - 1)
     val y = top + 40f
@@ -435,7 +435,7 @@ private fun drawAlbums(canvas: Canvas, type: Type, albums: List<ReplayRow>, cove
 private fun drawGenres(canvas: Canvas, type: Type, summary: ReplaySummary, top: Float) {
     val genres = summary.genreRows(POSTER_GENRES)
     if (genres.isEmpty()) return
-    type.label(28f, 0xB3FFFFFF.toInt(), tracking = 0.16f).draw(canvas, "TOP GENRES", MARGIN, top)
+    type.label(28f, 0xB3FFFFFF.toInt(), tracking = 0.16f).draw(canvas, tr("TOP GENRES"), MARGIN, top)
     val name = type.body(32f, WHITE, bold = true)
     val chip = Paint().apply {
         isAntiAlias = true
@@ -454,7 +454,7 @@ private fun drawGenres(canvas: Canvas, type: Type, summary: ReplaySummary, top: 
 
 private fun drawFooter(canvas: Canvas, type: Type) {
     type.label(24f, 0x73FFFFFF, tracking = 0.08f)
-        .draw(canvas, "Counted on this device with BitChord", MARGIN, POSTER_H - 64f, CONTENT_W)
+        .draw(canvas, tr("Counted on this device with BitChord"), MARGIN, POSTER_H - 64f, CONTENT_W)
 }
 
 // ── Pieces ──────────────────────────────────────────────────────────────────

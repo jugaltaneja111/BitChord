@@ -129,7 +129,7 @@ internal class IosSearch {
         if (addons) {
             _addonHistory.value = (listOf(text) + _addonHistory.value.filter { it != text }).take(MAX_HISTORY)
             if (!IosSources.hasSearchableAddons()) {
-                _addonResults.value = UiState.Error("No addons are enabled. Add one in Settings → Sources.")
+                _addonResults.value = UiState.Error(tr("No addons are enabled. Add one in Settings → Sources."))
                 return
             }
             _addonResults.value = UiState.Loading
@@ -143,7 +143,7 @@ internal class IosSearch {
                     continuation = page.continuation
                     _results.value = UiState.Success(page.rows)
                 }
-                .onFailure { _results.value = UiState.Error(it.message ?: "Search failed") }
+                .onFailure { _results.value = UiState.Error(it.message ?: tr("Search failed")) }
         }
     }
 

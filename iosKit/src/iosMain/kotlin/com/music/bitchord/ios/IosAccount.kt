@@ -286,7 +286,7 @@ internal object IosAccount {
                 }
                 .onFailure {
                     if (!quietly || _library.value !is UiState.Success) {
-                        _library.value = UiState.Error(it.message ?: "Could not load your library")
+                        _library.value = UiState.Error(it.message ?: tr("Could not load your library"))
                     }
                 }
         }
@@ -301,8 +301,7 @@ internal object IosAccount {
                 title = title,
                 subtitle = when (songs.size) {
                     0 -> ""
-                    1 -> "1 song"
-                    else -> "${songs.size} songs"
+                    else -> trPlural(songs.size, "{0} song", "{0} songs")
                 },
                 thumbnailUrl = songs.firstOrNull()?.thumbnailUrl,
                 videoId = null,
@@ -392,7 +391,7 @@ internal object IosAccount {
             YtMusicRepository.rate(song.videoId, next).onFailure {
                 TrackLog.w(TAG, "${song.videoId}: rating refused: ${it.message}")
                 LikeState.set(song.videoId, current)
-                IosPlayerHost.showMessage("Could not update your likes")
+                IosPlayerHost.showMessage(tr("Could not update your likes"))
             }
         }
     }

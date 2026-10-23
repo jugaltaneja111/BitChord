@@ -111,49 +111,49 @@ private fun runs(vararg parts: Pair<String, Boolean>): List<HeadlineRun> =
 /** The sentence at the top of [page]. */
 internal fun ReplaySummary.storyHeadline(page: ReplayStoryPage): List<HeadlineRun> = when (page) {
     ReplayStoryPage.INTRO -> runs(
-        "Your" to false,
+        tr("Your") to false,
         " " to false,
-        "Replay" to true,
+        tr("Replay") to true,
         " " to false,
         "is ready." to false,
     )
     ReplayStoryPage.MINUTES -> runs(
-        "You spent" to false,
+        tr("You spent") to false,
         " " to false,
         pluralText("replay_minutes_unit", formatMinutes(totalMs).replace(",", "").toIntOrNull() ?: 0, formatMinutes(totalMs)) to true,
         " " to false,
         "with music." to false,
     )
     ReplayStoryPage.SONGS -> runs(
-        "In total," to false,
+        tr("In total,") to false,
         " " to false,
         replayCount(totalPlays, "replay_song_count") to true,
         " " to false,
         (if (period == ReplayPeriod.THIS_WEEK) "filled your week." else "filled your month.") to false,
     )
     ReplayStoryPage.ARTISTS -> runs(
-        (if (period == ReplayPeriod.THIS_WEEK) "This week," else "All month,") to false,
+        (if (period == ReplayPeriod.THIS_WEEK) tr("This week,") else tr("All month,")) to false,
         " " to false,
-        "One artist" to true,
+        tr("One artist") to true,
         " " to false,
         "kept coming back." to false,
     )
     ReplayStoryPage.ALBUMS -> runs(
-        "This time," to false,
+        tr("This time,") to false,
         " " to false,
-        "One album" to true,
+        tr("One album") to true,
         " " to false,
         "held your attention." to false,
     )
     ReplayStoryPage.GENRES -> runs(
-        "Together," to false,
+        tr("Together,") to false,
         " " to false,
-        "Your genres" to true,
+        tr("Your genres") to true,
         " " to false,
         "shaped your sound." to false,
     )
     ReplayStoryPage.HABITS -> runs(
-        "You explored" to false,
+        tr("You explored") to false,
         " " to false,
         replayCount(distinctSongs, "replay_song_count") to true,
         " " to false,
@@ -163,7 +163,7 @@ internal fun ReplaySummary.storyHeadline(page: ReplayStoryPage): List<HeadlineRu
         "." to false,
     )
     ReplayStoryPage.SUMMARY -> runs(
-        "Your" to false,
+        tr("Your") to false,
         " " to false,
         if (period == ReplayPeriod.THIS_WEEK) "week" to true else label to true,
         if (period == ReplayPeriod.THIS_WEEK) " in music." to false else " in music." to false,
@@ -171,25 +171,25 @@ internal fun ReplaySummary.storyHeadline(page: ReplayStoryPage): List<HeadlineRu
 }
 
 internal fun ReplayPeriod.localizedChip(): String = when (this) {
-    ReplayPeriod.THIS_WEEK -> "This week"
-    ReplayPeriod.THIS_MONTH -> "This month"
-    ReplayPeriod.THIS_YEAR -> "This year"
-    ReplayPeriod.ALL_TIME -> "All time"
+    ReplayPeriod.THIS_WEEK -> tr("This week")
+    ReplayPeriod.THIS_MONTH -> tr("This month")
+    ReplayPeriod.THIS_YEAR -> tr("This year")
+    ReplayPeriod.ALL_TIME -> tr("All time")
 }
 
 /** The period picker's short names, as the phone's current build words them. */
 internal fun ReplayPeriod.chipLabel(): String = when (this) {
-    ReplayPeriod.THIS_WEEK -> "Weekly"
-    ReplayPeriod.THIS_MONTH -> "Monthly"
-    ReplayPeriod.THIS_YEAR -> "Yearly"
-    ReplayPeriod.ALL_TIME -> "Lifetime"
+    ReplayPeriod.THIS_WEEK -> tr("Weekly")
+    ReplayPeriod.THIS_MONTH -> tr("Monthly")
+    ReplayPeriod.THIS_YEAR -> tr("Yearly")
+    ReplayPeriod.ALL_TIME -> tr("Lifetime")
 }
 
 internal fun ReplaySummary.localizedLabel(): String = when (period) {
-    ReplayPeriod.THIS_WEEK -> "This week"
+    ReplayPeriod.THIS_WEEK -> tr("This week")
     ReplayPeriod.THIS_MONTH -> Day.today().let { "${it.monthKey.name} ${it.year}" }
     ReplayPeriod.THIS_YEAR -> Day.today().year.toString()
-    ReplayPeriod.ALL_TIME -> "All time"
+    ReplayPeriod.ALL_TIME -> tr("All time")
 }
 
 /**
@@ -262,9 +262,9 @@ internal enum class ReplayStoryPage {
 internal fun formatListening(ms: Long): String {
     val minutes = ms / 60_000
     return when {
-        minutes < 60 -> "${minutes} min"
-        minutes < 1_440 -> "${minutes / 60}h ${minutes % 60}m"
-        else -> "${grouped(minutes)} min"
+        minutes < 60 -> tr("{0} min", minutes)
+        minutes < 1_440 -> tr("{0}h {1}m", minutes / 60, minutes % 60)
+        else -> tr("{0} min", grouped(minutes))
     }
 }
 
@@ -279,10 +279,10 @@ internal fun grouped(value: Long): String {
 
 /** "3 pm", "midnight" — an hour of the day said the way anyone would say it. */
 internal fun formatHour(hour: Int): String = when (hour) {
-    0 -> "midnight"
-    12 -> "midday"
-    in 1..11 -> "${hour} AM"
-    else -> "${hour - 12} PM"
+    0 -> tr("midnight")
+    12 -> tr("midday")
+    in 1..11 -> tr("{0} AM", hour)
+    else -> tr("{0} PM", hour - 12)
 }
 
 /** `2026-08-14` as "14 August". */
@@ -295,10 +295,10 @@ internal fun replayCount(count: Int, plural: String): String = pluralText(plural
 internal fun pluralText(plural: String, count: Int, formatted: String): String {
     val one = count == 1
     return when (plural) {
-        "replay_artist_count" -> if (one) "$formatted artist" else "$formatted artists"
-        "replay_minutes_unit" -> if (one) "$formatted minute" else "$formatted minutes"
-        "replay_play_count" -> if (one) "$formatted Play" else "$formatted Plays"
-        "replay_song_count" -> if (one) "$formatted song" else "$formatted songs"
+        "replay_artist_count" -> trPlural(count, "{0} artist", "{0} artists", formatted)
+        "replay_minutes_unit" -> trPlural(count, "{0} minute", "{0} minutes", formatted)
+        "replay_play_count" -> trPlural(count, "{0} Play", "{0} Plays", formatted)
+        "replay_song_count" -> trPlural(count, "{0} song", "{0} songs", formatted)
         else -> formatted
     }
 }
@@ -405,7 +405,7 @@ internal data class ReplayHeroCard(
 internal fun ReplaySummary.cards(): List<ReplayHeroCard> = buildList {
     add(
         ReplayHeroCard(
-            label = "Minutes listened",
+            label = tr("Minutes listened"),
             value = formatMinutes(totalMs),
             detail = "${replayCount(totalPlays, "replay_play_count")} · " +
                 localizedLabel(),
@@ -416,7 +416,7 @@ internal fun ReplaySummary.cards(): List<ReplayHeroCard> = buildList {
     songs.firstOrNull()?.let {
         add(
             ReplayHeroCard(
-                label = "Top song",
+                label = tr("Top song"),
                 value = it.song.title,
                 detail = "${it.song.artist} · ${replayCount(it.plays, "replay_play_count")}",
                 artworkUrl = it.song.thumbnailUrl,
@@ -427,7 +427,7 @@ internal fun ReplaySummary.cards(): List<ReplayHeroCard> = buildList {
     artists.firstOrNull()?.let {
         add(
             ReplayHeroCard(
-                label = "Top artist",
+                label = tr("Top artist"),
                 value = it.title,
                 detail = "${formatListening(it.ms)} · " +
                     replayCount(it.plays, "replay_play_count"),
@@ -439,7 +439,7 @@ internal fun ReplaySummary.cards(): List<ReplayHeroCard> = buildList {
     albums.firstOrNull()?.let {
         add(
             ReplayHeroCard(
-                label = "Top album",
+                label = tr("Top album"),
                 value = it.title,
                 detail = listOfNotNull(it.subtitle, formatListening(it.ms)).joinToString(" · "),
                 artworkUrl = it.artworkUrl,

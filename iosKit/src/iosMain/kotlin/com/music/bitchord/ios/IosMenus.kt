@@ -305,7 +305,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
         if (canSwitch && (!alternateLoaded || alternate != null)) {
             MenuRow(
                 if (song.isVideo) Icons.Rounded.MusicNote else Icons.Rounded.Videocam,
-                if (song.isVideo) "Convert to audio" else "Convert to video",
+                if (song.isVideo) tr("Convert to audio") else tr("Convert to video"),
                 colors,
                 loading = !alternateLoaded,
             ) {
@@ -319,25 +319,25 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             val disliked = likeStatus == LikeStatus.DISLIKE
             MenuRow(
                 if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                if (liked) "Remove from Liked" else "Like",
+                if (liked) tr("Remove from Liked") else tr("Like"),
                 colors,
                 tint = if (liked) colors.accent else null,
             ) { IosAccount.toggleLike(song, likeStatus) }
             MenuRow(
                 if (disliked) Icons.Rounded.ThumbDown else Icons.Rounded.ThumbDownOffAlt,
-                if (disliked) "Undo dislike" else "Dislike",
+                if (disliked) tr("Undo dislike") else tr("Dislike"),
                 colors,
                 tint = if (disliked) colors.accent else null,
             ) { IosAccount.toggleDislike(song, likeStatus) }
         }
-        MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", colors) {
+        MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, tr("Add to playlist"), colors) {
             leave { IosMenus.addToPlaylist = listOf(song) }
         }
         if (localPlaylistId != null) {
-            MenuRow(Icons.Rounded.PlaylistRemove, "Remove from playlist", colors) {
+            MenuRow(Icons.Rounded.PlaylistRemove, tr("Remove from playlist"), colors) {
                 leave {
                     IosLocalPlaylists.remove(localPlaylistId, song.videoId)
-                    IosPlayerHost.showMessage("Removed from playlist")
+                    IosPlayerHost.showMessage(tr("Removed from playlist"))
                     request.onRemoved?.invoke()
                 }
             }
@@ -346,16 +346,16 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             val playlistId = request.fromPlaylistId?.takeUnless(IosLocalPlaylists::isLocal)
             val setVideoId = song.setVideoId
             if (playlistId != null && setVideoId != null) {
-                MenuRow(Icons.Rounded.PlaylistRemove, "Remove from playlist", colors) {
+                MenuRow(Icons.Rounded.PlaylistRemove, tr("Remove from playlist"), colors) {
                     leave {
                         scope.launch {
                             YtMusicRepository.removeFromPlaylist(playlistId, listOf(setVideoId to song.videoId))
                                 .onSuccess {
-                                    IosPlayerHost.showMessage("Removed from playlist")
+                                    IosPlayerHost.showMessage(tr("Removed from playlist"))
                                     request.onRemoved?.invoke()
                                     IosAccount.playlistChanged()
                                 }
-                                .onFailure { IosPlayerHost.showMessage("Could not remove it from the playlist") }
+                                .onFailure { IosPlayerHost.showMessage(tr("Could not remove it from the playlist")) }
                         }
                     }
                 }
@@ -365,7 +365,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             if (!menuLoaded || token != null) {
                 MenuRow(
                     if (current?.inLibrary == true) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
-                    if (current?.inLibrary == true) "Remove from library" else "Save to library",
+                    if (current?.inLibrary == true) tr("Remove from library") else tr("Save to library"),
                     colors,
                     loading = !menuLoaded,
                 ) {
@@ -374,40 +374,40 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                     leave {
                         scope.launch {
                             YtMusicRepository.setLibraryStatus(token)
-                                .onSuccess { IosPlayerHost.showMessage(if (inLibrary) "Removed from library" else "Saved to library") }
-                                .onFailure { IosPlayerHost.showMessage("Could not update your library") }
+                                .onSuccess { IosPlayerHost.showMessage(if (inLibrary) tr("Removed from library") else tr("Saved to library")) }
+                                .onFailure { IosPlayerHost.showMessage(tr("Could not update your library")) }
                         }
                     }
                 }
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
-        if (!onDevice) MenuRow(Icons.Rounded.Radio, "Start radio", colors) { leave { IosPlayer.playRadio(song) } }
-        MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next", colors) { leave { IosPlayer.playNext(listOf(song)) } }
-        MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", colors) { leave { IosPlayer.addToQueue(listOf(song)) } }
+        if (!onDevice) MenuRow(Icons.Rounded.Radio, tr("Start radio"), colors) { leave { IosPlayer.playRadio(song) } }
+        MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, tr("Play next"), colors) { leave { IosPlayer.playNext(listOf(song)) } }
+        MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, tr("Add to queue"), colors) { leave { IosPlayer.addToQueue(listOf(song)) } }
         val downloadedIds by IosDownloads.ids.collectAsState()
         val downloadProgress by IosDownloads.progress.collectAsState()
         if (!onDevice) when (val state = downloadProgress[song.videoId]) {
             null -> if (song.videoId in downloadedIds) {
-                MenuRow(Icons.Rounded.DownloadDone, "Remove download", colors) {
+                MenuRow(Icons.Rounded.DownloadDone, tr("Remove download"), colors) {
                     onDismiss()
                     IosDownloads.remove(listOf(song.videoId))
-                    IosPlayerHost.showMessage("Download removed")
+                    IosPlayerHost.showMessage(tr("Download removed"))
                 }
             } else {
-                MenuRow(Icons.Rounded.Download, "Download", colors) {
+                MenuRow(Icons.Rounded.Download, tr("Download"), colors) {
                     onDismiss()
                     IosDownloads.download(listOf(song))
                 }
             }
-            is DownloadProgress.Failed -> MenuRow(Icons.Rounded.Download, "Download again", colors) {
+            is DownloadProgress.Failed -> MenuRow(Icons.Rounded.Download, tr("Download again"), colors) {
                 onDismiss()
                 IosDownloads.cancel(song.videoId)
                 IosDownloads.download(listOf(song))
             }
             else -> MenuRow(
                 Icons.Rounded.Close,
-                if (state is DownloadProgress.Running) "Cancel download (${(state.fraction * 100).toInt()}%)" else "Cancel download",
+                if (state is DownloadProgress.Running) tr("Cancel download ({0}%)", (state.fraction * 100).toInt()) else tr("Cancel download"),
                 colors,
             ) {
                 onDismiss()
@@ -415,7 +415,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             }
         }
         if (albumId != null || !linksLoaded) {
-            MenuRow(Icons.Rounded.Album, "Go to album", colors, loading = albumId == null) {
+            MenuRow(Icons.Rounded.Album, tr("Go to album"), colors, loading = albumId == null) {
                 albumId ?: return@MenuRow
                 leave {
                     onLeavePlayer()
@@ -424,7 +424,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             }
         }
         if (artistId != null || !linksLoaded) {
-            MenuRow(Icons.Rounded.Person, "Go to artist", colors, loading = artistId == null) {
+            MenuRow(Icons.Rounded.Person, tr("Go to artist"), colors, loading = artistId == null) {
                 artistId ?: return@MenuRow
                 leave {
                     onLeavePlayer()
@@ -433,12 +433,12 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             }
         }
         if (request.fromPlayer && !IosLyrics.lyrics.value.isNullOrEmpty()) {
-            MenuRow(Icons.Rounded.Timer, "Adjust lyrics timing", colors) {
+            MenuRow(Icons.Rounded.Timer, tr("Adjust lyrics timing"), colors) {
                 onDismiss()
                 IosMenus.lyricsOffset = true
             }
         }
-        if (!onDevice) MenuRow(Icons.Rounded.Share, "Share", colors) { leave { shareLink(songLink(song.videoId)) } }
+        if (!onDevice) MenuRow(Icons.Rounded.Share, tr("Share"), colors) { leave { shareLink(songLink(song.videoId)) } }
     }
 }
 
@@ -486,7 +486,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                 .map { it.copy(playbackSource = request.title, playbackSourceType = com.music.bitchord.data.model.PlaybackSourceType.BROWSE, playbackSourceId = request.browseId) }
             loadingSongs = null
             onDismiss()
-            if (songs.isEmpty()) IosPlayerHost.showMessage("Nothing to play here") else action(songs)
+            if (songs.isEmpty()) IosPlayerHost.showMessage(tr("Nothing to play here")) else action(songs)
         }
     }
 
@@ -498,44 +498,44 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                 onDismiss()
                 if (isLocal) {
                     IosLocalPlaylists.rename(request.browseId, title)
-                    IosPlayerHost.showMessage("Renamed")
+                    IosPlayerHost.showMessage(tr("Renamed"))
                     return@RenameForm
                 }
                 scope.launch {
                     YtMusicRepository.renamePlaylist(playlistId, title)
                         .onSuccess {
-                            IosPlayerHost.showMessage("Renamed")
+                            IosPlayerHost.showMessage(tr("Renamed"))
                             IosAccount.playlistRenamed(playlistId, title)
                         }
-                        .onFailure { IosPlayerHost.showMessage("Could not rename the playlist") }
+                        .onFailure { IosPlayerHost.showMessage(tr("Could not rename the playlist")) }
                 }
             }
             return@TintedSheet
         }
         if (!isArtist) {
             if (!request.fromPage) {
-                MenuRow(Icons.Rounded.PlayArrow, "Play", colors, loading = loadingSongs == "play") {
+                MenuRow(Icons.Rounded.PlayArrow, tr("Play"), colors, loading = loadingSongs == "play") {
                     withSongs("play") { IosPlayer.playQueue(it, 0) }
                 }
-                MenuRow(Icons.Rounded.Shuffle, "Shuffle", colors, loading = loadingSongs == "shuffle") {
+                MenuRow(Icons.Rounded.Shuffle, tr("Shuffle"), colors, loading = loadingSongs == "shuffle") {
                     withSongs("shuffle") { IosPlayer.playShuffled(it) }
                 }
             }
-            MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next", colors, loading = loadingSongs == "next") {
+            MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, tr("Play next"), colors, loading = loadingSongs == "next") {
                 withSongs("next") { IosPlayer.playNext(it) }
             }
-            MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", colors, loading = loadingSongs == "queue") {
+            MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, tr("Add to queue"), colors, loading = loadingSongs == "queue") {
                 withSongs("queue") { IosPlayer.addToQueue(it) }
             }
             val savedReleases by IosDownloads.releases.collectAsState()
             if (savedReleases.any { it.browseId == request.browseId }) {
-                MenuRow(Icons.Rounded.DownloadDone, "Remove download", colors) {
+                MenuRow(Icons.Rounded.DownloadDone, tr("Remove download"), colors) {
                     onDismiss()
                     IosDownloads.removeRelease(request.browseId)
-                    IosPlayerHost.showMessage("Download removed")
+                    IosPlayerHost.showMessage(tr("Download removed"))
                 }
             } else {
-                MenuRow(Icons.Rounded.Download, "Download", colors, loading = loadingSongs == "download") {
+                MenuRow(Icons.Rounded.Download, tr("Download"), colors, loading = loadingSongs == "download") {
                     withSongs("download") { songs ->
                         IosDownloads.downloadRelease(
                             DownloadedRelease(request.browseId, request.title, request.subtitle, request.thumbnailUrl, emptyList()),
@@ -549,10 +549,10 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
             MenuRow(
                 Icons.Rounded.ChevronRight,
                 when (type) {
-                    BrowseType.ALBUM -> "Go to album"
-                    BrowseType.ARTIST -> "Go to artist"
-                    BrowseType.PLAYLIST -> "Go to playlist"
-                    else -> if (isLocal) "Go to playlist" else "Open"
+                    BrowseType.ALBUM -> tr("Go to album")
+                    BrowseType.ARTIST -> tr("Go to artist")
+                    BrowseType.PLAYLIST -> tr("Go to playlist")
+                    else -> if (isLocal) tr("Go to playlist") else tr("Open")
                 },
                 colors,
             ) {
@@ -569,7 +569,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
             if (!libraryLoaded || state != null) {
                 MenuRow(
                     if (state?.saved == true) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
-                    if (state?.saved == true) "Remove from library" else "Save to library",
+                    if (state?.saved == true) tr("Remove from library") else tr("Save to library"),
                     colors,
                     loading = !libraryLoaded,
                 ) {
@@ -578,45 +578,45 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
                     scope.launch {
                         YtMusicRepository.setSaved(state.playlistId, !state.saved)
                             .onSuccess {
-                                IosPlayerHost.showMessage(if (state.saved) "Removed from library" else "Saved to library")
+                                IosPlayerHost.showMessage(if (state.saved) tr("Removed from library") else tr("Saved to library"))
                                 IosAccount.loadLibrary(quietly = true)
                             }
-                            .onFailure { IosPlayerHost.showMessage("Could not update your library") }
+                            .onFailure { IosPlayerHost.showMessage(tr("Could not update your library")) }
                     }
                 }
             }
         }
         if (!isLocal) {
-            MenuRow(Icons.Rounded.Share, "Share", colors) {
+            MenuRow(Icons.Rounded.Share, tr("Share"), colors) {
                 onDismiss()
                 shareLink(browseLink(request.browseId))
             }
         }
         if (owned == true || isLocal) {
-            MenuRow(Icons.Rounded.Edit, "Rename", colors) { renaming = true }
+            MenuRow(Icons.Rounded.Edit, tr("Rename"), colors) { renaming = true }
             if (confirmingDelete) {
-                MenuRow(Icons.Rounded.DeleteForever, "Delete “${request.title}” for good", colors, tint = Danger) {
+                MenuRow(Icons.Rounded.DeleteForever, tr("Delete “{0}” for good", request.title), colors, tint = Danger) {
                     onDismiss()
                     if (isLocal) {
                         // Its download, if it was saved whole, would leave a card that opens nothing.
                         IosLocalPlaylists.delete(request.browseId)
                         IosDownloads.removeRelease(request.browseId)
-                        IosPlayerHost.showMessage("Playlist deleted")
+                        IosPlayerHost.showMessage(tr("Playlist deleted"))
                         if (request.fromPage) navigator.back()
                         return@MenuRow
                     }
                     scope.launch {
                         YtMusicRepository.deletePlaylist(playlistId)
                             .onSuccess {
-                                IosPlayerHost.showMessage("Playlist deleted")
+                                IosPlayerHost.showMessage(tr("Playlist deleted"))
                                 IosAccount.playlistDeleted(playlistId)
                                 if (request.fromPage) navigator.back()
                             }
-                            .onFailure { IosPlayerHost.showMessage("Could not delete the playlist") }
+                            .onFailure { IosPlayerHost.showMessage(tr("Could not delete the playlist")) }
                     }
                 }
             } else {
-                MenuRow(Icons.Rounded.Delete, "Delete playlist", colors) { confirmingDelete = true }
+                MenuRow(Icons.Rounded.Delete, tr("Delete playlist"), colors) { confirmingDelete = true }
             }
         }
     }
@@ -643,12 +643,12 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     }
     TintedSheet(songs.firstOrNull()?.thumbnailUrl, onDismiss) { colors ->
         Text(
-            "Add to playlist",
+            tr("Add to playlist"),
             style = MaterialTheme.typography.titleLarge,
             color = colors.text,
             modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
         )
-        MenuRow(Icons.Rounded.Add, "New playlist", colors) {
+        MenuRow(Icons.Rounded.Add, tr("New playlist"), colors) {
             onDismiss()
             IosMenus.newPlaylist = songs
         }
@@ -656,23 +656,23 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
         val list = playlists
         when {
             !signedIn -> if (localPlaylists.isEmpty()) {
-                Text("No playlists yet", color = colors.secondary, modifier = Modifier.padding(22.dp))
+                Text(tr("No playlists yet"), color = colors.secondary, modifier = Modifier.padding(22.dp))
             }
-            failed -> Text("Could not load your playlists", color = colors.secondary, modifier = Modifier.padding(22.dp))
+            failed -> Text(tr("Could not load your playlists"), color = colors.secondary, modifier = Modifier.padding(22.dp))
             list == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(Modifier.size(24.dp), color = colors.secondary, strokeWidth = 2.dp)
             }
-            list.isEmpty() -> Text("No playlists yet", color = colors.secondary, modifier = Modifier.padding(22.dp))
+            list.isEmpty() -> Text(tr("No playlists yet"), color = colors.secondary, modifier = Modifier.padding(22.dp))
             else -> list.forEach { playlist ->
                 PlaylistChoice(playlist.title, playlist.subtitle, playlist.thumbnailUrl, colors) {
                     onDismiss()
                     scope.launch {
                         YtMusicRepository.addToPlaylist(playlist.playlistId, songs.map { it.videoId })
                             .onSuccess {
-                                IosPlayerHost.showMessage("Added to ${playlist.title}")
+                                IosPlayerHost.showMessage(tr("Added to {0}", playlist.title))
                                 IosAccount.playlistChanged()
                             }
-                            .onFailure { IosPlayerHost.showMessage("Could not add to ${playlist.title}") }
+                            .onFailure { IosPlayerHost.showMessage(tr("Could not add to {0}", playlist.title)) }
                     }
                 }
             }
@@ -680,7 +680,7 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
         if (localPlaylists.isNotEmpty()) {
             if (signedIn) {
                 Text(
-                    "On this device",
+                    tr("On this device"),
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.secondary,
                     modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp),
@@ -690,7 +690,7 @@ private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
                 PlaylistChoice(playlist.title, playlist.subtitle, playlist.thumbnailUrl, colors) {
                     onDismiss()
                     val added = IosLocalPlaylists.add(playlist.id, songs)
-                    IosPlayerHost.showMessage(if (added == 0) "Already in ${playlist.title}" else "Added to ${playlist.title}")
+                    IosPlayerHost.showMessage(if (added == 0) tr("Already in {0}", playlist.title) else tr("Added to {0}", playlist.title))
                 }
             }
         }
@@ -736,10 +736,10 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     TintedSheet(songs.firstOrNull()?.thumbnailUrl, onDismiss) { colors ->
-        Text("New playlist", style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp))
+        Text(tr("New playlist"), style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp))
         NameField(title, colors, onChange = { title = it })
         if (signedIn) {
-            Text("Visibility", style = MaterialTheme.typography.labelMedium, color = colors.secondary, modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp))
+            Text(tr("Visibility"), style = MaterialTheme.typography.labelMedium, color = colors.secondary, modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp))
             PlaylistPrivacy.entries.forEach { option ->
                 MenuRow(
                     Icons.Rounded.Check,
@@ -751,9 +751,9 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
         } else {
             Text(
                 if (account) {
-                    "Kept on this device: songs on this iPhone can’t go in a YouTube Music playlist."
+                    tr("Kept on this device: songs on this iPhone can’t go in a YouTube Music playlist.")
                 } else {
-                    "Kept on this device. Sign in to make playlists on YouTube Music."
+                    tr("Kept on this device. Sign in to make playlists on YouTube Music.")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.secondary,
@@ -761,10 +761,10 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
             )
         }
         Spacer(Modifier.height(8.dp))
-        MenuRow(Icons.Rounded.Add, if (saving) "Creating…" else "Create", colors, enabled = title.isNotBlank() && !saving, tint = colors.accent) {
+        MenuRow(Icons.Rounded.Add, if (saving) tr("Creating…") else tr("Create"), colors, enabled = title.isNotBlank() && !saving, tint = colors.accent) {
             if (!signedIn) {
                 val created = IosLocalPlaylists.create(title, songs)
-                IosPlayerHost.showMessage(if (songs.isEmpty()) "Playlist created on this device" else "Added to ${created.title}")
+                IosPlayerHost.showMessage(if (songs.isEmpty()) tr("Playlist created on this device") else tr("Added to {0}", created.title))
                 onDismiss()
                 return@MenuRow
             }
@@ -772,13 +772,13 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
             scope.launch {
                 YtMusicRepository.createPlaylist(title.trim(), privacy, songs.map { it.videoId })
                     .onSuccess { playlistId ->
-                        IosPlayerHost.showMessage(if (songs.isEmpty()) "Playlist created" else "Added to ${title.trim()}")
+                        IosPlayerHost.showMessage(if (songs.isEmpty()) tr("Playlist created") else tr("Added to {0}", title.trim()))
                         IosAccount.playlistCreated(playlistId, title.trim(), songs)
                         onDismiss()
                     }
                     .onFailure {
                         saving = false
-                        IosPlayerHost.showMessage("Could not create the playlist")
+                        IosPlayerHost.showMessage(tr("Could not create the playlist"))
                     }
             }
         }
@@ -788,11 +788,11 @@ private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
 @Composable
 private fun RenameForm(current: String, colors: MenuColors, onCancel: () -> Unit, onRename: (String) -> Unit) {
     var title by remember { mutableStateOf(current) }
-    Text("Rename playlist", style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp))
+    Text(tr("Rename playlist"), style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp))
     NameField(title, colors, onChange = { title = it })
     Spacer(Modifier.height(8.dp))
-    MenuRow(Icons.Rounded.Check, "Save", colors, enabled = title.isNotBlank() && title.trim() != current, tint = colors.accent) { onRename(title.trim()) }
-    MenuRow(Icons.Rounded.ChevronRight, "Cancel", colors, onClick = onCancel)
+    MenuRow(Icons.Rounded.Check, tr("Save"), colors, enabled = title.isNotBlank() && title.trim() != current, tint = colors.accent) { onRename(title.trim()) }
+    MenuRow(Icons.Rounded.ChevronRight, tr("Cancel"), colors, onClick = onCancel)
 }
 
 @Composable
@@ -801,7 +801,7 @@ private fun NameField(value: String, colors: MenuColors, onChange: (String) -> U
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        placeholder = { Text("Playlist name", color = colors.secondary) },
+        placeholder = { Text(tr("Playlist name"), color = colors.secondary) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = colors.text,

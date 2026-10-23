@@ -97,8 +97,8 @@ internal data class MonthKey(val year: Int, val month: Int) : Comparable<MonthKe
         }
 
         private val MONTH_NAMES = listOf(
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December",
+            tr("January"), tr("February"), tr("March"), tr("April"), tr("May"), tr("June"),
+            tr("July"), tr("August"), tr("September"), tr("October"), tr("November"), tr("December"),
         )
     }
 }

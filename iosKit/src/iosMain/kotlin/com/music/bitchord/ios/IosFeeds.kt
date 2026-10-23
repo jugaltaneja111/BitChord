@@ -75,11 +75,11 @@ internal class IosFeeds {
                     if (current != generation) return@onSuccess
                     continuation = feed.continuation
                     publish(feed.shelves)
-                    if (_home.value is UiState.Loading) _home.value = UiState.Error("Home is empty right now")
+                    if (_home.value is UiState.Loading) _home.value = UiState.Error(tr("Home is empty right now"))
                 }
                 .onFailure {
                     if (current == generation && _home.value !is UiState.Success) {
-                        _home.value = UiState.Error(it.message ?: "Could not load Home")
+                        _home.value = UiState.Error(it.message ?: tr("Could not load Home"))
                     }
                 }
         }
@@ -119,7 +119,7 @@ internal class IosFeeds {
                     _explore.value = UiState.Success(it)
                     loadCategoryArtwork(it)
                 }
-                .onFailure { _explore.value = UiState.Error(it.message ?: "Could not load Explore") }
+                .onFailure { _explore.value = UiState.Error(it.message ?: tr("Could not load Explore")) }
         }
     }
 

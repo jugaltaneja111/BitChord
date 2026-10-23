@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.sources
 
+import com.music.bitchord.ios.tr
 import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.sources.StreamFormat
@@ -137,9 +138,9 @@ internal class AddonSource(
                 // kinds of working this is.
                 if (client.probeSearch().isSuccess) {
                     TrackLog.d(TAG, "${config.displayName}: no manifest, but search answers")
-                    return@fold SourceHealth.Ok("No manifest · search works")
+                    return@fold SourceHealth.Ok(tr("No manifest · search works"))
                 }
-                val reason = failure.message ?: "Could not reach the addon"
+                val reason = failure.message ?: tr("Could not reach the addon")
                 if (failure is AddonException) {
                     SourceHealth.Rejected(reason)
                 } else {
@@ -424,8 +425,8 @@ internal class AddonSource(
         const val TAG = "BitChord"
 
         /** What a gated addon's health says, for the editor's Test line. The sources list draws its own. */
-        const val NEEDS_LOSSLESS_OUTPUT =
-            "This addon only works with a lossless output — connect a wired or USB output"
+        val NEEDS_LOSSLESS_OUTPUT get() =
+            tr("This addon only works with a lossless output — connect a wired or USB output")
 
         /** How many search rows to remember. A long queue's worth, several times over. */
         const val MAX_ROWS = 256

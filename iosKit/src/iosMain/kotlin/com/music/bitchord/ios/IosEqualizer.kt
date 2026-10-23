@@ -84,13 +84,13 @@ internal fun EqualizerPage(contentPadding: PaddingValues, topPadding: Dp) {
             .padding(top = topPadding, bottom = contentPadding.calculateBottomPadding() + 32.dp),
     ) {
         Text(
-            "Equalizer",
+            tr("Equalizer"),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
         Group("") {
-            Toggle("Equalizer", "Shapes the sound inside BitChord, before it reaches the system.", IosSettings.equalizerEnabled)
+            Toggle(tr("Equalizer"), tr("Shapes the sound inside BitChord, before it reaches the system."), IosSettings.equalizerEnabled)
         }
 
         // Off, everything below reads as unavailable rather than merely idle.
@@ -104,41 +104,41 @@ internal fun EqualizerPage(contentPadding: PaddingValues, topPadding: Dp) {
             )
             if (mode == IosSound.MODE_MANUAL) {
                 Group("") {
-                    ActionRow("Preset", value = preset.label()) { if (enabled) pickingPreset = true }
+                    ActionRow(tr("Preset"), value = preset.label()) { if (enabled) pickingPreset = true }
                 }
-                Group("Bands") {
+                Group(tr("Bands")) {
                     BandSliders(bands = bands, enabled = enabled, onChange = IosSound::setEqualizerBands)
                     Divider()
-                    ActionRow("Reset all bands", destructive = true) {
+                    ActionRow(tr("Reset all bands"), destructive = true) {
                         if (enabled) {
                             haptics.play(Haptic.Select)
                             IosSound.setEqualizerPreset(EqualizerPreset.FLAT)
                         }
                     }
                 }
-                Footer("Moving a band leaves the preset behind and the curve becomes your own.")
+                Footer(tr("Moving a band leaves the preset behind and the curve becomes your own."))
             } else {
-                Group("Tone") {
+                Group(tr("Tone")) {
                     TonePad(x = toneX, y = toneY, enabled = enabled, onChange = IosSound::setEqualizerTone)
                     ToneReadout(x = toneX, y = toneY)
                     Divider()
-                    ChoiceRow("Broad", selected = !focused, enabled = enabled) { IosSettings.equalizerFocused.set(false) }
+                    ChoiceRow(tr("Broad"), selected = !focused, enabled = enabled) { IosSettings.equalizerFocused.set(false) }
                     Divider()
-                    ChoiceRow("Focused", selected = focused, enabled = enabled) { IosSettings.equalizerFocused.set(true) }
+                    ChoiceRow(tr("Focused"), selected = focused, enabled = enabled) { IosSettings.equalizerFocused.set(true) }
                 }
                 Footer(
-                    "Drag left for a warmer sound and right for a brighter one; down scoops the middle, up brings it forward. " +
+                    tr("Drag left for a warmer sound and right for a brighter one; down scoops the middle, up brings it forward. ") +
                         if (focused) {
-                            "Focused works on narrower stretches, so it changes less around what it moves."
+                            tr("Focused works on narrower stretches, so it changes less around what it moves.")
                         } else {
-                            "Broad moves wide stretches of the spectrum at once."
+                            tr("Broad moves wide stretches of the spectrum at once.")
                         },
                 )
             }
-            Group("Balance") {
+            Group(tr("Balance")) {
                 BalanceControl(balance = balance, enabled = enabled, onChange = { IosSettings.equalizerBalance.set(it.coerceIn(-1f, 1f)) })
             }
-            Footer("Shifts the sound towards one ear by quietening the other.")
+            Footer(tr("Shifts the sound towards one ear by quietening the other."))
         }
     }
 
@@ -165,7 +165,7 @@ private fun ModeSwitch(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit)
             .background(GroupColor)
             .padding(3.dp),
     ) {
-        listOf("Dynamic", "Manual").forEachIndexed { index, label ->
+        listOf(tr("Dynamic"), tr("Manual")).forEachIndexed { index, label ->
             val active = index == selected
             Box(
                 Modifier
@@ -285,11 +285,11 @@ private fun ToneReadout(x: Int, y: Int) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Waves, contentDescription = "Tilt", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+        Icon(Icons.Rounded.Waves, contentDescription = tr("Tilt"), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(signed(x), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.width(22.dp))
-        Icon(Icons.AutoMirrored.Rounded.ShowChart, contentDescription = "Contour", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+        Icon(Icons.AutoMirrored.Rounded.ShowChart, contentDescription = tr("Contour"), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(signed(y), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
     }
@@ -313,7 +313,7 @@ private fun ChoiceRow(label: String, selected: Boolean, enabled: Boolean, onClic
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-        if (selected) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = AccentBlue, modifier = Modifier.size(22.dp))
+        if (selected) Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = AccentBlue, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -563,7 +563,7 @@ private fun PresetSheet(selected: EqualizerPreset, onSelect: (EqualizerPreset) -
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
-                "Preset",
+                tr("Preset"),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 22.dp, end = 22.dp, bottom = 14.dp),
@@ -585,7 +585,7 @@ private fun PresetSheet(selected: EqualizerPreset, onSelect: (EqualizerPreset) -
                     ) {
                         Text(preset.label(), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                         if (preset == selected) {
-                            Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = AccentBlue, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = AccentBlue, modifier = Modifier.size(22.dp))
                         }
                     }
                 }
@@ -595,23 +595,23 @@ private fun PresetSheet(selected: EqualizerPreset, onSelect: (EqualizerPreset) -
 }
 
 private fun EqualizerPreset.label(): String = when (this) {
-    EqualizerPreset.FLAT -> "Flat"
-    EqualizerPreset.ACOUSTIC -> "Acoustic"
-    EqualizerPreset.BASS_BOOST -> "Bass boost"
-    EqualizerPreset.BASS_CUT -> "Bass cut"
-    EqualizerPreset.VOCAL -> "Vocal"
-    EqualizerPreset.TREBLE_BOOST -> "Treble boost"
-    EqualizerPreset.TREBLE_CUT -> "Treble cut"
-    EqualizerPreset.LOUDNESS -> "Loudness"
-    EqualizerPreset.SPOKEN_WORD -> "Spoken word"
-    EqualizerPreset.ELECTRONIC -> "Electronic"
-    EqualizerPreset.ROCK -> "Rock"
-    EqualizerPreset.HIP_HOP -> "Hip-hop"
-    EqualizerPreset.JAZZ -> "Jazz"
-    EqualizerPreset.CLASSICAL -> "Classical"
-    EqualizerPreset.SMALL_SPEAKERS -> "Small speakers"
-    EqualizerPreset.LATE_NIGHT -> "Late night"
-    EqualizerPreset.CUSTOM -> "Custom"
+    EqualizerPreset.FLAT -> tr("Flat")
+    EqualizerPreset.ACOUSTIC -> tr("Acoustic")
+    EqualizerPreset.BASS_BOOST -> tr("Bass boost")
+    EqualizerPreset.BASS_CUT -> tr("Bass cut")
+    EqualizerPreset.VOCAL -> tr("Vocal")
+    EqualizerPreset.TREBLE_BOOST -> tr("Treble boost")
+    EqualizerPreset.TREBLE_CUT -> tr("Treble cut")
+    EqualizerPreset.LOUDNESS -> tr("Loudness")
+    EqualizerPreset.SPOKEN_WORD -> tr("Spoken word")
+    EqualizerPreset.ELECTRONIC -> tr("Electronic")
+    EqualizerPreset.ROCK -> tr("Rock")
+    EqualizerPreset.HIP_HOP -> tr("Hip-hop")
+    EqualizerPreset.JAZZ -> tr("Jazz")
+    EqualizerPreset.CLASSICAL -> tr("Classical")
+    EqualizerPreset.SMALL_SPEAKERS -> tr("Small speakers")
+    EqualizerPreset.LATE_NIGHT -> tr("Late night")
+    EqualizerPreset.CUSTOM -> tr("Custom")
 }
 
 private val AccentBlue = Color(0xFF0A84FF)

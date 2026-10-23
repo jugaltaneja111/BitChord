@@ -52,11 +52,11 @@ import platform.posix.memcpy
  * catalog, null for the shipped one.
  */
 internal enum class IosAppIcon(val iconName: String?, val label: String) {
-    Default(null, "Default"),
+    Default(null, tr("Default")),
     Glass("AppIconGlass", "Liquid Glass"),
-    GlassDark("AppIconGlassDark", "Liquid Glass Dark"),
-    GlassClear("AppIconGlassClear", "Clear"),
-    GlassClearDark("AppIconGlassClearDark", "Clear Dark"),
+    GlassDark("AppIconGlassDark", tr("Liquid Glass Dark")),
+    GlassClear("AppIconGlassClear", tr("Clear")),
+    GlassClearDark("AppIconGlassClearDark", tr("Clear Dark")),
     ;
 
     /** The small copy kept beside each icon for this picker; the icons themselves can't be read back. */
@@ -89,7 +89,7 @@ internal fun AppIconPicker() {
                                 if (error == null) {
                                     selected = icon
                                 } else {
-                                    IosPlayerHost.showMessage("Could not change the icon")
+                                    IosPlayerHost.showMessage(tr("Could not change the icon"))
                                 }
                             }
                         },
@@ -120,7 +120,7 @@ internal fun AppIconPicker() {
         }
         if (!supported) {
             Text(
-                "This install can't change its icon.",
+                tr("This install can't change its icon."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 8.dp),

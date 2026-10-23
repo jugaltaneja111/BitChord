@@ -374,7 +374,7 @@ private fun StoryChrome(
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = "Close Replay",
+                contentDescription = tr("Close Replay"),
                 tint = Color.White,
                 modifier = Modifier
                     .size(30.dp)
@@ -403,9 +403,9 @@ private fun StoryChrome(
                 // by. A month or "All time" has no two-digit form and is spelt
                 // out rather than truncated into nonsense.
                 text = if (label.length == 4 && label.all { it.isDigit() }) {
-                    "Replay ${label.takeLast(2)}"
+                    tr("Replay {0}", label.takeLast(2))
                 } else {
-                    "Replay · $label"
+                    tr("Replay · {0}", label)
                 },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.W700,
@@ -496,7 +496,7 @@ private fun StoryPage(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.IosShare,
-                    contentDescription = "Share my Replay",
+                    contentDescription = tr("Share my Replay"),
                     tint = Color.White,
                     modifier = Modifier.size(20.dp),
                 )
@@ -542,7 +542,7 @@ private fun ColumnScope.Intro(summary: ReplaySummary, headline: List<HeadlineRun
     ArtworkCollage(summary)
     Spacer(Modifier.weight(1f))
     Text(
-        text = "Built privately from your listening history on this device.",
+        text = tr("Built privately from your listening history on this device."),
         style = MaterialTheme.typography.bodyMedium,
         color = Color.White.copy(alpha = 0.5f),
     )
@@ -561,9 +561,9 @@ private fun ColumnScope.Minutes(summary: ReplaySummary, headline: List<HeadlineR
         // only figure worth restating.
         text = buildString {
             if (summary.hours >= 1) {
-                append("${grouped(summary.hours)} hours")
+                append(trPlural(summary.hours, "{0} hour", "{0} hours", grouped(summary.hours)))
             } else {
-                append("Across")
+                append(tr("Across"))
                 append(" ")
             }
             // Add a comma+space separator between the hours and the track count
@@ -711,16 +711,16 @@ private fun ColumnScope.Habits(summary: ReplaySummary, headline: List<HeadlineRu
         Headline(headline)
     Spacer(Modifier.weight(1f))
     if (summary.distinctAlbums > 0) {
-        BigStat(grouped(summary.distinctAlbums.toLong()), "Different albums")
+        BigStat(grouped(summary.distinctAlbums.toLong()), tr("Different albums"))
     }
     summary.busiestDay?.let {
         BigStat(
             formatDay(it),
-            "Your biggest day: ${formatListening(summary.busiestDayMs)}",
+            tr("Your biggest day: {0}", formatListening(summary.busiestDayMs)),
         )
     }
     summary.peakHour?.let {
-        BigStat(formatHour(it), "When you listen the most")
+        BigStat(formatHour(it), tr("When you listen the most"))
     }
     Spacer(Modifier.height(8.dp))
 }
@@ -746,14 +746,14 @@ private fun BigStat(value: String, label: String) {
 private fun ColumnScope.Recap(summary: ReplaySummary, headline: List<HeadlineRun>) {
     Headline(headline)
     Spacer(Modifier.height(20.dp))
-    RecapLine("Minutes", formatMinutes(summary.totalMs))
-    summary.songs.firstOrNull()?.let { RecapLine("Top song", it.song.title) }
-    summary.artists.firstOrNull()?.let { RecapLine("Top artist", it.title) }
-    summary.albums.firstOrNull()?.let { RecapLine("Top album", it.title) }
-    summary.genres.firstOrNull()?.let { RecapLine("Top genre", it.title) }
+    RecapLine(tr("Minutes"), formatMinutes(summary.totalMs))
+    summary.songs.firstOrNull()?.let { RecapLine(tr("Top song"), it.song.title) }
+    summary.artists.firstOrNull()?.let { RecapLine(tr("Top artist"), it.title) }
+    summary.albums.firstOrNull()?.let { RecapLine(tr("Top album"), it.title) }
+    summary.genres.firstOrNull()?.let { RecapLine(tr("Top genre"), it.title) }
     Spacer(Modifier.weight(1f))
     Text(
-        text = "Tap Share to create a picture.",
+        text = tr("Tap Share to create a picture."),
         style = MaterialTheme.typography.bodyLarge,
         color = Color.White.copy(alpha = 0.55f),
     )

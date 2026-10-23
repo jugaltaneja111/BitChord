@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.sources
 
+import com.music.bitchord.ios.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -124,7 +125,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                SourceHealth.Unreachable(e.message ?: "Failed")
+                SourceHealth.Unreachable(e.message ?: tr("Failed"))
             }
             // An addon names itself, so the row takes that name rather than a
             // hostname. Written here, off the probe that has just fetched the
@@ -150,14 +151,14 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
     ) {
         item {
             Text(
-                "Sources",
+                tr("Sources"),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
         item {
-            Header("Sources, tried in this order")
+            Header(tr("Sources, tried in this order"))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(GroupShape).background(GroupColor)) {
                 addons.forEachIndexed { index, config ->
                     if (index > 0) Divider()
@@ -217,8 +218,8 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
             Footer(
                 buildString {
                     append(
-                        "If a source does not have a track or cannot be reached, BitChord tries the next one. " +
-                            "Sources above YouTube can replace its recording when they return a better version.",
+                        tr("If a source does not have a track or cannot be reached, BitChord tries the next one. ") +
+                            tr("Sources above YouTube can replace its recording when they return a better version."),
                     )
                     if (!anyLosslessSource) {
                         append("\n\nNo enabled source can provide lossless audio. Add an addon to play lossless files without transcoding.")
@@ -227,7 +228,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
             )
         }
         item {
-            Header("Immersive audio")
+            Header(tr("Immersive audio"))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(GroupShape).background(GroupColor)) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp)
@@ -238,7 +239,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                     Column(Modifier.weight(1f)) {
                         Text("Dolby Atmos", color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            "Prefer an addon's Atmos mix when it has one",
+                            tr("Prefer an addon's Atmos mix when it has one"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -248,9 +249,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                 }
             }
             Footer(
-                "Off, addons are asked for the stereo mix and an Atmos-only answer is passed over for the next " +
-                    "source. Atmos is a different mix rather than a better copy, and outside AirPods it plays as " +
-                    "the surround mix folded down to stereo.",
+                tr("Off, addons are asked for the stereo mix and an Atmos-only answer is passed over for the next source. Atmos is a different mix rather than a better copy, and outside AirPods it plays as the surround mix folded down to stereo."),
             )
         }
     }
@@ -271,16 +270,16 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
     if (confirmJioSaavn) {
         AlertDialog(
             onDismissRequest = { confirmJioSaavn = false },
-            title = { Text("Enable JioSaavn?") },
-            text = { Text("May match the wrong version of a song. Enable at your own risk.") },
+            title = { Text(tr("Enable JioSaavn?")) },
+            text = { Text(tr("May match the wrong version of a song. Enable at your own risk.")) },
             confirmButton = {
                 TextButton(onClick = {
                     configs.firstOrNull { it.kind == SourceKind.JIOSAAVN }
                         ?.let { SourceRegistry.setEnabled(it.id, true) }
                     confirmJioSaavn = false
-                }) { Text("Enable anyway") }
+                }) { Text(tr("Enable anyway")) }
             },
-            dismissButton = { TextButton(onClick = { confirmJioSaavn = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmJioSaavn = false }) { Text(tr("Cancel")) } },
         )
     }
 }
@@ -350,8 +349,8 @@ private fun SourceRow(
             val line = when {
                 // Outranks everything: this one is not reached at all until
                 // the output changes.
-                awaitingOutput -> "Needs a lossless output · " +
-                    (routeName?.let { "playing to $it; " } ?: "") + "connect a wired or USB output"
+                awaitingOutput -> routeName?.let { tr("Needs a lossless output · playing to {0}; connect a wired or USB output", it) }
+                    ?: tr("Needs a lossless output · connect a wired or USB output")
                 else -> config.statusLine(health)
             }
             Text(
@@ -373,7 +372,7 @@ private fun SourceRow(
         }
         Spacer(Modifier.width(8.dp))
         if (onToggle == null) {
-            Text("Always on", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr("Always on"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             IosSwitch(config.enabled, onToggle)
         }
@@ -381,8 +380,8 @@ private fun SourceRow(
         // has a position worth setting for when it is switched back on.
         if (reorderable) {
             Column(verticalArrangement = Arrangement.Center) {
-                Arrow(Icons.Rounded.KeyboardArrowUp, "Move up", onMoveUp)
-                Arrow(Icons.Rounded.KeyboardArrowDown, "Move down", onMoveDown)
+                Arrow(Icons.Rounded.KeyboardArrowUp, tr("Move up"), onMoveUp)
+                Arrow(Icons.Rounded.KeyboardArrowDown, tr("Move down"), onMoveDown)
             }
         }
     }
@@ -410,9 +409,9 @@ private fun AddRow(onClick: () -> Unit) {
         Icon(Icons.Rounded.Add, contentDescription = null, tint = Accent, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text("Add an addon", color = Accent)
+            Text(tr("Add an addon"), color = Accent)
             Text(
-                "Point BitChord at an addon server you host or were given a link to",
+                tr("Point BitChord at an addon server you host or were given a link to"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -429,21 +428,21 @@ private fun kindIcon(kind: SourceKind): ImageVector = when (kind) {
 
 /** The second line of a row: what this source is, or what is wrong with it. */
 private fun SourceConfig.statusLine(health: SourceHealth?): String = when {
-    !isComplete -> "Tap to finish setting up"
-    kind == SourceKind.JIOSAAVN -> "May match the wrong version of a song. Enable at your own risk."
+    !isComplete -> tr("Tap to finish setting up")
+    kind == SourceKind.JIOSAAVN -> tr("May match the wrong version of a song. Enable at your own risk.")
     health is SourceHealth.Ok -> listOfNotNull(
         health.detail,
         kind.labels.take(3).joinToString(" · "),
         // The addon's own `allowDownloads: 0`, said where the user will look
         // when a download from it came from somewhere else.
-        "Streaming only".takeIf { !allowDownloads },
+        tr("Streaming only").takeIf { !allowDownloads },
         // And its `checkValidLossless`, said while it is satisfied too, so the
         // shut-out that follows unplugging a DAC is not a surprise.
-        "Lossless output only".takeIf { checkValidLossless },
+        tr("Lossless output only").takeIf { checkValidLossless },
     ).joinToString(" · ")
     health is SourceHealth.Rejected -> health.reason
-    health is SourceHealth.Unreachable -> "Can’t reach it right now · ${health.reason}"
-    kind.needsServer -> "Checking…"
+    health is SourceHealth.Unreachable -> tr("Can’t reach it right now · {0}", health.reason)
+    kind.needsServer -> tr("Checking…")
     else -> kind.labels.take(3).joinToString(" · ")
 }
 
@@ -491,7 +490,7 @@ private fun SourceEditor(
             val found = identified.getOrNull()
             if (found == null) {
                 statusIsGood = false
-                status = identified.exceptionOrNull()?.message ?: "BitChord could not tell what that link is"
+                status = identified.exceptionOrNull()?.message ?: tr("BitChord could not tell what that link is")
                 busy = false
                 return@launch
             }
@@ -501,7 +500,7 @@ private fun SourceEditor(
             // recognised as the one source they are.
             SourceRegistry.duplicateOf(found.baseUrl, exceptId = config.id.takeUnless { isNew })?.let { existing ->
                 statusIsGood = false
-                status = "Already added as ${existing.displayName}"
+                status = tr("Already added as {0}", existing.displayName)
                 busy = false
                 return@launch
             }
@@ -514,11 +513,11 @@ private fun SourceEditor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                SourceHealth.Unreachable(e.message ?: "Failed")
+                SourceHealth.Unreachable(e.message ?: tr("Failed"))
             }
             statusIsGood = health.isOk
             status = when (health) {
-                is SourceHealth.Ok -> listOfNotNull("Connected", found.kind.label, health.detail).joinToString(" · ")
+                is SourceHealth.Ok -> listOfNotNull(tr("Connected"), found.kind.label, health.detail).joinToString(" · ")
                 is SourceHealth.Rejected -> health.reason
                 is SourceHealth.Unreachable -> health.reason
             }
@@ -536,7 +535,7 @@ private fun SourceEditor(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "Add an addon" else config.displayName) },
+        title = { Text(if (isNew) tr("Add an addon") else config.displayName) },
         text = {
             Column {
                 Text(
@@ -559,7 +558,7 @@ private fun SourceEditor(
                     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
-                        Text("Testing…", style = MaterialTheme.typography.bodySmall)
+                        Text(tr("Testing…"), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 status?.let {
@@ -574,16 +573,16 @@ private fun SourceEditor(
         },
         confirmButton = {
             Row {
-                TextButton(onClick = { run(thenSave = false) }, enabled = !busy && baseUrl.isNotBlank()) { Text("Test") }
-                TextButton(onClick = { run(thenSave = true) }, enabled = !busy && baseUrl.isNotBlank()) { Text("Save") }
+                TextButton(onClick = { run(thenSave = false) }, enabled = !busy && baseUrl.isNotBlank()) { Text(tr("Test")) }
+                TextButton(onClick = { run(thenSave = true) }, enabled = !busy && baseUrl.isNotBlank()) { Text(tr("Save")) }
             }
         },
         dismissButton = {
             Row {
                 if (!isNew) {
-                    TextButton(onClick = onDelete, enabled = !busy) { Text("Remove", color = Red) }
+                    TextButton(onClick = onDelete, enabled = !busy) { Text(tr("Remove"), color = Red) }
                 }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(tr("Cancel")) }
             }
         },
     )

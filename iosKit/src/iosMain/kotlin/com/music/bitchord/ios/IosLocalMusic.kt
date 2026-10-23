@@ -261,14 +261,14 @@ internal object IosLocalMusic {
         folder?.stopAccessingSecurityScopedResource()
         folder = null
         if (!url.startAccessingSecurityScopedResource()) {
-            IosPlayerHost.showMessage("BitChord couldn’t open that folder")
+            IosPlayerHost.showMessage(tr("BitChord couldn’t open that folder"))
             return
         }
         // On iOS a bookmark made while the folder is open carries its security scope with it.
         val bookmark = url.bookmarkDataWithOptions(0u, includingResourceValuesForKeys = null, relativeToURL = null, error = null)
         if (bookmark == null) {
             url.stopAccessingSecurityScopedResource()
-            IosPlayerHost.showMessage("BitChord couldn’t keep that folder")
+            IosPlayerHost.showMessage(tr("BitChord couldn’t keep that folder"))
             return
         }
         folder = url
@@ -276,7 +276,7 @@ internal object IosLocalMusic {
         val name = url.lastPathComponent ?: "Folder"
         defaults.setObject(name, FOLDER_NAME_KEY)
         _folderName.value = name
-        IosPlayerHost.showMessage("Looking for music in “$name”")
+        IosPlayerHost.showMessage(tr("Looking for music in “{0}”", name))
         rescan()
     }
 

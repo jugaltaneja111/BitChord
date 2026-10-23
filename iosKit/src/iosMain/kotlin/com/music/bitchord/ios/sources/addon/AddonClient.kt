@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.sources.addon
 
+import com.music.bitchord.ios.tr
 import com.music.bitchord.data.MonotonicClock
 import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.appHttpClient
@@ -88,7 +89,7 @@ internal class AddonClient(rawBaseUrl: String) {
             }
             if (!manifest.isPlayable) {
                 val declared = manifest.resources.joinToString(", ")
-                throw AddonException("This addon declares $declared — BitChord needs search")
+                throw AddonException(tr("This addon declares {0} — BitChord needs search", declared))
             }
             manifest
         }.recoverCatching { failure ->
@@ -281,7 +282,7 @@ internal class AddonClient(rawBaseUrl: String) {
     /** `{base}/{segments…}?{params}`, with every part properly encoded. */
     private fun endpoint(segments: List<String>, params: Map<String, String>): String {
         val base = parseUrl(baseUrl)?.takeIf { it.host.isNotBlank() }
-            ?: throw AddonException("That is not a usable address")
+            ?: throw AddonException(tr("That is not a usable address"))
         val builder = URLBuilder(base)
         builder.appendPathSegments(segments)
         params.forEach { (key, value) -> builder.parameters.append(key, value) }
@@ -338,7 +339,7 @@ internal class AddonClient(rawBaseUrl: String) {
                 // re-paste a URL that was always correct.
                 code >= 500 -> throw AddonUnavailable("HTTP $code")
                 code != 429 -> throw AddonException("HTTP $code")
-                attempt >= MAX_RETRIES -> throw AddonUnavailable("This addon is rate limiting BitChord")
+                attempt >= MAX_RETRIES -> throw AddonUnavailable(tr("This addon is rate limiting BitChord"))
                 else -> retryAfterMs(response.headers["Retry-After"], attempt)
             }
             quietUntilMs = MonotonicClock.nowMs() + wait

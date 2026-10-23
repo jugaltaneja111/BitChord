@@ -187,16 +187,16 @@ internal fun IosLoginScreen(onClose: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Rounded.Close, contentDescription = tr("Close"), tint = MaterialTheme.colorScheme.onSurface)
             }
             Column(Modifier.weight(1f)) {
-                Text("Sign in to YouTube Music", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(tr("Sign in to YouTube Music"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 if (pageReady) {
                     Text(
                         if (failed) {
-                            "Not signed in on this page yet"
+                            tr("Not signed in on this page yet")
                         } else {
-                            "Switch channel from the avatar menu if needed, then use this account"
+                            tr("Switch channel from the avatar menu if needed, then use this account")
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -224,7 +224,7 @@ internal fun IosLoginScreen(onClose: () -> Unit) {
                         }
                     },
                 ) {
-                    Text(if (checking) "Checking…" else "Use this account")
+                    Text(if (checking) tr("Checking…") else tr("Use this account"))
                 }
             }
         }

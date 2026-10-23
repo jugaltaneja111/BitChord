@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.party
 
+import com.music.bitchord.ios.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -165,7 +166,7 @@ internal fun ListenTogetherPage(
     val copyCode: () -> Unit = {
         state.code?.let { code ->
             UIPasteboard.generalPasteboard.string = code
-            IosPlayerHost.showMessage("Code copied")
+            IosPlayerHost.showMessage(tr("Code copied"))
         }
     }
 
@@ -201,13 +202,13 @@ internal fun ListenTogetherPage(
                 pendingSwitch = null
                 onInviteHandled()
             },
-            title = { Text(if (toBuiltIn) "Join on the BitChord server?" else "Join on another server?") },
+            title = { Text(if (toBuiltIn) tr("Join on the BitChord server?") else tr("Join on another server?")) },
             text = {
                 Text(
                     if (toBuiltIn) {
-                        "Party $code is on BitChord's own server. Joining switches this device off your custom server."
+                        tr("Party {0} is on BitChord's own server. Joining switches this device off your custom server.", code)
                     } else {
-                        "Party $code is on $server. Joining points this device at that server."
+                        tr("Party {0} is on {1}. Joining points this device at that server.", code, server)
                     },
                 )
             },
@@ -217,13 +218,13 @@ internal fun ListenTogetherPage(
                     // Only consent to talk to that server; the confirmation still comes next.
                     openPreview(code, server)
                     onInviteHandled()
-                }) { Text("Continue", fontWeight = FontWeight.SemiBold) }
+                }) { Text(tr("Continue"), fontWeight = FontWeight.SemiBold) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     pendingSwitch = null
                     onInviteHandled()
-                }) { Text("Cancel") }
+                }) { Text(tr("Cancel")) }
             },
             containerColor = SheetColor,
         )
@@ -338,7 +339,7 @@ internal fun ListenTogetherPage(
     ) {
         item {
             Text(
-                "Listen together",
+                tr("Listen together"),
                 style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -347,10 +348,10 @@ internal fun ListenTogetherPage(
 
         if (!signedIn) {
             item {
-                Group("Account") {
-                    ActionRow("Sign in", value = "Not signed in", onClick = onSignIn)
+                Group(tr("Account")) {
+                    ActionRow(tr("Sign in"), value = tr("Not signed in"), onClick = onSignIn)
                 }
-                Footer("A party is joined as your YouTube Music account, so friends see your name and picture.")
+                Footer(tr("A party is joined as your YouTube Music account, so friends see your name and picture."))
             }
         }
 
@@ -358,17 +359,17 @@ internal fun ListenTogetherPage(
             item {
                 val enabled = signedIn && IosListenTogether.hasServer && !busy
                 Group("") {
-                    PartyAction("Start a party", "Pick a nickname and how many can join", enabled) {
+                    PartyAction(tr("Start a party"), tr("Pick a nickname and how many can join"), enabled) {
                         failure = null
                         sheet = PartySheet.Create
                     }
                     Divider()
-                    PartyAction("Join with a code", "You'll see who is inside before joining", enabled) {
+                    PartyAction(tr("Join with a code"), tr("You'll see who is inside before joining"), enabled) {
                         failure = null
                         sheet = PartySheet.JoinCode
                     }
                 }
-                Footer("Everyone in a party hears the same song at the same moment, on their own device.")
+                Footer(tr("Everyone in a party hears the same song at the same moment, on their own device."))
             }
         } else {
             item { PartyCodeGroup(state, onCopy = copyCode, onShare = { sheet = PartySheet.Invite }) }
@@ -377,11 +378,11 @@ internal fun ListenTogetherPage(
             if (state.activity.isNotEmpty()) item { ActivityGroup(state.activity) }
             item {
                 Group("") {
-                    ActionRow("Leave party", destructive = true) {
+                    ActionRow(tr("Leave party"), destructive = true) {
                         scope.launch { IosListenTogether.leaveParty() }
                     }
                 }
-                Footer("The party carries on without you.")
+                Footer(tr("The party carries on without you."))
             }
         }
 
@@ -403,11 +404,11 @@ internal fun ListenTogetherPage(
         // Last, and empty by default: nobody setting up a party needs to think about an address,
         // so this is where somebody running their own server comes looking.
         item {
-            Group("Party server") {
-                ActionRow("Custom server", value = customServer.ifBlank { "Built-in" }) {
+            Group(tr("Party server")) {
+                ActionRow(tr("Custom server"), value = customServer.ifBlank { tr("Built-in") }) {
                     // Changing the address under a live membership would leave this device holding
                     // a token for a server it no longer talks to.
-                    if (state.inParty) IosPlayerHost.showMessage("Leave the party to change servers")
+                    if (state.inParty) IosPlayerHost.showMessage(tr("Leave the party to change servers"))
                     else editingServer = true
                 }
             }
@@ -431,7 +432,7 @@ private fun PartyAction(title: String, subtitle: String, enabled: Boolean, onCli
 
 @Composable
 private fun PartyCodeGroup(state: IosListenTogether.State, onCopy: () -> Unit, onShare: () -> Unit) {
-    Group("Party code") {
+    Group(tr("Party code")) {
         Text(
             state.code.orEmpty(),
             color = MaterialTheme.colorScheme.onSurface,
@@ -443,11 +444,11 @@ private fun PartyCodeGroup(state: IosListenTogether.State, onCopy: () -> Unit, o
             modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 14.dp),
         )
         Divider()
-        ActionRow("Copy code", onClick = onCopy)
+        ActionRow(tr("Copy code"), onClick = onCopy)
         Divider()
-        ActionRow("Share invite", onClick = onShare)
+        ActionRow(tr("Share invite"), onClick = onShare)
     }
-    Footer("Friends join with this code or the invite link.")
+    Footer(tr("Friends join with this code or the invite link."))
 }
 
 /**
@@ -465,7 +466,7 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
             delay(250)
         }
     }
-    Group("Now playing") {
+    Group(tr("Now playing")) {
         Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (track?.thumbnailUrl != null) {
                 AsyncImage(
@@ -478,13 +479,13 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
             }
             Column(Modifier.weight(1f)) {
                 Text(
-                    track?.title?.takeIf(String::isNotBlank) ?: "Nothing playing yet",
+                    track?.title?.takeIf(String::isNotBlank) ?: tr("Nothing playing yet"),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 val detail = if (track == null) {
-                    if (state.you?.isHost == true) "Play a song and it will appear for everyone." else ""
+                    if (state.you?.isHost == true) tr("Play a song and it will appear for everyone.") else ""
                 } else {
                     buildString {
                         if (track.artist.isNotBlank()) append(track.artist).append(" · ")
@@ -496,7 +497,7 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
                     Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 state.playback.startedByName?.takeIf { track != null && it.isNotBlank() }?.let {
-                    Text("Started by $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("Started by {0}", it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(connectionLine(state), style = MaterialTheme.typography.bodySmall, color = if (state.connected) MaterialTheme.colorScheme.onSurfaceVariant else Danger)
             }
@@ -507,7 +508,7 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
         if (track != null && upcoming.isNotEmpty()) {
             Divider()
             Text(
-                "UP NEXT",
+                tr("UP NEXT"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 10.dp),
@@ -529,12 +530,12 @@ private fun NowPlayingGroup(state: IosListenTogether.State) {
 @Composable
 private fun MembersGroup(state: IosListenTogether.State) {
     val isHost = state.you?.isHost == true
-    Group("Listening · ${state.members.size} of ${state.maxMembers}") {
+    Group(tr("Listening · {0} of {1}", state.members.size, state.maxMembers)) {
         if (isHost) {
             Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Party size", color = MaterialTheme.colorScheme.onSurface)
-                    Text("Never removes anyone already inside", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("Party size"), color = MaterialTheme.colorScheme.onSurface)
+                    Text(tr("Never removes anyone already inside"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Stepper("−", state.maxMembers > maxOf(2, state.members.size)) {
                     IosListenTogether.setMaxMembers(state.maxMembers - 1)
@@ -544,8 +545,8 @@ private fun MembersGroup(state: IosListenTogether.State) {
             }
             Divider()
             SwitchRow(
-                title = "Only I control playback",
-                subtitle = "Guests can still pause their own device",
+                title = tr("Only I control playback"),
+                subtitle = tr("Guests can still pause their own device"),
                 checked = state.hostOnlyControl,
                 onCheckedChange = IosListenTogether::setHostOnlyControl,
                 onClick = { IosListenTogether.setHostOnlyControl(!state.hostOnlyControl) },
@@ -554,8 +555,8 @@ private fun MembersGroup(state: IosListenTogether.State) {
         }
         if (!state.controlsLocked) {
             SwitchRow(
-                title = "AutoPlay",
-                subtitle = "Keep the party going with similar songs",
+                title = tr("AutoPlay"),
+                subtitle = tr("Keep the party going with similar songs"),
                 checked = state.playback.autoplayEnabled,
                 onCheckedChange = IosListenTogether::setAutoplay,
                 onClick = { IosListenTogether.setAutoplay(!state.playback.autoplayEnabled) },
@@ -573,8 +574,8 @@ private fun MembersGroup(state: IosListenTogether.State) {
         }
     }
     Footer(
-        if (state.controlsLocked) "The host is controlling playback. Pausing only pauses this device."
-        else "Anyone in the party can play, pause and skip.",
+        if (state.controlsLocked) tr("The host is controlling playback. Pausing only pauses this device.")
+        else tr("Anyone in the party can play, pause and skip."),
     )
 }
 
@@ -585,7 +586,7 @@ private fun MemberRow(member: PartyMember, isYou: Boolean, canKick: Boolean, onK
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                member.displayName.ifBlank { "Someone" } + if (isYou) " · You" else "",
+                member.displayName.ifBlank { tr("Someone") } + if (isYou) " · You" else "",
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -594,23 +595,23 @@ private fun MemberRow(member: PartyMember, isYou: Boolean, canKick: Boolean, onK
             // period, so a tunnel or a locked screen does not read to everyone else as leaving.
             Text(
                 when {
-                    member.isHost && !member.connected -> "Host · Away"
-                    member.isHost -> "Host"
-                    !member.connected -> "Away"
-                    else -> "Listening"
+                    member.isHost && !member.connected -> tr("Host · Away")
+                    member.isHost -> tr("Host")
+                    !member.connected -> tr("Away")
+                    else -> tr("Listening")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (canKick) TextButton(onClick = onKick) { Text("Remove", color = Danger) }
+        if (canKick) TextButton(onClick = onKick) { Text(tr("Remove"), color = Danger) }
     }
 }
 
 @Composable
 private fun ActivityGroup(entries: List<PartyActivity>) {
     val formatter = remember { NSDateFormatter().apply { dateFormat = "HH:mm" } }
-    Group("Activity") {
+    Group(tr("Activity")) {
         Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
             entries.take(12).forEach { entry ->
                 val time = formatter.stringFromDate(NSDate.dateWithTimeIntervalSince1970(entry.atMs / 1000.0))
@@ -625,7 +626,7 @@ private fun ActivityGroup(entries: List<PartyActivity>) {
             }
         }
     }
-    Footer("Only what happened while you were here.")
+    Footer(tr("Only what happened while you were here."))
 }
 
 // ------------------------------------------------------------------- sheets --
@@ -664,8 +665,8 @@ private fun NicknameField(nickname: String, onNicknameChange: (String) -> Unit, 
         OutlinedTextField(
             value = nickname,
             onValueChange = onNicknameChange,
-            label = { Text("Nickname") },
-            placeholder = { Text("Your profile name") },
+            label = { Text(tr("Nickname")) },
+            placeholder = { Text(tr("Your profile name")) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
             modifier = Modifier.weight(1f),
@@ -685,12 +686,12 @@ private fun CreateSheet(
     onCreate: () -> Unit,
 ) {
     SheetBody {
-        SheetHeader("Start a party", "Choose how friends see you and how many can join.")
+        SheetHeader(tr("Start a party"), tr("Choose how friends see you and how many can join."))
         NicknameField(nickname, onNicknameChange, avatarUrl)
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Party size", color = MaterialTheme.colorScheme.onSurface)
+                Text(tr("Party size"), color = MaterialTheme.colorScheme.onSurface)
                 Text("2–10 people", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Stepper("−", !busy && maxMembers > 2) { onMaxMembersChange(maxMembers - 1) }
@@ -699,7 +700,7 @@ private fun CreateSheet(
         }
         SheetError(error)
         Spacer(Modifier.height(20.dp))
-        PrimaryButton("Start party", busy, enabled = true, onClick = onCreate)
+        PrimaryButton(tr("Start party"), busy, enabled = true, onClick = onCreate)
     }
 }
 
@@ -712,7 +713,7 @@ private fun JoinCodeSheet(
     onSubmit: () -> Unit,
 ) {
     SheetBody {
-        SheetHeader("Join a party", "Enter the six-character code, or paste an invite link.")
+        SheetHeader(tr("Join a party"), tr("Enter the six-character code, or paste an invite link."))
         OutlinedTextField(
             value = code,
             onValueChange = onCodeChange,
@@ -729,7 +730,7 @@ private fun JoinCodeSheet(
         )
         SheetError(error)
         Spacer(Modifier.height(20.dp))
-        PrimaryButton("Look up party", busy, enabled = code.length == IosListenTogether.CODE_LENGTH, onClick = onSubmit)
+        PrimaryButton(tr("Look up party"), busy, enabled = code.length == IosListenTogether.CODE_LENGTH, onClick = onSubmit)
     }
 }
 
@@ -748,8 +749,8 @@ private fun ConfirmSheet(
         Icon(Icons.Rounded.Groups, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(48.dp))
         Spacer(Modifier.height(10.dp))
         SheetHeader(
-            if (preview.hostName.isBlank()) "Join this party?" else "Join ${preview.hostName}'s party?",
-            if (preview.memberCount > 0) "${preview.memberCount} of ${preview.maxMembers} people · ${preview.code}" else preview.code,
+            if (preview.hostName.isBlank()) tr("Join this party?") else tr("Join {0}'s party?", preview.hostName),
+            if (preview.memberCount > 0) tr("{0} of {1} people · {2}", preview.memberCount, preview.maxMembers, preview.code) else preview.code,
         )
         if (preview.members.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
@@ -758,26 +759,26 @@ private fun ConfirmSheet(
             Spacer(Modifier.height(20.dp))
         }
         NicknameField(nickname, onNicknameChange, avatarUrl)
-        if (preview.isFull) SheetError("This party is full.")
+        if (preview.isFull) SheetError(tr("This party is full."))
         SheetError(error)
         Spacer(Modifier.height(20.dp))
-        PrimaryButton("Join party", busy, enabled = !preview.isFull, onClick = onJoin)
+        PrimaryButton(tr("Join party"), busy, enabled = !preview.isFull, onClick = onJoin)
         Spacer(Modifier.height(4.dp))
-        TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel", color = MaterialTheme.colorScheme.onSurface) }
+        TextButton(onClick = onCancel, enabled = !busy) { Text(tr("Cancel"), color = MaterialTheme.colorScheme.onSurface) }
     }
 }
 
 @Composable
 private fun InviteSheet(code: String, link: String, onShare: () -> Unit, onCopy: () -> Unit) {
     SheetBody {
-        SheetHeader("Invite friends", "Send the link, or read out the code.")
+        SheetHeader(tr("Invite friends"), tr("Send the link, or read out the code."))
         Text(code, color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 8.sp)
         Spacer(Modifier.height(8.dp))
         Text(link, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         Spacer(Modifier.height(20.dp))
-        PrimaryButton("Share invite link", busy = false, enabled = true, onClick = onShare)
+        PrimaryButton(tr("Share invite link"), busy = false, enabled = true, onClick = onShare)
         Spacer(Modifier.height(4.dp))
-        TextButton(onClick = onCopy) { Text("Copy code", color = MaterialTheme.colorScheme.onSurface) }
+        TextButton(onClick = onCopy) { Text(tr("Copy code"), color = MaterialTheme.colorScheme.onSurface) }
     }
 }
 
@@ -804,10 +805,10 @@ private fun ServerEditor(inParty: Boolean, onDismiss: () -> Unit) {
                 .onSuccess { resolved ->
                     IosPlayerHost.showMessage(
                         when {
-                            IosListenTogether.customServerUrl.value.isBlank() -> "Using the built-in server"
-                            resolved.health != IosListenTogether.Health.ONLINE -> "Saved, but no party server is answering"
-                            resolved.isFallback -> "Saved. It isn't answering, so the built-in server is in use"
-                            else -> "Connected to your server"
+                            IosListenTogether.customServerUrl.value.isBlank() -> tr("Using the built-in server")
+                            resolved.health != IosListenTogether.Health.ONLINE -> tr("Saved, but no party server is answering")
+                            resolved.isFallback -> tr("Saved. It isn't answering, so the built-in server is in use")
+                            else -> tr("Connected to your server")
                         },
                     )
                     onDismiss()
@@ -819,12 +820,12 @@ private fun ServerEditor(inParty: Boolean, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Custom server") },
+        title = { Text(tr("Custom server")) },
         text = {
             // Scrolls, so the field stays reachable above the keyboard.
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Run your own party server and point BitChord at it. Leave it empty to use the one built in.",
+                    tr("Run your own party server and point BitChord at it. Leave it empty to use the one built in."),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -848,7 +849,7 @@ private fun ServerEditor(inParty: Boolean, onDismiss: () -> Unit) {
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                     if (stored.isNotBlank() && !inParty) {
-                        TextButton(enabled = !busy, onClick = { save("") }) { Text("Remove", color = Danger) }
+                        TextButton(enabled = !busy, onClick = { save("") }) { Text(tr("Remove"), color = Danger) }
                     }
                     TextButton(
                         enabled = !busy && input.isNotBlank(),
@@ -860,22 +861,22 @@ private fun ServerEditor(inParty: Boolean, onDismiss: () -> Unit) {
                                     status = null
                                     scope.launch {
                                         val probe = IosListenTogether.probeHealthWithLatency(normalized)
-                                        status = if (probe.isOnline) "Online · ${probe.latencyMs} ms" to true
-                                        else "Not answering" to false
+                                        status = if (probe.isOnline) tr("Online · {0} ms", probe.latencyMs) to true
+                                        else tr("Not answering") to false
                                         busy = false
                                     }
                                 }
                         },
-                    ) { Text(if (busy) "Testing…" else "Test") }
+                    ) { Text(if (busy) tr("Testing…") else tr("Test")) }
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = !busy && !inParty && input.isNotBlank(), onClick = { save(input) }) {
-                Text("Save", fontWeight = FontWeight.SemiBold)
+                Text(tr("Save"), fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Cancel")) } },
         containerColor = SheetColor,
     )
 }
@@ -931,19 +932,19 @@ private fun PrimaryButton(label: String, busy: Boolean, enabled: Boolean, onClic
 
 /** One line saying whether this device is actually keeping up, and how well. */
 private fun connectionLine(state: IosListenTogether.State): String = when {
-    state.connection != IosListenTogether.Connection.LIVE -> "Reconnecting…"
+    state.connection != IosListenTogether.Connection.LIVE -> tr("Reconnecting…")
     // Live, but the clock has not been measured: the position above is the server's last word on
     // it rather than this device's own reckoning, and saying so beats a spinner.
-    !state.clockSynced -> "Syncing clocks…"
-    else -> "In sync · ${state.roundTripMs} ms"
+    !state.clockSynced -> tr("Syncing clocks…")
+    else -> tr("In sync · {0} ms", state.roundTripMs)
 }
 
 /** Whether the server is answering — never *where* it is; the built-in address is not shown. */
 private fun serverStatusLine(status: IosListenTogether.ServerStatus): String = when {
-    status.health == IosListenTogether.Health.CHECKING -> "Checking the party server…"
-    status.health == IosListenTogether.Health.OFFLINE -> "The party server isn't answering. It may be waking up; try again in a minute."
-    status.isFallback -> "Your server isn't answering, so the built-in one is in use · ${status.latencyMs} ms"
-    else -> "Party server online · ${status.latencyMs} ms"
+    status.health == IosListenTogether.Health.CHECKING -> tr("Checking the party server…")
+    status.health == IosListenTogether.Health.OFFLINE -> tr("The party server isn't answering. It may be waking up; try again in a minute.")
+    status.isFallback -> tr("Your server isn't answering, so the built-in one is in use · {0} ms", status.latencyMs)
+    else -> tr("Party server online · {0} ms", status.latencyMs)
 }
 
 private fun elapsed(ms: Long): String {
