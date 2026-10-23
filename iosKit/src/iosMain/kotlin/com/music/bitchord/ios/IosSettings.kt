@@ -245,6 +245,9 @@ internal object IosSettings {
     val skipSilence = BoolPref("${PREFIX}skip_silence", false)
     /** Automix; the phone's key, which still calls it smart fade. */
     val automix = BoolPref("${PREFIX}smart_fade_enabled", false)
+
+    /** iOS's own: Automix fetches a track it has no copy of only on Wi-Fi. */
+    val automixWifiOnly = BoolPref("${PREFIX}automix_analysis_wifi_only", false)
     /** SYSTEM, LIGHT or DARK, as the phone stores it. */
     val themeMode = StringPref("${PREFIX}theme_mode", "DARK")
     /** A BCP 47 tag, or empty for the phone's own language. */
@@ -512,6 +515,14 @@ internal fun SettingsPage(
                     IosSettings.automix,
                 )
                 Divider()
+                if (automixOn) {
+                    Toggle(
+                        "Analyse on Wi-Fi only",
+                        "Songs that aren’t downloaded or cached are fetched for analysis only on Wi-Fi",
+                        IosSettings.automixWifiOnly,
+                    )
+                    Divider()
+                }
                 Toggle("Skip silence", "Trim gaps longer than a second", IosSettings.skipSilence)
                 Divider()
                 val equalizerOn by IosSettings.equalizerEnabled.flow.collectAsState()

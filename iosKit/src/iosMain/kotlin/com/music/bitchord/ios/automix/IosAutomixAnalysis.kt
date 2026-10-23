@@ -8,6 +8,8 @@ import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.settings.SmartAnalysis
 import com.music.bitchord.data.settings.TrackAnalysisState
 import com.music.bitchord.ios.IosDownloads
+import com.music.bitchord.ios.IosNetwork
+import com.music.bitchord.ios.IosSettings
 import com.music.bitchord.ios.IosSongCache
 import com.music.bitchord.ios.ffmpeg.Av
 import com.music.bitchord.ios.ffmpeg.FfmpegMonoDecoder
@@ -135,6 +137,7 @@ internal object IosAutomixAnalysis {
     private val tracked = ArrayDeque<String>()
     private var watchingParty = false
     private var warnedUnavailable = false
+    private var heldForWifi = false
 
     private val _states = MutableStateFlow<Map<String, TrackAnalysisState>>(emptyMap())
 
@@ -170,6 +173,16 @@ internal object IosAutomixAnalysis {
             if (newlyTracked) publish()
             return
         }
+        // Wi-Fi only: a track with no copy on the phone waits, untried, until the connection is free.
+        if (IosSettings.automixWifiOnly.flow.value && IosNetwork.metered.value != false && localCopy(song) == null) {
+            if (!heldForWifi) {
+                heldForWifi = true
+                TrackLog.i(TAG, "automix: waiting for Wi-Fi to fetch '${song.title}'", about = id)
+            }
+            if (newlyTracked) publish()
+            return
+        }
+        heldForWifi = false
         queue.addLast(song)
         while (queue.size > MAX_QUEUED) queue.removeFirst()
         TrackLog.i(TAG, "automix: analysis requested for '${song.title}'", about = id)
@@ -259,9 +272,7 @@ internal object IosAutomixAnalysis {
     private suspend fun measure(song: Song): TrackAnalysis {
         val id = song.videoId
         val hintSeconds = song.durationText.durationSeconds()
-        val local = IosDownloads.audioPath(id)?.let { it to "download" }
-            ?: IosSongCache.peek(id)?.let { it to "song cache" }
-            ?: song.localPath?.takeIf { files.fileExistsAtPath(it) }?.let { it to "local file" }
+        val local = localCopy(song)
         if (local != null) {
             TrackLog.i(TAG, "automix: measuring '${song.title}' from the ${local.second}", about = id)
             return analyse(id, local.first, hintSeconds)
@@ -274,6 +285,12 @@ internal object IosAutomixAnalysis {
             files.removeItemAtPath(fetched, null)
         }
     }
+
+    /** [song]'s copy on the phone and where it came from, or null when it has to be fetched. */
+    private fun localCopy(song: Song): Pair<String, String>? =
+        IosDownloads.audioPath(song.videoId)?.let { it to "download" }
+            ?: IosSongCache.peek(song.videoId)?.let { it to "song cache" }
+            ?: song.localPath?.takeIf { files.fileExistsAtPath(it) }?.let { it to "local file" }
 
     /** Decodes and analyses [path] on the analysis thread. */
     private suspend fun analyse(id: String, path: String, hintSeconds: Double): TrackAnalysis {
