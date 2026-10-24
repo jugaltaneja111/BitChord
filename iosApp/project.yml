@@ -7,7 +7,7 @@ options:
     iOS: "16.0"
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.8.1"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   BitChord:

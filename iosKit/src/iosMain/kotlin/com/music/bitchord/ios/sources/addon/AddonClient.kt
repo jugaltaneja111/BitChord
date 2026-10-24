@@ -1,5 +1,6 @@
 package com.music.bitchord.ios.sources.addon
 
+import com.music.bitchord.ios.BITCHORD_VERSION
 import com.music.bitchord.ios.tr
 import com.music.bitchord.data.MonotonicClock
 import com.music.bitchord.data.TrackLog
@@ -20,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import platform.Foundation.NSBundle
 
 /**
  * One addon server, and every question this app knows how to ask it.
@@ -468,10 +468,12 @@ internal class AddonClient(rawBaseUrl: String) {
         private const val BACKOFF_BASE_MS = 500L
         private const val BACKOFF_CAP_MS = 8_000L
 
-        internal val USER_AGENT: String by lazy {
-            val version = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
-            "BitChord/v${version ?: "ios"}"
-        }
+        /**
+         * The same string Android sends, from the same Gradle version. Addon hosts gate on it —
+         * some refuse anything below 1.x with a 403 — so it must not follow the bundle's own
+         * version, which a re-signing tool is free to rewrite.
+         */
+        internal const val USER_AGENT = "BitChord/v$BITCHORD_VERSION"
 
         /**
          * What [probeSearch] asks for. Deliberately an ordinary word rather
