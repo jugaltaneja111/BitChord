@@ -823,6 +823,10 @@ internal class IosAudioEngine(
                 val dash = path.endsWith(".mpd") || "dash" in mime
                 val foreign = dash || FFMPEG_EXTENSIONS.any { path.endsWith(".$it") } ||
                     FFMPEG_CODECS.any { it in mime } ||
+                    // A FLAC AVPlayer would have to recognise by Content-Type alone — an addon's
+                    // `/file?eid=…` — goes to FFmpeg, which reads the stream itself. A `.flac`
+                    // path stays on AVPlayer, which plays those.
+                    ("flac" in mime && !path.endsWith(".flac")) ||
                     Regex("[?&]mime=audio%2F(webm|ogg)", RegexOption.IGNORE_CASE).containsMatchIn(url)
                 return Route(ffmpeg = foreign, dash = dash)
             }

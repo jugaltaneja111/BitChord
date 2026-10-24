@@ -59,8 +59,13 @@ import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 internal object IosPlayer {
     private const val TAG = "IosPlayer"
     private const val SUBSTITUTE_WAIT_MS = 6_000L
-    /** How long a source lookup that lost the start may go on, to become an upgrade instead. */
-    private const val SUBSTITUTE_LOOKUP_MS = 20_000L
+    /**
+     * How long a source lookup that lost the start may go on, to become an upgrade instead. Long,
+     * because nothing waits on it any more: an addon fronting a hi-res catalogue can take 10–15 s to
+     * search and as long again to mint its stream URL, and a lookup cut off at 20 s threw that
+     * answer away only for the upgrade to ask the whole question again from the top.
+     */
+    private const val SUBSTITUTE_LOOKUP_MS = 60_000L
 
     /** A version switch's blend, the phone's. */
     private const val VERSION_FADE_MS = 550L
@@ -1027,14 +1032,25 @@ internal object IosPlayer {
                 }
                 val stream = found.picked(song)
                 TrackLog.i(TAG, "$key: upgrading to ${found.sourceName}, ${found.format.summary}")
-                engine.swapStream(stream.url, stream.headers, stream.loudnessDb, stream.durationMs, stream.route) { swapped ->
-                    if (swapped && _song.value?.videoId == key) {
-                        servedBy[key] = found.sourceName to found.format.kbps
-                        TrackLog.i(TAG, "$key: upgraded to ${found.sourceName}")
-                    } else {
-                        TrackLog.w(TAG, "$key: upgrade to ${found.sourceName} didn't take")
+                fun swap(route: IosAudioEngine.Route) {
+                    engine.swapStream(stream.url, stream.headers, stream.loudnessDb, stream.durationMs, route) { swapped ->
+                        when {
+                            _song.value?.videoId != key -> Unit
+                            swapped -> {
+                                servedBy[key] = found.sourceName to found.format.kbps
+                                TrackLog.i(TAG, "$key: upgraded to ${found.sourceName}")
+                            }
+                            // AVPlayer turning down a copy FFmpeg can open — a FLAC from a URL with
+                            // no extension to go by — is a second try, not a lost upgrade.
+                            !route.ffmpeg && !engine.isBlending -> {
+                                TrackLog.w(TAG, "$key: AVPlayer refused ${found.sourceName}'s stream; trying FFmpeg")
+                                swap(IosAudioEngine.Route(ffmpeg = true))
+                            }
+                            else -> TrackLog.w(TAG, "$key: upgrade to ${found.sourceName} didn't take")
+                        }
                     }
                 }
+                swap(stream.route)
             } finally {
                 lead.lookup?.cancel()
             }
