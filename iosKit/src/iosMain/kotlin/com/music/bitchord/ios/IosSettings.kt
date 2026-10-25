@@ -520,6 +520,8 @@ internal fun SettingsPage(
                 )
                 if (downloaded.isNotEmpty()) {
                     Divider()
+                    ActionRow(tr("Save downloads to Files"), value = tr("Tagged copies"), onClick = { IosDownloadExport.export() })
+                    Divider()
                     ActionRow(if (confirmDelete) tr("Tap again to delete every download") else tr("Delete all downloads"), destructive = true) {
                         if (confirmDelete) {
                             IosDownloads.removeAll()

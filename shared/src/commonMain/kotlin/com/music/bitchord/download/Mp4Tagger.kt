@@ -148,7 +148,7 @@ object Mp4Tagger {
         var pos = start
         while (pos + 8 <= end) {
             val size32 = readU32(bytes, pos)
-            val type = String(bytes, pos + 4, 4, Charsets.ISO_8859_1)
+            val type = latin1String(bytes, pos + 4, 4)
             var headerLen = 8
             var size = size32
             if (size32 == 1L) {
@@ -192,7 +192,7 @@ object Mp4Tagger {
         // ISO-8859-1, not ASCII: the iTunes item names below carry the 0xA9
         // "copyright" byte, which plain ASCII can't encode and would replace
         // with '?' — corrupting the very atom type a player looks up by.
-        type.toByteArray(Charsets.ISO_8859_1).copyInto(out, 4)
+        type.latin1Bytes().copyInto(out, 4)
         payload.copyInto(out, 8)
         return out
     }
@@ -207,7 +207,7 @@ object Mp4Tagger {
 
     /** Type indicator 1 = UTF-8 text. */
     private fun textItem(fourCc: String, text: String): ByteArray =
-        box(fourCc, dataAtom(1, text.toByteArray(Charsets.UTF_8)))
+        box(fourCc, dataAtom(1, text.encodeToByteArray()))
 
     /** Type indicator 13 = JPEG, 14 = PNG. */
     private fun coverItem(image: ByteArray, isPng: Boolean): ByteArray =
@@ -227,9 +227,9 @@ object Mp4Tagger {
      */
     private fun freeformItem(name: String, text: String): ByteArray {
         // Both are FullBoxes: four bytes of version/flags, then the string.
-        val mean = box("mean", ByteArray(4) + MEAN.toByteArray(Charsets.UTF_8))
-        val label = box("name", ByteArray(4) + name.toByteArray(Charsets.UTF_8))
-        return box("----", mean + label + dataAtom(1, text.toByteArray(Charsets.UTF_8)))
+        val mean = box("mean", ByteArray(4) + MEAN.encodeToByteArray())
+        val label = box("name", ByteArray(4) + name.encodeToByteArray())
+        return box("----", mean + label + dataAtom(1, text.encodeToByteArray()))
     }
 
     /** The reverse-DNS owner of [freeformItem], which is what keeps the name ours. */
@@ -240,7 +240,7 @@ object Mp4Tagger {
     private fun hdlrAtom(): ByteArray {
         // version/flags(4) + pre_defined(4) + handler_type(4) + reserved(12) + name(1, empty cstring)
         val body = ByteArray(25)
-        "mdir".toByteArray(Charsets.ISO_8859_1).copyInto(body, 8)
+        "mdir".latin1Bytes().copyInto(body, 8)
         return box("hdlr", body)
     }
 

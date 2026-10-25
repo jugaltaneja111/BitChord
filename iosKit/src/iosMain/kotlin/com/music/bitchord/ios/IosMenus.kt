@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -415,6 +416,10 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
         val downloadProgress by IosDownloads.progress.collectAsState()
         if (!onDevice) when (val state = downloadProgress[song.videoId]) {
             null -> if (song.videoId in downloadedIds) {
+                MenuRow(Icons.Rounded.Folder, tr("Save to Files"), colors) {
+                    onDismiss()
+                    IosDownloadExport.export(listOf(song.videoId))
+                }
                 MenuRow(Icons.Rounded.DownloadDone, tr("Remove download"), colors) {
                     onDismiss()
                     IosDownloads.remove(listOf(song.videoId))

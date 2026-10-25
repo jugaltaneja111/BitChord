@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -78,6 +79,8 @@ internal data class DownloadedTrack(
     val addedAt: Long = 0,
     /** YouTube's loudness figure for the track, so a download is levelled like the stream. */
     val loudnessDb: Double? = null,
+    /** Whether the file carries its own title, artist, album and cover (see [IosDownloadTags]). */
+    val tagged: Boolean = false,
 )
 
 @Serializable
@@ -254,6 +257,22 @@ internal object IosDownloads {
         save()
     }
 
+    /** Writes tags into [videoIds]' files that were saved before downloads carried them. */
+    suspend fun ensureTagged(videoIds: Collection<String>) {
+        val wanted = videoIds.toSet()
+        var changed = false
+        for (track in _tracks.value.filter { it.videoId in wanted && !it.tagged }) {
+            val path = "$dir/${track.audioFile}"
+            if (!IosDownloadTags.carriesTags(track.audioFile.substringAfterLast('.', ""))) continue
+            val done = IosDownloadTags.embed(path, song(track), track.artworkFile?.let { "$dir/$it" }, lyrics = null)
+            if (!done) continue
+            val updated = track.copy(tagged = true, bytes = fileSize(path).takeIf { it > 0 } ?: track.bytes)
+            publish(_tracks.value.map { if (it.videoId == track.videoId) updated else it }, _releases.value)
+            changed = true
+        }
+        if (changed) save()
+    }
+
     /** Bytes the downloads take on the phone. */
     fun totalBytes(): Long = _tracks.value.sumOf { it.bytes }
 
@@ -285,7 +304,17 @@ internal object IosDownloads {
         if (_progress.value.isEmpty()) IosPlayerHost.showMessage(tr("Downloads finished"))
     }
 
-    private suspend fun fetch(song: Song): DownloadedTrack {
+    private suspend fun fetch(song: Song): DownloadedTrack = kotlinx.coroutines.coroutineScope {
+        // Asked beside the transfer, so the words are usually in hand once the bytes are.
+        val lyrics = async { runCatching { IosDownloadTags.lyricsFor(song) }.getOrNull() }
+        try {
+            fetchAudio(song, lyrics)
+        } finally {
+            lyrics.cancel()
+        }
+    }
+
+    private suspend fun fetchAudio(song: Song, lyrics: kotlinx.coroutines.Deferred<IosDownloadTags.Lyrics?>): DownloadedTrack {
         val maxKbps = IosSettings.downloadKbps.flow.value
         var stream = streamFor(song, maxKbps) ?: error("No downloadable stream")
         val total = contentLength(stream.url, stream.headers) ?: error("Track unavailable: no length to fetch")
@@ -338,6 +367,8 @@ internal object IosDownloads {
         files.removeItemAtPath("$dir/$audioFile", null)
         files.moveItemAtPath(part, "$dir/$audioFile", null)
         val artworkFile = song.thumbnailUrl?.let { saveArtwork(song.videoId, it) }
+        val tagged = IosDownloadTags.carriesTags(extension) &&
+            IosDownloadTags.embed("$dir/$audioFile", song, artworkFile?.let { "$dir/$it" }, lyrics.await())
         return DownloadedTrack(
             videoId = song.videoId,
             title = song.title,
@@ -354,6 +385,7 @@ internal object IosDownloads {
             kbps = stream.kbps,
             addedAt = wallClockMs(),
             loudnessDb = stream.loudnessDb,
+            tagged = tagged,
         )
     }
 

@@ -2,7 +2,6 @@ package com.music.bitchord.download
 
 import com.music.bitchord.data.lyrics.WORD_LYRICS_FIELD
 
-import java.io.ByteArrayOutputStream
 
 /**
  * Rewrites a downloaded FLAC's metadata blocks to carry title, artist, album,
@@ -46,7 +45,7 @@ object FlacTagger {
     ): ByteArray = runCatching {
         val done = header(bytes, title, artist, album, lyrics, cover, coverMime, wordLyrics)
             ?: return@runCatching bytes
-        val out = ByteArrayOutputStream(done.metadata.size + (bytes.size - done.audioStart))
+        val out = ByteSink(done.metadata.size + (bytes.size - done.audioStart))
         out.write(done.metadata)
         // The frames, verbatim.
         out.write(bytes, done.audioStart, bytes.size - done.audioStart)
@@ -120,7 +119,7 @@ object FlacTagger {
         val chain = blocks.filterNot { it.type in REPLACED }
             .map { it.type to head.copyOfRange(it.start, it.start + it.length) } + additions
 
-        val out = ByteArrayOutputStream(offset + additions.sumOf { it.second.size } + 64)
+        val out = ByteSink(offset + additions.sumOf { it.second.size } + 64)
         out.write(MAGIC)
         chain.forEachIndexed { index, (type, payload) ->
             out.write(if (index == chain.lastIndex) type or 0x80 else type)
@@ -169,13 +168,13 @@ object FlacTagger {
         }
         if (fields.isEmpty()) return null
 
-        val out = ByteArrayOutputStream()
-        val vendor = VENDOR.toByteArray(Charsets.UTF_8)
+        val out = ByteSink()
+        val vendor = VENDOR.encodeToByteArray()
         out.writeLe(vendor.size)
         out.write(vendor)
         out.writeLe(fields.size)
         for (field in fields) {
-            val encoded = field.toByteArray(Charsets.UTF_8)
+            val encoded = field.encodeToByteArray()
             out.writeLe(encoded.size)
             out.write(encoded)
         }
@@ -192,8 +191,8 @@ object FlacTagger {
      * image has to decode it anyway.
      */
     private fun picture(cover: ByteArray, mime: String): ByteArray {
-        val out = ByteArrayOutputStream(cover.size + 64)
-        val mimeBytes = mime.toByteArray(Charsets.US_ASCII)
+        val out = ByteSink(cover.size + 64)
+        val mimeBytes = mime.latin1Bytes()
         out.writeBe(PICTURE_FRONT_COVER)
         out.writeBe(mimeBytes.size)
         out.write(mimeBytes)
@@ -209,14 +208,14 @@ object FlacTagger {
 
     private class Block(val type: Int, val start: Int, val length: Int)
 
-    private fun ByteArrayOutputStream.writeLe(value: Int) {
+    private fun ByteSink.writeLe(value: Int) {
         write(value and 0xFF)
         write((value ushr 8) and 0xFF)
         write((value ushr 16) and 0xFF)
         write((value ushr 24) and 0xFF)
     }
 
-    private fun ByteArrayOutputStream.writeBe(value: Int) {
+    private fun ByteSink.writeBe(value: Int) {
         write((value ushr 24) and 0xFF)
         write((value ushr 16) and 0xFF)
         write((value ushr 8) and 0xFF)
@@ -229,7 +228,7 @@ object FlacTagger {
         return true
     }
 
-    private val MAGIC = "fLaC".toByteArray(Charsets.US_ASCII)
+    private val MAGIC = "fLaC".latin1Bytes()
 
     /** One byte of flags plus three of length, before every block's payload. */
     private const val BLOCK_HEADER = 4
