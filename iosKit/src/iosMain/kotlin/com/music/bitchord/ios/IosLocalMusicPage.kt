@@ -167,7 +167,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
                         )
                     } else {
                         MessageState(
-                            webdavError ?: tr("No audio files found on the WebDAV server. Check the URL in Sources."),
+                            webdavError ?: tr("No audio files found on the WebDAV server. Check the URL in Settings."),
                             actionLabel = tr("Retry"),
                             onAction = IosWebDav::refresh,
                         )

@@ -114,7 +114,7 @@ internal object IosWebDav {
             try {
                 val files = walk(root, IosSettings.webdavUsername.flow.value, IosSettings.webdavPassword.flow.value)
                 _songs.value = files.map(::song)
-                _error.value = if (files.isEmpty()) tr("No audio files found on the WebDAV server. Check the URL in Sources.") else null
+                _error.value = if (files.isEmpty()) tr("No audio files found on the WebDAV server. Check the URL in Settings.") else null
                 val text = json.encodeToString(WebDavIndex.serializer(), WebDavIndex(root, files))
                 NSString.create(string = text).writeToFile(indexPath, atomically = true, encoding = NSUTF8StringEncoding, error = null)
                 TrackLog.i(TAG, "${files.size} files listed")
