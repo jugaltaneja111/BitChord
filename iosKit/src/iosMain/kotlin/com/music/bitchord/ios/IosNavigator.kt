@@ -30,8 +30,10 @@ internal sealed interface IosPage {
     data object Downloads : IosPage
     /** The listener's own audio files, from BitChord's folder in Files and the folder picked in Settings. */
     data object LocalMusic : IosPage
-    /** One artist's or album's local songs, opened from [LocalMusic]. */
-    data class LocalMusicGroup(val album: Boolean, val name: String) : IosPage
+    /** The music folder on the listener's WebDAV server, laid out as [LocalMusic]. */
+    data object WebDavMusic : IosPage
+    /** One artist's or album's songs, opened from [LocalMusic] or, when [webdav], [WebDavMusic]. */
+    data class LocalMusicGroup(val album: Boolean, val name: String, val webdav: Boolean = false) : IosPage
     data object Settings : IosPage
     data object LyricsSources : IosPage
     data object TranslationLanguage : IosPage
@@ -89,6 +91,7 @@ internal class IosNavigator {
         when {
             browseId == DOWNLOADS_LINK -> open(IosPage.Downloads)
             browseId == LOCAL_MUSIC_LINK -> open(IosPage.LocalMusic)
+            browseId == IosWebDav.LINK -> open(IosPage.WebDavMusic)
             videoId != null -> IosPlayer.playRadio(item.toSong(shelfTitle))
             browseId != null -> openBrowse(
                 BrowseItem(

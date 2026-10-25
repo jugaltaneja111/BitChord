@@ -275,6 +275,10 @@ internal object IosSettings {
     val hideNonMusicAudio = BoolPref("${PREFIX}filter_non_music_audio", true)
     /** The Local music page's order, a [LocalMusicSort] name. Not the phone's key: its sorts differ. */
     val localMusicSort = StringPref("${PREFIX}ios_local_music_sort", "TITLE")
+    /** The WebDAV music folder, as the phone keeps it; blank when none is connected. */
+    val webdavUrl = StringPref("${PREFIX}webdav_url", "")
+    val webdavUsername = StringPref("${PREFIX}webdav_username", "")
+    val webdavPassword = SecretPref("webdav_password")
     /** For a music video, play the catalogue's audio release in its place. */
     val preferMusicOnly = BoolPref("${PREFIX}prefer_music_only", false)
 
@@ -617,7 +621,7 @@ internal fun SettingsPage(
                 Divider()
                 ActionRow(
                     tr("Rescan"),
-                    value = if (localScanning) tr("Scanning…") else "${localSongs.size} ${if (localSongs.size == 1) "song" else "songs"}",
+                    value = if (localScanning) tr("Scanning…") else trPlural(localSongs.size, "{0} song", "{0} songs"),
                     onClick = IosLocalMusic::rescan,
                 )
                 Divider()

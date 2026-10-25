@@ -134,6 +134,7 @@ internal fun IosPageHost(
             IosPage.History -> HistoryPage(contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
             IosPage.LocalMusic -> LocalMusicPage(navigator, contentPadding, underBack)
+            IosPage.WebDavMusic -> LocalMusicPage(navigator, contentPadding, underBack, webdav = true)
             is IosPage.LocalMusicGroup -> LocalMusicGroupPage(page, contentPadding, underBack)
             IosPage.Settings -> FormWidth { SettingsPage(contentPadding, underBack, onClearSearchHistory, onOpenLyricsSources = { navigator.open(IosPage.LyricsSources) }, onOpenTranslationLanguage = { navigator.open(IosPage.TranslationLanguage) }, onOpenSources = { navigator.open(IosPage.Sources) }, onOpenDownloads = { navigator.open(IosPage.Downloads) }, onOpenEqualizer = { navigator.open(IosPage.Equalizer) }, onOpenIntegrations = { navigator.open(IosPage.Integrations) }, onOpenReplay = { navigator.open(IosPage.Replay()) }, onOpenListenTogether = { navigator.open(IosPage.ListenTogether()) }) }
             IosPage.Integrations -> FormWidth { IntegrationsPage(contentPadding, underBack, onOpenSpotify = { navigator.open(IosPage.Spotify) }, onOpenDiscord = { navigator.open(IosPage.Discord) }) }

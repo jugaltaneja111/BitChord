@@ -348,13 +348,27 @@ internal object IosAutomixAnalysis {
      */
     internal suspend fun fetch(song: Song, maxBytes: Long? = null): String {
         val id = song.videoId
-        val youTubeId = if (IosSources.isSourceTrack(song)) {
-            IosSources.youtubeFallback(song) ?: error("no YouTube copy to measure")
-        } else {
-            id
+        // A file on the listener's server is measured from there, as it plays.
+        val stream = com.music.bitchord.ios.IosWebDav.stream(id)?.let { (url, headers) ->
+            InnerTubeXResolver.Extracted(
+                videoId = id,
+                profileId = "",
+                url = url,
+                headers = headers,
+                kbps = 0,
+                mimeType = "audio/" + url.substringBefore('?').substringAfterLast('.').lowercase(),
+                clientName = "WebDAV",
+                loudnessDb = null,
+            )
+        } ?: run {
+            val youTubeId = if (IosSources.isSourceTrack(song)) {
+                IosSources.youtubeFallback(song) ?: error("no YouTube copy to measure")
+            } else {
+                id
+            }
+            if (youTubeId != id) TrackLog.i(TAG, "automix: measuring '${song.title}' on YouTube's $youTubeId", about = id)
+            InnerTubeXResolver.extract(youTubeId, maxKbps = FETCH_KBPS) ?: error("no stream to measure")
         }
-        if (youTubeId != id) TrackLog.i(TAG, "automix: measuring '${song.title}' on YouTube's $youTubeId", about = id)
-        val stream = InnerTubeXResolver.extract(youTubeId, maxKbps = FETCH_KBPS) ?: error("no stream to measure")
         val length = contentLength(stream.url, stream.headers) ?: error("no length to fetch")
         val total = maxBytes?.let { minOf(it, length) } ?: length
         if (total > MAX_FETCH_BYTES) error("too long to measure (${total / (1024 * 1024)} MB)")

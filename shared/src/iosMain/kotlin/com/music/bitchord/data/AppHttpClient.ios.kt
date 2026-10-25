@@ -1,12 +1,28 @@
 package com.music.bitchord.data
 
+import com.music.bitchord.data.webdav.WebDavAuth
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.engine.darwin.KtorNSURLSessionDelegate
+import io.ktor.client.plugins.api.createClientPlugin
+import io.ktor.http.HttpHeaders
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURLSession
 import platform.Foundation.NSURLSessionConfiguration
+
+/**
+ * The WebDAV server's login on every request for its host that doesn't carry one, as the
+ * phone's interceptor does: a cover filed beside the music is fetched by the image loader,
+ * which knows nothing of the server.
+ */
+private val WebDavLogin = createClientPlugin("WebDavLogin") {
+    onRequest { request, _ ->
+        if (request.headers[HttpHeaders.Authorization] == null && WebDavAuth.shouldAuthorize(request.url.host)) {
+            WebDavAuth.authHeader?.takeIf { it.isNotBlank() }?.let { request.headers.append(HttpHeaders.Authorization, it) }
+        }
+    }
+}
 
 actual fun appHttpClient(configure: HttpClientConfig<*>.() -> Unit): HttpClient =
     HttpClient(Darwin) {
@@ -22,5 +38,6 @@ actual fun appHttpClient(configure: HttpClientConfig<*>.() -> Unit): HttpClient 
             )
             usePreconfiguredSession(session, delegate)
         }
+        install(WebDavLogin)
         configure()
     }

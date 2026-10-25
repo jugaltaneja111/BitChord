@@ -72,6 +72,7 @@ import androidx.compose.runtime.LaunchedEffect
 import com.music.bitchord.ui.theme.StatusBarIcons
 import com.music.bitchord.data.model.ShelfItem
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryMusic
 import com.music.bitchord.ui.screens.LibraryLink
 import androidx.compose.runtime.collectAsState
@@ -355,6 +356,7 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
     val signedIn by IosAccount.signedIn.collectAsState()
     val state by IosAccount.library.collectAsState()
     val deviceItems = deviceShelfItems()
+    val webdavConfigured by IosWebDav.configured.collectAsState()
     LibraryScreen(
         signedIn = signedIn,
         state = state,
@@ -393,6 +395,17 @@ private fun LibraryPage(navigator: IosNavigator, contentPadding: PaddingValues, 
                 ),
                 icon = Icons.Rounded.LibraryMusic,
             ),
+        ) + listOfNotNull(
+            LibraryLink(
+                item = ShelfItem(
+                    title = "WebDAV",
+                    subtitle = tr("Music on your server"),
+                    thumbnailUrl = null,
+                    videoId = null,
+                    browseId = IosWebDav.LINK,
+                ),
+                icon = Icons.Rounded.Folder,
+            ).takeIf { webdavConfigured },
         ),
         deviceItems = deviceItems,
     )

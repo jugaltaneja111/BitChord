@@ -1,6 +1,10 @@
 package com.music.bitchord.ios.sources
 
 import com.music.bitchord.ios.tr
+import com.music.bitchord.ios.trPlural
+import com.music.bitchord.ios.IosSettings
+import com.music.bitchord.ios.IosWebDav
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,8 +83,9 @@ private val Accent = Color(0xFF0A84FF)
  * be moved above an addon would be offering a choice the resolver does not
  * honour, so they get none.
  *
- * What the phone's page has that this one doesn't: the WebDAV and SMB library
- * sections (not sources in this sense, and not on iOS yet), the Bluetooth codec permission row (iOS Bluetooth is always AAC,
+ * The WebDAV library has a section of its own below, as on the phone. What the phone's page has
+ * that this one doesn't: the SMB library section (iOS has no SMB client to hand; a share connected
+ * in the Files app is picked as the Local music folder instead), the Bluetooth codec permission row (iOS Bluetooth is always AAC,
  * so there is no codec to read), and the "not used on mobile data" line (this
  * page isn't told the connection's ceiling; the walk applies it per stream from
  * the request the player passes).
@@ -94,6 +99,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
     val health = remember { mutableStateMapOf<String, SourceHealth>() }
 
     var editing by remember { mutableStateOf<SourceConfig?>(null) }
+    var editingWebDav by remember { mutableStateOf(false) }
     var confirmJioSaavn by remember { mutableStateOf(false) }
 
     // Bumped whenever the audio route changes, so a row waiting on a lossless
@@ -226,6 +232,39 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
             )
         }
         item {
+            val webdavConfigured by IosWebDav.configured.collectAsState()
+            val webdavUrl by IosSettings.webdavUrl.flow.collectAsState()
+            val webdavSongs by IosWebDav.songs.collectAsState()
+            val webdavLoading by IosWebDav.loading.collectAsState()
+            val webdavError by IosWebDav.error.collectAsState()
+            Header(tr("Music libraries"))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(GroupShape).background(GroupColor)) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable { editingWebDav = true }.padding(16.dp, 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("WebDAV", color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            when {
+                                !webdavConfigured -> tr("Not connected · tap to add a server")
+                                webdavLoading -> tr("Listing {0}…", webdavUrl)
+                                webdavError != null && webdavSongs.isEmpty() -> webdavError.orEmpty()
+                                else -> "${trPlural(webdavSongs.size, "{0} song", "{0} songs")} · $webdavUrl"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (webdavConfigured && webdavError != null && webdavSongs.isEmpty()) Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Footer(tr("Songs in a WebDAV folder — your Nextcloud Music directory or any server speaking WebDAV — show up in Library and stream from there. For an SMB share, connect to it in the Files app, then pick it as the Local music folder in Settings."))
+        }
+        item {
             val slack by SourcePrefs.lengthSlackSeconds.collectAsState()
             Header(tr("Source matching"))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(GroupShape).background(GroupColor).padding(16.dp, 10.dp)) {
@@ -296,6 +335,8 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
             },
         )
     }
+
+    if (editingWebDav) WebDavEditor(onDismiss = { editingWebDav = false })
 
     if (confirmJioSaavn) {
         AlertDialog(

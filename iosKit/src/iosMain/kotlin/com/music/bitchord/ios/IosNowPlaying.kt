@@ -70,7 +70,7 @@ internal fun IosNowPlaying(
     LaunchedEffect(song.videoId) {
         links = null
         if (song.albumId != null && song.artistId != null) return@LaunchedEffect
-        if (IosLocalMusic.isLocal(song)) return@LaunchedEffect
+        if (isOwnFile(song)) return@LaunchedEffect
         links = YtMusicRepository.trackLinks(song.videoId).getOrNull()
     }
     val playerSong = links?.takeIf { it.videoId == song.videoId }?.let { extra ->
@@ -127,6 +127,7 @@ internal fun IosNowPlaying(
             onToggleLike = {
                 when {
                     IosLocalMusic.isLocal(song) -> IosPlayerHost.showMessage(tr("Songs on this iPhone can’t be liked on YouTube Music"))
+                    IosWebDav.isWebDav(song) -> IosPlayerHost.showMessage(tr("Songs on your server can’t be liked on YouTube Music"))
                     signedIn -> IosAccount.toggleLike(song, likeStatus)
                     else -> leaveTo { IosOverlays.login = true }
                 }

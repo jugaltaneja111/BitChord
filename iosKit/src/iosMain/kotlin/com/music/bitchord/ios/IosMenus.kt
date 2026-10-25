@@ -261,12 +261,12 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
     var links by remember(request.song.videoId) { mutableStateOf<Song?>(null) }
     // A file on this iPhone has no album or artist page to look up.
     var linksLoaded by remember(request.song.videoId) {
-        mutableStateOf(request.song.albumId != null && request.song.artistId != null || IosLocalMusic.isLocal(request.song))
+        mutableStateOf(request.song.albumId != null && request.song.artistId != null || isOwnFile(request.song))
     }
     val scope = rememberCoroutineScope()
     val song = request.song
     // A file on this iPhone: what YouTube Music holds about it — likes, library, radio, links — isn't there.
-    val onDevice = IosLocalMusic.isLocal(song)
+    val onDevice = isOwnFile(song)
 
     // Whether it is liked or in the library is YouTube's to say; the row that opened this rarely knew.
     LaunchedEffect(song.videoId, signedIn) {
@@ -740,7 +740,7 @@ private fun BrowseMenuSheet(request: BrowseMenuRequest, navigator: IosNavigator,
 private fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     // Files on this iPhone go only in playlists kept on it: YouTube Music can't hold them.
     val account by IosAccount.signedIn.collectAsState()
-    val signedIn = account && songs.none { IosLocalMusic.isLocal(it) }
+    val signedIn = account && songs.none { isOwnFile(it) }
     val localPlaylists by IosLocalPlaylists.playlists.collectAsState()
     var playlists by remember { mutableStateOf<List<UserPlaylist>?>(null) }
     var failed by remember { mutableStateOf(false) }
@@ -840,7 +840,7 @@ private fun PlaylistChoice(title: String, subtitle: String, thumbnailUrl: String
 @Composable
 private fun NewPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     val account by IosAccount.signedIn.collectAsState()
-    val signedIn = account && songs.none { IosLocalMusic.isLocal(it) }
+    val signedIn = account && songs.none { isOwnFile(it) }
     var title by remember { mutableStateOf("") }
     var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
     var saving by remember { mutableStateOf(false) }

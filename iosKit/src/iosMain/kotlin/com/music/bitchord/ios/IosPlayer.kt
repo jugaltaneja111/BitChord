@@ -343,7 +343,7 @@ internal object IosPlayer {
         if (refusedByHost()) return
         playQueue(listOf(song), 0)
         // A local file has no YouTube id to seed a station with.
-        if (IosLocalMusic.isLocal(song)) return
+        if (isOwnFile(song)) return
         scope.launch {
             YtMusicRepository.radio(song.videoId).onSuccess { radio ->
                 // Still the same session: the user may have moved on while it loaded.
@@ -757,7 +757,7 @@ internal object IosPlayer {
     /** The last song's radio after the queue; played straight away when the queue has run out. */
     private fun extendWithRadio(playNext: Boolean) {
         // Seeded from the last YouTube track: a local file has no id to seed it with.
-        val last = _queue.value.lastOrNull { !IosLocalMusic.isLocal(it) }
+        val last = _queue.value.lastOrNull { !isOwnFile(it) }
             ?: return if (playNext && _queue.value.isNotEmpty()) engine.pause() else Unit
         if (extending) return
         // One supplier per party, as the phone has it: the host tops the queue up for everyone.
@@ -890,7 +890,7 @@ internal object IosPlayer {
      */
     suspend fun alternateVersion(song: Song): Song? {
         otherCut[song.videoId]?.let { return it }
-        if (IosLocalMusic.isLocal(song) || IosSources.isSourceTrack(song)) return null
+        if (isOwnFile(song) || IosSources.isSourceTrack(song)) return null
         val other = runCatching {
             if (song.isVideo) YtMusicRepository.resolveAudio(song) else YtMusicRepository.resolveVideo(song)
         }.getOrNull()
@@ -1179,7 +1179,7 @@ internal object IosPlayer {
     fun canRevertToOriginal(song: Song): Boolean {
         val from = playingFrom(song) ?: return false
         return from !in ownCopies && from !in onPhoneCopies && !song.isVideo && !inParty &&
-            !IosSources.isSourceTrack(song) && !IosLocalMusic.isLocal(song) && !IosOriginalVersion.isPinned(song.videoId)
+            !IosSources.isSourceTrack(song) && !isOwnFile(song) && !IosOriginalVersion.isPinned(song.videoId)
     }
 
     /**
@@ -1188,7 +1188,7 @@ internal object IosPlayer {
      */
     fun canUpgradeQuality(song: Song): Boolean {
         val from = playingFrom(song) ?: return false
-        if (from in onPhoneCopies || song.isVideo || inParty || IosSources.isSourceTrack(song) || IosLocalMusic.isLocal(song)) return false
+        if (from in onPhoneCopies || song.isVideo || inParty || IosSources.isSourceTrack(song) || isOwnFile(song)) return false
         if (from !in ownCopies && !IosOriginalVersion.isPinned(song.videoId)) return false
         return IosSources.canSubstituteForYouTube(IosSources.requestFor(IosSettings.effectiveAudioQuality))
     }
@@ -1249,6 +1249,20 @@ internal object IosPlayer {
     private suspend fun networkStream(audio: Song, substituteWaitMs: Long = SUBSTITUTE_WAIT_MS): Picked? = kotlinx.coroutines.coroutineScope {
         // A local file that has gone has nothing to ask YouTube or the sources for.
         if (IosLocalMusic.isLocal(audio)) return@coroutineScope null
+        // A file on the listener's server streams from there, as it is, with their login.
+        if (IosWebDav.isWebDav(audio)) {
+            val (url, headers) = IosWebDav.stream(audio.videoId) ?: return@coroutineScope null
+            return@coroutineScope Picked(
+                url = url,
+                headers = headers,
+                loudnessDb = null,
+                durationMs = trackLength(null, audio),
+                source = "WebDAV",
+                kbps = null,
+                fromYouTube = false,
+                route = IosAudioEngine.Route.of(url),
+            )
+        }
         val request = IosSources.requestFor(IosSettings.effectiveAudioQuality)
         val cap = (request as? StreamRequest.Capped)?.maxKbps?.coerceAtMost(320) ?: 320
         if (IosSources.isSourceTrack(audio)) {

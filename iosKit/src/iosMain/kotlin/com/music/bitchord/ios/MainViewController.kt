@@ -71,6 +71,7 @@ private fun start() {
     IosDownloads.restore()
     IosLocalPlaylists.restore()
     IosLocalMusic.restore()
+    IosWebDav.restore()
     IosSongCache.restore()
     com.music.bitchord.ios.sources.IosSources.init()
     IosArtistFacts.start()

@@ -61,7 +61,10 @@ private enum class LocalMusicTab(val label: String) { SONGS(tr("Songs")), ARTIST
 
 private const val LOCAL_SOURCE = "Local music"
 
-private fun List<Song>.playable() = map { it.copy(playbackSource = LOCAL_SOURCE, playbackSourceType = PlaybackSourceType.QUEUE) }
+private const val WEBDAV_SOURCE = "WebDAV"
+
+private fun List<Song>.playable(webdav: Boolean = false) =
+    map { it.copy(playbackSource = if (webdav) WEBDAV_SOURCE else LOCAL_SOURCE, playbackSourceType = PlaybackSourceType.QUEUE) }
 
 private fun List<Song>.sortedFor(sort: LocalMusicSort): List<Song> = when (sort) {
     LocalMusicSort.TITLE -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, Song::title))
@@ -96,18 +99,23 @@ internal fun localSongsMatching(songs: List<Song>, query: String): List<Song> {
  * The phone's Local Music page, laid out like Downloads: the songs found in BitChord's folder in
  * Files and in the folder picked in Settings, searched and sorted, or grouped by artist or album.
  * A tap plays the list as it stands, from that song.
+ *
+ * With [webdav], the same page for the music folder on the listener's WebDAV server, as the phone
+ * draws its WebDAV library with its Local Music view.
  */
 @Composable
-internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp) {
-    val all by IosLocalMusic.songs.collectAsState()
-    val scanning by IosLocalMusic.scanning.collectAsState()
+internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp, webdav: Boolean = false) {
+    val all by (if (webdav) IosWebDav.songs else IosLocalMusic.songs).collectAsState()
+    val scanning by (if (webdav) IosWebDav.loading else IosLocalMusic.scanning).collectAsState()
+    val webdavError by IosWebDav.error.collectAsState()
+    val webdavConfigured by IosWebDav.configured.collectAsState()
     val sortName by IosSettings.localMusicSort.flow.collectAsState()
     val sort = LocalMusicSort.entries.firstOrNull { it.name == sortName } ?: LocalMusicSort.TITLE
     var query by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf(LocalMusicTab.SONGS) }
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
-    val songs = remember(all, query, sort) { localSongsMatching(all, query).sortedFor(sort).playable() }
+    val songs = remember(all, query, sort) { localSongsMatching(all, query).sortedFor(sort).playable(webdav) }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -115,15 +123,28 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
     ) {
         item(key = "title") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text(LOCAL_SOURCE, style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    buildString {
-                        append("${all.size} ${if (all.size == 1) "song" else "songs"} · On this iPhone")
-                        if (scanning) append(" · Scanning…")
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(if (webdav) WEBDAV_SOURCE else tr(LOCAL_SOURCE), style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildString {
+                            append(trPlural(all.size, "{0} song", "{0} songs"))
+                            append(if (webdav) tr(" · On your server") else tr(" · On this iPhone"))
+                            if (scanning) append(tr(" · Scanning…"))
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (webdav && webdavConfigured && !scanning) {
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            tr("Refresh"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = IosWebDav::refresh).padding(4.dp),
+                        )
+                    }
+                }
                 if (all.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
                     PlayControls(
@@ -137,6 +158,20 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
             item(key = "empty") {
                 if (scanning) {
                     PageSpinner()
+                } else if (webdav) {
+                    if (!webdavConfigured) {
+                        MessageState(
+                            tr("Connect a server under Sources"),
+                            actionLabel = tr("Sources"),
+                            onAction = { navigator.open(IosPage.Sources) },
+                        )
+                    } else {
+                        MessageState(
+                            webdavError ?: tr("No audio files found on the WebDAV server. Check the URL in Sources."),
+                            actionLabel = tr("Retry"),
+                            onAction = IosWebDav::refresh,
+                        )
+                    }
                 } else {
                     MessageState(
                         tr("Play your own audio files. Choose a folder from the Files app, or copy songs into On My iPhone › BitChord › Music in Files. Settings › Local music has both."),
@@ -179,10 +214,10 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
                 items(artists, key = { "artist:${it.key}" }) { (artist, tracks) ->
                     GroupRow(
                         title = artist,
-                        subtitle = "${tracks.size} ${if (tracks.size == 1) "song" else "songs"}",
+                        subtitle = trPlural(tracks.size, "{0} song", "{0} songs"),
                         imageUrl = tracks.firstNotNullOfOrNull { it.thumbnailUrl },
                         round = true,
-                    ) { navigator.open(IosPage.LocalMusicGroup(album = false, name = artist)) }
+                    ) { navigator.open(IosPage.LocalMusicGroup(album = false, name = artist, webdav = webdav)) }
                 }
             }
             LocalMusicTab.ALBUMS -> {
@@ -196,7 +231,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
                         subtitle = if (artists.size == 1) artists.first() else tr("Various artists"),
                         imageUrl = tracks.firstNotNullOfOrNull { it.thumbnailUrl },
                         round = false,
-                    ) { navigator.open(IosPage.LocalMusicGroup(album = true, name = album)) }
+                    ) { navigator.open(IosPage.LocalMusicGroup(album = true, name = album, webdav = webdav)) }
                 }
             }
         }
@@ -206,7 +241,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
 /** One artist's local songs, by album and track, or one album's in its running order. */
 @Composable
 internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: PaddingValues, topPadding: Dp) {
-    val all by IosLocalMusic.songs.collectAsState()
+    val all by (if (page.webdav) IosWebDav.songs else IosLocalMusic.songs).collectAsState()
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
     val songs = remember(all, page) {
@@ -214,7 +249,7 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
             all.filter { it.albumName == page.name }.sortedFor(LocalMusicSort.ALBUM)
         } else {
             all.filter { it.artist == page.name }.sortedFor(LocalMusicSort.ARTIST)
-        }.playable()
+        }.playable(page.webdav)
     }
     val artists = songs.map { it.artist }.distinct()
     LazyColumn(
@@ -227,7 +262,10 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
                 Text(
                     buildString {
                         if (page.album) append(if (artists.size == 1) "${artists.first()} · " else tr("Various artists · "))
-                        append(tr("{0} · On this iPhone", trPlural(songs.size, "{0} song", "{0} songs")))
+                        append(
+                            if (page.webdav) tr("{0} · On your server", trPlural(songs.size, "{0} song", "{0} songs"))
+                            else tr("{0} · On this iPhone", trPlural(songs.size, "{0} song", "{0} songs")),
+                        )
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -238,7 +276,11 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
                 }
             }
         }
-        if (songs.isEmpty()) item(key = "gone") { MessageState(tr("These songs are no longer on this iPhone")) }
+        if (songs.isEmpty()) {
+            item(key = "gone") {
+                MessageState(if (page.webdav) tr("These songs are no longer on your server") else tr("These songs are no longer on this iPhone"))
+            }
+        }
         itemsIndexed(songs, key = { _, song -> song.videoId }) { index, song ->
             val isCurrent = current?.videoId == song.videoId
             SongRow(song, isCurrent, isCurrent && isPlaying, trackNumber = song.trackNumber.takeIf { page.album }) {
