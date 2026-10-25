@@ -86,6 +86,8 @@ private fun start() {
     com.music.bitchord.ios.party.IosListenTogether.state
     com.music.bitchord.ios.canvas.IosCanvas.prioritizeSpotify = { IosSettings.prioritizeSpotifyCanvas.flow.value }
     startAutoplayIfAsked()
+    // Once a launch, as the phone: a newer release on GitHub is worth a word.
+    IosUpdates.check()
 }
 
 /** The shared pages' settings, at the phone's defaults until iOS has a settings screen. */

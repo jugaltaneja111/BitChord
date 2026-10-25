@@ -248,6 +248,21 @@ internal fun IosApp() {
                     onDismiss = { IosOverlays.switcher = false },
                 )
             }
+            // The welcome, once: under the sign-in, which its second page opens over it.
+            val onboarded by IosSettings.onboardingComplete.flow.collectAsState()
+            if (!onboarded) {
+                val signedIn by IosAccount.signedIn.collectAsState()
+                OnboardingScreen(
+                    signedIn = signedIn,
+                    initialName = com.music.bitchord.ios.party.IosListenTogether.nickname()
+                        .ifBlank { IosAccount.account.value?.name.orEmpty() },
+                    onNameChosen = com.music.bitchord.ios.party.IosListenTogether::setNickname,
+                    onSignIn = { IosOverlays.login = true },
+                    onFinish = { IosSettings.onboardingComplete.set(true) },
+                )
+            } else {
+                UpdateDialog()
+            }
             AnimatedVisibility(
                 visible = IosOverlays.login,
                 enter = slideInVertically(tween(320)) { it },

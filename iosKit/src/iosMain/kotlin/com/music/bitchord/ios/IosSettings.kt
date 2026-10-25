@@ -324,6 +324,8 @@ internal object IosSettings {
     /** The listener's artist-signature API (github.com/itsmeadarsh2008/artist-signature), as the phone keeps it. */
     val signatureApiEnabled = BoolPref("${PREFIX}signature_api_enabled", false)
     val signatureApiUrl = StringPref("${PREFIX}signature_api_url", "")
+    /** The welcome has been through (or skipped), as the phone's flag. */
+    val onboardingComplete = BoolPref("${PREFIX}onboarding_complete", false)
     /** Replay's genre chart, worked out from Last.fm's tags for each artist. */
     val replayGenres = BoolPref("${PREFIX}replay_genres", true)
     val spotifyCanvasAutoHide = BoolPref("${PREFIX}spotify_canvas_auto_hide", true)
@@ -726,6 +728,19 @@ internal fun SettingsPage(
                         Text(tr("Version"), color = MaterialTheme.colorScheme.onSurface)
                         Text(version ?: "–", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                Divider()
+                val update by IosUpdates.available.collectAsState()
+                val checking by IosUpdates.checking.collectAsState()
+                ActionRow(
+                    tr("Software update"),
+                    value = when {
+                        checking -> tr("Checking…")
+                        update != null -> tr("v{0} available", update!!.version)
+                        else -> tr("Check now")
+                    },
+                ) {
+                    if (update != null) IosUpdates.showing = true else IosUpdates.check(announce = true, quiet = false)
                 }
             }
         }
