@@ -664,3 +664,9 @@
 "Revert to original" = "กลับไปใช้ต้นฉบับ";
 "No better copy found" = "ไม่พบเวอร์ชันที่ดีกว่า";
 "Could not switch to the original" = "ไม่สามารถสลับไปยังต้นฉบับได้";
+
+"Source matching" = "การจับคู่แหล่งที่มา";
+"Track length tolerance" = "ค่าคลาดเคลื่อนของความยาวแทร็ก";
+"Maximum duration difference allowed for a replacement stream" = "ความต่างของความยาวสูงสุดที่ยอมรับสำหรับสตรีมทดแทน";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "ค่าคลาดเคลื่อนที่มากขึ้นจะยอมรับการจับคู่ได้มากขึ้น ค่าที่น้อยลงจะเข้มงวดกว่า ค่าเริ่มต้นคือ 3 วินาที";
+"{0} s" = "{0} วิ";

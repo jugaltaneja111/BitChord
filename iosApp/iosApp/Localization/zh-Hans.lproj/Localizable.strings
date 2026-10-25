@@ -664,3 +664,9 @@
 "Revert to original" = "还原为原始版本";
 "No better copy found" = "未找到更好的版本";
 "Could not switch to the original" = "无法切换到原版";
+
+"Source matching" = "来源匹配";
+"Track length tolerance" = "曲目时长容差";
+"Maximum duration difference allowed for a replacement stream" = "替换音频流允许的最大时长差";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "容差越大，接受的来源匹配越多；容差越小则越严格。默认为 3 秒。";
+"{0} s" = "{0} 秒";

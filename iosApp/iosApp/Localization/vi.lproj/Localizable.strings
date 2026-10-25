@@ -664,3 +664,9 @@
 "Revert to original" = "Khôi phục về bản gốc";
 "No better copy found" = "Không tìm thấy bản tốt hơn";
 "Could not switch to the original" = "Không thể chuyển về bản gốc";
+
+"Source matching" = "Khớp nguồn";
+"Track length tolerance" = "Dung sai độ dài bản nhạc";
+"Maximum duration difference allowed for a replacement stream" = "Chênh lệch thời lượng tối đa cho phép của luồng thay thế";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Dung sai lớn hơn chấp nhận nhiều kết quả khớp hơn; dung sai nhỏ hơn sẽ chặt chẽ hơn. Mặc định là 3 giây.";
+"{0} s" = "{0} giây";

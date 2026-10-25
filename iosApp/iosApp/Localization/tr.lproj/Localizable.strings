@@ -671,3 +671,9 @@
 "Revert to original" = "Orijinaline geri dön";
 "No better copy found" = "Daha iyi bir kopya bulunamadı";
 "Could not switch to the original" = "Orijinale geçilemedi";
+
+"Source matching" = "Kaynak eşleştirme";
+"Track length tolerance" = "Parça süresi toleransı";
+"Maximum duration difference allowed for a replacement stream" = "Yedek akış için izin verilen en fazla süre farkı";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Daha büyük tolerans daha fazla kaynak eşleşmesi kabul eder; daha küçük tolerans daha katıdır. Varsayılan 3 saniyedir.";
+"{0} s" = "{0} sn";

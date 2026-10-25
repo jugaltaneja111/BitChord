@@ -671,3 +671,9 @@
 "Revert to original" = "मूल संस्करण पर वापस जाएं";
 "No better copy found" = "इससे बेहतर कॉपी नहीं मिली";
 "Could not switch to the original" = "मूल पर वापस नहीं जा सके";
+
+"Source matching" = "स्रोत मिलान";
+"Track length tolerance" = "ट्रैक लंबाई की छूट";
+"Maximum duration difference allowed for a replacement stream" = "बदले जाने वाले स्ट्रीम के लिए अवधि का अधिकतम अंतर";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "ज़्यादा छूट से ज़्यादा स्रोत मिलान स्वीकार होते हैं; कम छूट ज़्यादा सख़्त है। डिफ़ॉल्ट 3 सेकंड है।";
+"{0} s" = "{0} से.";

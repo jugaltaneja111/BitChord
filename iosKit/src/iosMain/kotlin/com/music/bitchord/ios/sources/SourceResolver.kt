@@ -181,7 +181,7 @@ internal object SourceResolver {
      * [substituteForYouTube] this starts with metadata rather than an existing
      * video id, so it finds the matching YouTube Music row first — with a shared
      * artist required and, when the row knows its runtime, the length held to
-     * within [UPGRADE_DRIFT_SEC].
+     * within [SourcePrefs.lengthSlackSeconds].
      *
      * Returns the *row* rather than its stream, which is where iOS parts from
      * the phone: the iOS player already knows how to play a YouTube video id —
@@ -239,7 +239,7 @@ internal object SourceResolver {
      *
      * Every source ranked above YouTube but [servedBy] is asked at once and all
      * of their answers are weighed, held to the strict match — length to within
-     * [UPGRADE_DRIFT_SEC], a shared artist — because this replaces audio the
+     * [SourcePrefs.lengthSlackSeconds], a shared artist — because this replaces audio the
      * listener is already hearing. Only a copy [worthSwapping] over [playing]
      * qualifies; an unmeasured [playing] lets only lossless through.
      */
@@ -308,7 +308,7 @@ internal object SourceResolver {
      */
     fun sameRecordingAs(candidateSec: Int?, playingSec: Int?): Boolean {
         if (candidateSec == null || playingSec == null) return false
-        return kotlin.math.abs(candidateSec - playingSec) <= UPGRADE_DRIFT_SEC
+        return kotlin.math.abs(candidateSec - playingSec) <= SourcePrefs.lengthSlackSeconds.value
     }
 
     /**
@@ -424,7 +424,7 @@ internal object SourceResolver {
      * again differently won't fix it.
      *
      * @param strictLength requires a candidate's runtime to agree with
-     *   [target]'s to within [UPGRADE_DRIFT_SEC]. Only meaningful when the
+     *   [target]'s to within [SourcePrefs.lengthSlackSeconds]. Only meaningful when the
      *   target *has* a runtime: [TrackMatcher.withinSeconds] answers false for
      *   every candidate against a null one.
      */
@@ -477,7 +477,7 @@ internal object SourceResolver {
             // The extra bar for standing in for one specific recording: the
             // replacement has to be the same *length*, to the second or so.
             if (strictLength) {
-                matches = matches.filter { TrackMatcher.withinSeconds(it, target, UPGRADE_DRIFT_SEC) }
+                matches = matches.filter { TrackMatcher.withinSeconds(it, target, SourcePrefs.lengthSlackSeconds.value) }
             }
             if (matches.isEmpty()) continue
             return matches
@@ -641,12 +641,6 @@ internal object SourceResolver {
      */
     private const val STREAM_ATTEMPTS = 3
 
-    /**
-     * How far a replacement's runtime may sit from the target's before it
-     * stops being the same recording, where that has to be certain. Two seconds
-     * allows for a service rounding a runtime differently and nothing else.
-     */
-    private const val UPGRADE_DRIFT_SEC = 2
 
     /**
      * How close two runtimes have to be to be the same cut of a song: wide

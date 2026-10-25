@@ -155,4 +155,29 @@ internal object SourcePrefs {
 
     /** Both gates at once: the device can, and the listener wants it. */
     val atmosWanted: Boolean get() = DeviceCodecs.playsDolbyAtmos && _dolbyAtmos.value
+
+    private const val KEY_LENGTH_SLACK = "bitchord.sources.upgrade_length_slack_seconds"
+    const val DEFAULT_LENGTH_SLACK_SECONDS = 3
+    const val MIN_LENGTH_SLACK_SECONDS = 0
+    const val MAX_LENGTH_SLACK_SECONDS = 10
+
+    private val _lengthSlackSeconds = MutableStateFlow(
+        if (defaults.objectForKey(KEY_LENGTH_SLACK) != null) {
+            defaults.integerForKey(KEY_LENGTH_SLACK).toInt().coerceIn(MIN_LENGTH_SLACK_SECONDS, MAX_LENGTH_SLACK_SECONDS)
+        } else {
+            DEFAULT_LENGTH_SLACK_SECONDS
+        },
+    )
+
+    /**
+     * The phone's "Source matching" tolerance: how far, in seconds, a copy swapped in mid-track may
+     * run from the one playing and still count as the same recording.
+     */
+    val lengthSlackSeconds: StateFlow<Int> = _lengthSlackSeconds.asStateFlow()
+
+    fun setLengthSlackSeconds(value: Int) {
+        val seconds = value.coerceIn(MIN_LENGTH_SLACK_SECONDS, MAX_LENGTH_SLACK_SECONDS)
+        defaults.setInteger(seconds.toLong(), KEY_LENGTH_SLACK)
+        _lengthSlackSeconds.value = seconds
+    }
 }

@@ -80,9 +80,7 @@ private val Accent = Color(0xFF0A84FF)
  * honour, so they get none.
  *
  * What the phone's page has that this one doesn't: the WebDAV and SMB library
- * sections (not sources in this sense, and not on iOS yet), the "Source
- * matching" length slider (it tunes the phone's mid-playback upgrade, which iOS
- * doesn't run), the Bluetooth codec permission row (iOS Bluetooth is always AAC,
+ * sections (not sources in this sense, and not on iOS yet), the Bluetooth codec permission row (iOS Bluetooth is always AAC,
  * so there is no codec to read), and the "not used on mobile data" line (this
  * page isn't told the connection's ceiling; the walk applies it per stream from
  * the request the player passes).
@@ -226,6 +224,38 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                     }
                 },
             )
+        }
+        item {
+            val slack by SourcePrefs.lengthSlackSeconds.collectAsState()
+            Header(tr("Source matching"))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(GroupShape).background(GroupColor).padding(16.dp, 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Track length tolerance"), color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            tr("Maximum duration difference allowed for a replacement stream"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(tr("{0} s", slack), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Slider(
+                    value = slack.toFloat(),
+                    onValueChange = { SourcePrefs.setLengthSlackSeconds(kotlin.math.round(it).toInt()) },
+                    valueRange = SourcePrefs.MIN_LENGTH_SLACK_SECONDS.toFloat()..SourcePrefs.MAX_LENGTH_SLACK_SECONDS.toFloat(),
+                    steps = SourcePrefs.MAX_LENGTH_SLACK_SECONDS - SourcePrefs.MIN_LENGTH_SLACK_SECONDS - 1,
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.onSurface,
+                        activeTrackColor = MaterialTheme.colorScheme.onSurface,
+                        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
+                        activeTickColor = Color.Transparent,
+                        inactiveTickColor = Color.Transparent,
+                    ),
+                )
+            }
+            Footer(tr("A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds."))
         }
         item {
             Header(tr("Immersive audio"))

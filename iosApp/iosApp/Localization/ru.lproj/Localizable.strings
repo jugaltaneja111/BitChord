@@ -689,3 +689,9 @@
 "Revert to original" = "Вернуть оригинал";
 "No better copy found" = "Лучшая версия не найдена";
 "Could not switch to the original" = "Не удалось переключиться на оригинал";
+
+"Source matching" = "Сопоставление источников";
+"Track length tolerance" = "Допуск по длительности";
+"Maximum duration difference allowed for a replacement stream" = "Максимальная разница в длительности для замещающего потока";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Больший допуск принимает больше совпадений из источников; меньший — строже. По умолчанию 3 секунды.";
+"{0} s" = "{0} с";

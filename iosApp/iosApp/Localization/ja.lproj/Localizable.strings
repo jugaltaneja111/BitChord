@@ -664,3 +664,9 @@
 "Revert to original" = "オリジナルに戻す";
 "No better copy found" = "より良い音源は見つかりませんでした";
 "Could not switch to the original" = "オリジナルに切り替えられませんでした";
+
+"Source matching" = "ソースの照合";
+"Track length tolerance" = "曲の長さの許容差";
+"Maximum duration difference allowed for a replacement stream" = "差し替えストリームで許容する長さの最大差";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "許容差を大きくするとソースの一致が増え、小さくすると厳しくなります。既定値は3秒です。";
+"{0} s" = "{0}秒";

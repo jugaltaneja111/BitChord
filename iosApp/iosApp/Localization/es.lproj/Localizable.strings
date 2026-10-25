@@ -671,3 +671,9 @@
 "Revert to original" = "Revertir al original";
 "No better copy found" = "No se encontró una versión mejor";
 "Could not switch to the original" = "No se pudo volver a la original";
+
+"Source matching" = "Coincidencia de fuentes";
+"Track length tolerance" = "Tolerancia de duración";
+"Maximum duration difference allowed for a replacement stream" = "Diferencia máxima de duración permitida para un stream de reemplazo";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Una tolerancia mayor acepta más coincidencias de fuentes; una menor es más estricta. El valor predeterminado es 3 segundos.";
+"{0} s" = "{0} s";

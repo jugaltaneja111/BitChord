@@ -671,3 +671,9 @@
 "Revert to original" = "שחזר למקור";
 "No better copy found" = "לא נמצאה גרסה טובה יותר";
 "Could not switch to the original" = "לא ניתן לעבור למקור";
+
+"Source matching" = "התאמת מקורות";
+"Track length tolerance" = "סבילות אורך רצועה";
+"Maximum duration difference allowed for a replacement stream" = "הפרש המשך המרבי המותר לזרם חלופי";
+"A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "סבילות גדולה יותר מקבלת יותר התאמות ממקורות; סבילות קטנה יותר מחמירה יותר. ברירת המחדל היא 3 שניות.";
+"{0} s" = "{0} שנ׳";
