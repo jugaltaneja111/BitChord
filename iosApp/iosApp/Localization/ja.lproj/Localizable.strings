@@ -649,3 +649,13 @@
 "{0} · On this iPhone" = "{0} · このiPhone上";
 "{0} · {1} MB on this iPhone" = "{0} · このiPhoneに{1} MB";
 "{0}h {1}m" = "{0}時間{1}分";
+
+"Sleep timer" = "スリープタイマー";
+"After this song" = "この曲の後に";
+"1 hour" = "1時間";
+"Turn off timer" = "タイマーをオフにする";
+"{0} until playback pauses" = "あと{0}で再生が一時停止します";
+"Pausing when this song ends" = "この曲が終わったら一時停止します";
+"Pause playback after a while" = "しばらくしたら再生を一時停止";
+"Running" = "実行中";
+"{0} minute" = "{0}分";

@@ -657,3 +657,12 @@
 "{0} · On this iPhone" = "{0} · Auf diesem iPhone";
 "{0} · {1} MB on this iPhone" = "{0} · {1} MB auf diesem iPhone";
 "{0}h {1}m" = "{0}h {1}m";
+
+"Sleep timer" = "Sleep-Timer";
+"After this song" = "Nach diesem Song";
+"1 hour" = "1 Stunde";
+"Turn off timer" = "Timer ausschalten";
+"{0} until playback pauses" = "{0} bis die Wiedergabe pausiert";
+"Pausing when this song ends" = "Pausiert, wenn dieser Song endet";
+"Pause playback after a while" = "Wiedergabe nach einer Weile pausieren";
+"Running" = "Läuft";

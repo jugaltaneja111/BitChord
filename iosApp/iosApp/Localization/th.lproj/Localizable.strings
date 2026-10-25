@@ -649,3 +649,13 @@
 "{0} · On this iPhone" = "{0} · ใน iPhone นี้";
 "{0} · {1} MB on this iPhone" = "{0} · {1} MB ใน iPhone นี้";
 "{0}h {1}m" = "{0}ชม. {1}นาที";
+
+"Sleep timer" = "ตัวจับเวลาปิดเพลง";
+"After this song" = "หลังเพลงนี้";
+"1 hour" = "1 ชั่วโมง";
+"Turn off timer" = "ปิดตัวจับเวลา";
+"{0} until playback pauses" = "อีก {0} จะหยุดเล่นชั่วคราว";
+"Pausing when this song ends" = "จะหยุดชั่วคราวเมื่อเพลงนี้จบ";
+"Pause playback after a while" = "หยุดเล่นชั่วคราวหลังจากผ่านไปสักครู่";
+"Running" = "กำลังทำงาน";
+"{0} minute" = "{0} นาที";

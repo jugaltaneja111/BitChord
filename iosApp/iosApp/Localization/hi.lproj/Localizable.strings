@@ -657,3 +657,12 @@
 "{0} · On this iPhone" = "{0} · इस iPhone पर";
 "{0} · {1} MB on this iPhone" = "{0} · इस iPhone पर {1} MB";
 "{0}h {1}m" = "{0}h {1}m";
+
+"Sleep timer" = "स्लीप टाइमर";
+"After this song" = "इस गाने के बाद";
+"1 hour" = "1 घंटा";
+"Turn off timer" = "टाइमर बंद करें";
+"{0} until playback pauses" = "प्लेबैक रुकने में {0} बाकी";
+"Pausing when this song ends" = "यह गाना खत्म होने पर रुक जाएगा";
+"Pause playback after a while" = "थोड़ी देर बाद प्लेबैक रोकें";
+"Running" = "चल रहा है";

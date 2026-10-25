@@ -23,7 +23,9 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
@@ -300,7 +302,13 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
         alternateLoaded = true
     }
 
+    var pickingSleepTimer by remember { mutableStateOf(false) }
+
     TintedSheet(song.thumbnailUrl, onDismiss) { colors ->
+        if (pickingSleepTimer) {
+            SleepTimerPicker(colors, onBack = { pickingSleepTimer = false })
+            return@TintedSheet
+        }
         SheetHeader(song.title, song.artist, song.thumbnailUrl, colors)
         if (canSwitch && (!alternateLoaded || alternate != null)) {
             MenuRow(
@@ -438,8 +446,92 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 IosMenus.lyricsOffset = true
             }
         }
+        if (request.fromPlayer) {
+            MenuRow(Icons.Rounded.Bedtime, tr("Sleep timer"), colors, value = sleepTimerStatus()) { pickingSleepTimer = true }
+        }
         if (!onDevice) MenuRow(Icons.Rounded.Share, tr("Share"), colors) { leave { shareLink(songLink(song.videoId)) } }
     }
+}
+
+/** The phone's sleep timer picker: the end of the song first, then the durations, then off. */
+@Composable
+private fun SleepTimerPicker(colors: MenuColors, onBack: () -> Unit) {
+    val chosen by IosSleepTimer.minutes.collectAsState()
+    val afterTrack by IosSleepTimer.afterTrack.collectAsState()
+    val countdown = sleepTimerCountdown()
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Back"), tint = colors.text)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(tr("Sleep timer"), style = MaterialTheme.typography.titleLarge, color = colors.text)
+            Text(
+                when {
+                    countdown != null -> tr("{0} until playback pauses", countdown)
+                    afterTrack -> tr("Pausing when this song ends")
+                    else -> tr("Pause playback after a while")
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.secondary,
+            )
+        }
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = colors.divider)
+    SleepOption(tr("After this song"), afterTrack, colors) {
+        IosSleepTimer.startAfterTrack()
+        onBack()
+    }
+    IosSleepTimer.PRESETS.forEach { minutes ->
+        SleepOption(
+            if (minutes == 60) tr("1 hour") else trPlural(minutes, "{0} minute", "{0} minutes"),
+            minutes == chosen,
+            colors,
+        ) {
+            IosSleepTimer.start(minutes)
+            onBack()
+        }
+    }
+    if (chosen != null || afterTrack) {
+        MenuRow(Icons.Rounded.Close, tr("Turn off timer"), colors) {
+            IosSleepTimer.cancel()
+            onBack()
+        }
+    }
+}
+
+@Composable
+private fun SleepOption(label: String, selected: Boolean, colors: MenuColors, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 22.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = colors.text, modifier = Modifier.weight(1f))
+        if (selected) Icon(Icons.Rounded.Check, contentDescription = tr("Running"), tint = colors.accent, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** What the sleep timer row shows on its right, or null when none is set. */
+@Composable
+private fun sleepTimerStatus(): String? {
+    val afterTrack by IosSleepTimer.afterTrack.collectAsState()
+    return sleepTimerCountdown() ?: tr("After this song").takeIf { afterTrack }
+}
+
+/** A live "m:ss" until the sleep timer pauses playback, or null when it isn't counting down. */
+@Composable
+private fun sleepTimerCountdown(): String? {
+    val minutes by IosSleepTimer.minutes.collectAsState()
+    var left by remember { mutableStateOf(IosSleepTimer.remainingMs()) }
+    LaunchedEffect(minutes) {
+        while (true) {
+            left = IosSleepTimer.remainingMs()
+            if (left == null) break
+            kotlinx.coroutines.delay(1_000L - (left!! % 1_000L).coerceAtMost(999L))
+        }
+    }
+    val ms = left ?: return null
+    val seconds = (ms + 999) / 1000
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    val sec = (seconds % 60).toString().padStart(2, '0')
+    return if (h > 0) "$h:${m.toString().padStart(2, '0')}:$sec" else "$m:$sec"
 }
 
 /**

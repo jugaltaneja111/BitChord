@@ -657,3 +657,12 @@
 "{0} · On this iPhone" = "{0} · באייפון הזה";
 "{0} · {1} MB on this iPhone" = "{0} · {1} MB באייפון הזה";
 "{0}h {1}m" = "{0}h {1}m";
+
+"Sleep timer" = "טיימר שינה";
+"After this song" = "אחרי השיר הזה";
+"1 hour" = "שעה אחת";
+"Turn off timer" = "כבה טיימר";
+"{0} until playback pauses" = "{0} עד להשהיית ההפעלה";
+"Pausing when this song ends" = "מושהה כששיר זה יסתיים";
+"Pause playback after a while" = "השהה את ההפעלה לאחר זמן מה";
+"Running" = "פועל";

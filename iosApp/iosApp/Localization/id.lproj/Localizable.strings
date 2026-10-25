@@ -649,3 +649,13 @@
 "{0} · On this iPhone" = "{0} · Di iPhone ini";
 "{0} · {1} MB on this iPhone" = "{0} · {1} MB di iPhone ini";
 "{0}h {1}m" = "{0}j {1}m";
+
+"Sleep timer" = "Timer tidur";
+"After this song" = "Setelah lagu ini";
+"1 hour" = "1 jam";
+"Turn off timer" = "Matikan timer";
+"{0} until playback pauses" = "{0} hingga pemutaran dijeda";
+"Pausing when this song ends" = "Menjeda saat lagu ini berakhir";
+"Pause playback after a while" = "Jeda pemutaran setelah beberapa saat";
+"Running" = "Berjalan";
+"{0} minute" = "{0} menit";

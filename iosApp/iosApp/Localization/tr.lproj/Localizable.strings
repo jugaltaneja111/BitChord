@@ -657,3 +657,12 @@
 "{0} · On this iPhone" = "{0} · Bu iPhone'da";
 "{0} · {1} MB on this iPhone" = "{0} · Bu iPhone'da {1} MB";
 "{0}h {1}m" = "{0}sa {1}dk";
+
+"Sleep timer" = "Uyku zamanlayıcısı";
+"After this song" = "Bu şarkıdan sonra";
+"1 hour" = "1 saat";
+"Turn off timer" = "Zamanlayıcıyı kapat";
+"{0} until playback pauses" = "Çalma duraklatılana kadar {0}";
+"Pausing when this song ends" = "Bu şarkı bitince duraklatılıyor";
+"Pause playback after a while" = "Bir süre sonra çalmayı duraklat";
+"Running" = "Çalışıyor";

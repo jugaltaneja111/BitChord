@@ -649,3 +649,13 @@
 "{0} · On this iPhone" = "{0} · 在此 iPhone 上";
 "{0} · {1} MB on this iPhone" = "{0} · 此 iPhone 上 {1} MB";
 "{0}h {1}m" = "{0}時{1}分";
+
+"Sleep timer" = "睡眠定時器";
+"After this song" = "在這首歌之後";
+"1 hour" = "1 小時";
+"Turn off timer" = "關閉定時器";
+"{0} until playback pauses" = "還有 {0} 播放將暫停";
+"Pausing when this song ends" = "這首歌結束後暫停";
+"Pause playback after a while" = "一段時間後暫停播放";
+"Running" = "執行中";
+"{0} minute" = "{0} 分鐘";

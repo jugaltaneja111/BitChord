@@ -675,3 +675,12 @@
 "{0} · On this iPhone" = "{0} · На этом iPhone";
 "{0} · {1} MB on this iPhone" = "{0} · {1} МБ на этом iPhone";
 "{0}h {1}m" = "{0}ч {1}м";
+
+"Sleep timer" = "Таймер сна";
+"After this song" = "После этой песни";
+"1 hour" = "1 час";
+"Turn off timer" = "Выключить таймер";
+"{0} until playback pauses" = "{0} до паузы";
+"Pausing when this song ends" = "Пауза после окончания этой песни";
+"Pause playback after a while" = "Приостановить воспроизведение через некоторое время";
+"Running" = "Выполняется";

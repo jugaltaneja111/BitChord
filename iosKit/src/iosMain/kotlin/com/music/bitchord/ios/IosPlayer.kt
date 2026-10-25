@@ -518,10 +518,28 @@ internal object IosPlayer {
         }
     }
 
+    /** The sleep timer running out: a pause, as the play button's. */
+    fun pauseForSleep() = setPlaying(false)
+
+    /**
+     * Set by "After this song" as the track ends: the queue still moves on, as the phone's does, and
+     * the next track is left paused at its start.
+     */
+    private var pauseOnNextStart = false
+
     private fun onEnded() {
+        if (IosSleepTimer.afterTrack.value) {
+            IosSleepTimer.cancel()
+            pauseOnNextStart = true
+        }
         if (_repeatMode.value == RepeatModes.ONE) {
             _song.value?.let { IosScrobbler.onSongChanged(it, ended = true, song = it) }
             engine.seekTo(0)
+            if (pauseOnNextStart) {
+                pauseOnNextStart = false
+                engine.pause()
+                return
+            }
             engine.play()
             // Still playing, so the play state never changes: the repeat starts here.
             IosScrobbler.onPlaying(true, 0L)
@@ -529,6 +547,11 @@ internal object IosPlayer {
             advancingFromEnd = true
             next()
             advancingFromEnd = false
+            // Nothing followed to start paused: the queue ran out, or a radio is still loading.
+            if (pauseOnNextStart) {
+                pauseOnNextStart = false
+                engine.pause()
+            }
         }
     }
 
@@ -568,7 +591,9 @@ internal object IosPlayer {
             return
         }
         // A party keeps every device on one timeline: a blend would put this one ahead of it.
-        val automix = IosSettings.automix.flow.value && !inParty
+        // "After this song" lets the track end on its own: no blend runs into the next one.
+        val sleepAfter = IosSleepTimer.afterTrack.value
+        val automix = IosSettings.automix.flow.value && !inParty && !sleepAfter
         if (automix) {
             IosAutomixAnalysis.request(song)
             IosAutomixAnalysis.request(next)
@@ -578,7 +603,7 @@ internal object IosPlayer {
             prepare(next)
         }
         if (automix && automixTransition(song, next, nextIndex, duration)) return
-        val fadeMs = if (inParty) 0L else (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
+        val fadeMs = if (inParty || sleepAfter) 0L else (IosSettings.crossfadeSeconds.flow.value * 1000L).coerceAtMost(duration / 3)
         if (fadeMs > 0L && remaining in 1..fadeMs && engine.preparedFor(next.videoId)) {
             advancingFromEnd = true
             transition(nextIndex, fadeMs)
@@ -775,12 +800,15 @@ internal object IosPlayer {
     }
 
     private fun playAt(index: Int, startMs: Long = 0L, startPlaying: Boolean = true) {
+        // "After this song": the track that follows waits, paused, at its start.
+        val play = startPlaying && !pauseOnNextStart
+        pauseOnNextStart = false
         val song = _queue.value.getOrNull(index) ?: return
         // Already waiting in the second player: it starts at once.
         if (song.videoId != _song.value?.videoId && engine.preparedFor(song.videoId)) {
             transition(index, 0L)
             if (startMs > 0L) engine.seekTo(startMs)
-            if (!startPlaying) engine.pause()
+            if (!play) engine.pause()
             return
         }
         _index.value = index
@@ -802,7 +830,7 @@ internal object IosPlayer {
                 // A download plays from the phone, connection or not.
                 onPhone(song.videoId)?.let { (path, loudness) ->
                     TrackLog.i(TAG, "${song.videoId}: from the phone")
-                    engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song), startMs, startPlaying)
+                    engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song), startMs, play)
                     lookForBetterCopy(song)
                     return@launch
                 }
@@ -816,7 +844,7 @@ internal object IosPlayer {
                     playedThisSession += audio.videoId
                     _song.value = audio
                     onPhone(audio.videoId)?.let { (path, loudness) ->
-                        engine.load(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio), startMs, startPlaying)
+                        engine.load(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio), startMs, play)
                         lookForBetterCopy(audio)
                         return@launch
                     }
@@ -828,7 +856,7 @@ internal object IosPlayer {
                 }
                 TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.kbps} kbps")
                 servedBy[audio.videoId] = stream.source to stream.kbps
-                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, startPlaying, stream.route)
+                engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, play, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
                 noteUpgradeLead(audio, stream)
                 lookForBetterCopy(audio)

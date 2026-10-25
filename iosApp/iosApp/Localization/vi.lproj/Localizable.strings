@@ -649,3 +649,13 @@
 "{0} · On this iPhone" = "{0} · Trên iPhone này";
 "{0} · {1} MB on this iPhone" = "{0} · {1} MB trên iPhone này";
 "{0}h {1}m" = "{0} giờ {1} phút";
+
+"Sleep timer" = "Hẹn giờ tắt";
+"After this song" = "Sau bài hát này";
+"1 hour" = "1 giờ";
+"Turn off timer" = "Tắt hẹn giờ";
+"{0} until playback pauses" = "{0} cho đến khi tạm dừng phát";
+"Pausing when this song ends" = "Sẽ tạm dừng khi hết bài hát này";
+"Pause playback after a while" = "Tạm dừng phát sau một khoảng thời gian";
+"Running" = "Đang chạy";
+"{0} minute" = "{0} phút";
