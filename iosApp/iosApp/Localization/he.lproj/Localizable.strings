@@ -666,3 +666,8 @@
 "Pausing when this song ends" = "מושהה כששיר זה יסתיים";
 "Pause playback after a while" = "השהה את ההפעלה לאחר זמן מה";
 "Running" = "פועל";
+
+"Upgrade quality" = "שדרג איכות";
+"Revert to original" = "שחזר למקור";
+"No better copy found" = "לא נמצאה גרסה טובה יותר";
+"Could not switch to the original" = "לא ניתן לעבור למקור";

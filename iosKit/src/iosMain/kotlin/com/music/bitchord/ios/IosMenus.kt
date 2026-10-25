@@ -24,6 +24,8 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
@@ -310,6 +312,22 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             return@TintedSheet
         }
         SheetHeader(song.title, song.artist, song.thumbnailUrl, colors)
+        // Which copy is playing leads, as on the phone: rating or queueing the wrong one is no use.
+        // The two are never both offered; they are the whole of the choice between them.
+        val upgrading by IosPlayer.upgradingByHand.collectAsState()
+        val revert = request.fromPlayer && IosPlayer.canRevertToOriginal(song)
+        val upgrade = request.fromPlayer && !revert && IosPlayer.canUpgradeQuality(song)
+        if (revert) {
+            MenuRow(Icons.AutoMirrored.Rounded.Undo, tr("Revert to original"), colors) { leave { IosPlayer.revertToOriginal() } }
+        }
+        if (upgrade) {
+            MenuRow(Icons.Rounded.HighQuality, tr("Upgrade quality"), colors, loading = upgrading == song.videoId) {
+                leave { IosPlayer.upgradeQuality() }
+            }
+        }
+        if ((revert || upgrade) && !(canSwitch && (!alternateLoaded || alternate != null))) {
+            HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
+        }
         if (canSwitch && (!alternateLoaded || alternate != null)) {
             MenuRow(
                 if (song.isVideo) Icons.Rounded.MusicNote else Icons.Rounded.Videocam,

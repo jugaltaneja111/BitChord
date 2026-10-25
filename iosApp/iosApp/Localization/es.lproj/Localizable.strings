@@ -666,3 +666,8 @@
 "Pausing when this song ends" = "Se pausará al terminar esta canción";
 "Pause playback after a while" = "Pausar la reproducción después de un tiempo";
 "Running" = "Activo";
+
+"Upgrade quality" = "Mejorar calidad";
+"Revert to original" = "Revertir al original";
+"No better copy found" = "No se encontró una versión mejor";
+"Could not switch to the original" = "No se pudo volver a la original";

@@ -659,3 +659,8 @@
 "Pause playback after a while" = "Jeda pemutaran setelah beberapa saat";
 "Running" = "Berjalan";
 "{0} minute" = "{0} menit";
+
+"Upgrade quality" = "Tingkatkan kualitas";
+"Revert to original" = "Kembalikan ke asli";
+"No better copy found" = "Tidak ditemukan salinan yang lebih baik";
+"Could not switch to the original" = "Tidak dapat beralih ke versi asli";

@@ -659,3 +659,8 @@
 "Pause playback after a while" = "一段时间后暂停播放";
 "Running" = "运行中";
 "{0} minute" = "{0} 分钟";
+
+"Upgrade quality" = "提升音质";
+"Revert to original" = "还原为原始版本";
+"No better copy found" = "未找到更好的版本";
+"Could not switch to the original" = "无法切换到原版";

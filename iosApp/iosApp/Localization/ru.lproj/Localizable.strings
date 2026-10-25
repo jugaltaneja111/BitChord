@@ -684,3 +684,8 @@
 "Pausing when this song ends" = "Пауза после окончания этой песни";
 "Pause playback after a while" = "Приостановить воспроизведение через некоторое время";
 "Running" = "Выполняется";
+
+"Upgrade quality" = "Улучшить качество";
+"Revert to original" = "Вернуть оригинал";
+"No better copy found" = "Лучшая версия не найдена";
+"Could not switch to the original" = "Не удалось переключиться на оригинал";

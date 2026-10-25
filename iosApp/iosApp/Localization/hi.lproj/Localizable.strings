@@ -666,3 +666,8 @@
 "Pausing when this song ends" = "यह गाना खत्म होने पर रुक जाएगा";
 "Pause playback after a while" = "थोड़ी देर बाद प्लेबैक रोकें";
 "Running" = "चल रहा है";
+
+"Upgrade quality" = "गुणवत्ता सुधारें";
+"Revert to original" = "मूल संस्करण पर वापस जाएं";
+"No better copy found" = "इससे बेहतर कॉपी नहीं मिली";
+"Could not switch to the original" = "मूल पर वापस नहीं जा सके";

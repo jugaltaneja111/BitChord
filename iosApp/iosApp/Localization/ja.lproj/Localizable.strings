@@ -659,3 +659,8 @@
 "Pause playback after a while" = "しばらくしたら再生を一時停止";
 "Running" = "実行中";
 "{0} minute" = "{0}分";
+
+"Upgrade quality" = "音質をアップグレード";
+"Revert to original" = "オリジナルに戻す";
+"No better copy found" = "より良い音源は見つかりませんでした";
+"Could not switch to the original" = "オリジナルに切り替えられませんでした";

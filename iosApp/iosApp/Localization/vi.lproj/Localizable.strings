@@ -659,3 +659,8 @@
 "Pause playback after a while" = "Tạm dừng phát sau một khoảng thời gian";
 "Running" = "Đang chạy";
 "{0} minute" = "{0} phút";
+
+"Upgrade quality" = "Nâng cấp chất lượng";
+"Revert to original" = "Khôi phục về bản gốc";
+"No better copy found" = "Không tìm thấy bản tốt hơn";
+"Could not switch to the original" = "Không thể chuyển về bản gốc";

@@ -659,3 +659,8 @@
 "Pause playback after a while" = "หยุดเล่นชั่วคราวหลังจากผ่านไปสักครู่";
 "Running" = "กำลังทำงาน";
 "{0} minute" = "{0} นาที";
+
+"Upgrade quality" = "Upgrade quality";
+"Revert to original" = "กลับไปใช้ต้นฉบับ";
+"No better copy found" = "ไม่พบเวอร์ชันที่ดีกว่า";
+"Could not switch to the original" = "ไม่สามารถสลับไปยังต้นฉบับได้";

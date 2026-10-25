@@ -666,3 +666,8 @@
 "Pausing when this song ends" = "Bu şarkı bitince duraklatılıyor";
 "Pause playback after a while" = "Bir süre sonra çalmayı duraklat";
 "Running" = "Çalışıyor";
+
+"Upgrade quality" = "Kaliteyi yükselt";
+"Revert to original" = "Orijinaline geri dön";
+"No better copy found" = "Daha iyi bir kopya bulunamadı";
+"Could not switch to the original" = "Orijinale geçilemedi";

@@ -1091,12 +1091,13 @@ internal object IosPlayer {
      * of every source ranked above YouTube. Only a copy worth the swap (lossless, or 96 kbps more)
      * of the same recording (length within two seconds), and only with 20 s or more still to play.
      */
-    private fun lookForBetterCopy(song: Song) {
+    private fun lookForBetterCopy(song: Song, byHand: Boolean = false) {
         upgradeJob?.cancel()
         val key = song.videoId
         val lead = upgradeLeads.remove(key)
             ?: if (servedBy[key]?.first == "Song cache") UpgradeLead(null, null, null) else return
-        if (song.isVideo || inParty || IosSources.isSourceTrack(song)) {
+        // Sent back to YouTube's own by the listener: only their "Upgrade quality" looks again.
+        if (song.isVideo || inParty || IosSources.isSourceTrack(song) || (!byHand && IosOriginalVersion.isPinned(key))) {
             lead.lookup?.cancel()
             return
         }
@@ -1120,7 +1121,11 @@ internal object IosPlayer {
                 }
                 val found = raced ?: runCatching {
                     IosSources.upgradeFor(song.copy(durationText = lengthSec?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: song.durationText), request, lead.playing, lead.servedBy)
-                }.getOrNull() ?: return@launch
+                }.getOrNull()
+                if (found == null) {
+                    if (byHand && _song.value?.videoId == key) IosPlayerHost.showMessage(tr("No better copy found"))
+                    return@launch
+                }
                 if (_song.value?.videoId != key) return@launch
                 val remaining = lengthMs - engine.position.positionMs
                 if (remaining < UPGRADE_MIN_REMAINING_MS || engine.isBlending) {
@@ -1150,8 +1155,86 @@ internal object IosPlayer {
                 swap(stream.route)
             } finally {
                 lead.lookup?.cancel()
+                if (byHand && _upgradingByHand.value == key) _upgradingByHand.value = null
             }
         }
+    }
+
+    private val _upgradingByHand = MutableStateFlow<String?>(null)
+
+    /** The track "Upgrade quality" is looking for a better copy of, while it looks. */
+    val upgradingByHand: StateFlow<String?> = _upgradingByHand
+
+    /** What [song] is playing from, while it is the track playing. */
+    private fun playingFrom(song: Song): String? = servedBy[song.videoId]?.first.takeIf { _song.value?.videoId == song.videoId }
+
+    private val ownCopies = setOf("YouTube", "Song cache")
+    private val onPhoneCopies = setOf("On this iPhone", "Downloaded")
+
+    /**
+     * Whether the menu offers "Revert to original" for [song]: playing, from a source standing in
+     * for YouTube's upload — whether an upgrade swapped it in or it played from the first second,
+     * since a wrong match sounds wrong either way.
+     */
+    fun canRevertToOriginal(song: Song): Boolean {
+        val from = playingFrom(song) ?: return false
+        return from !in ownCopies && from !in onPhoneCopies && !song.isVideo && !inParty &&
+            !IosSources.isSourceTrack(song) && !IosLocalMusic.isLocal(song) && !IosOriginalVersion.isPinned(song.videoId)
+    }
+
+    /**
+     * Whether the menu offers "Upgrade quality" for [song]: playing YouTube's own copy, by the
+     * listener's revert or because nothing better answered, with a source that could beat it.
+     */
+    fun canUpgradeQuality(song: Song): Boolean {
+        val from = playingFrom(song) ?: return false
+        if (from in onPhoneCopies || song.isVideo || inParty || IosSources.isSourceTrack(song) || IosLocalMusic.isLocal(song)) return false
+        if (from !in ownCopies && !IosOriginalVersion.isPinned(song.videoId)) return false
+        return IosSources.canSubstituteForYouTube(IosSources.requestFor(IosSettings.effectiveAudioQuality))
+    }
+
+    /** The phone's "Revert to original": the playing track back on YouTube's own upload, kept there. */
+    fun revertToOriginal() {
+        val song = _song.value ?: return
+        if (!canRevertToOriginal(song)) return
+        val key = song.videoId
+        IosOriginalVersion.pin(key)
+        upgradeJob?.cancel()
+        upgradeLeads.remove(key)?.lookup?.cancel()
+        scope.launch {
+            val request = IosSources.requestFor(IosSettings.effectiveAudioQuality)
+            val cap = (request as? StreamRequest.Capped)?.maxKbps?.coerceAtMost(320) ?: 320
+            val stream = runCatching { youtube(key, song, cap, opusAllowed(request, key)) }.getOrNull()
+            if (_song.value?.videoId != key) return@launch
+            if (stream == null) {
+                IosPlayerHost.showMessage(tr("Could not switch to the original"))
+                return@launch
+            }
+            TrackLog.i(TAG, "$key: back to YouTube's own, as asked")
+            engine.swapStream(stream.url, stream.headers, stream.loudnessDb, stream.durationMs, stream.route) { swapped ->
+                if (_song.value?.videoId != key) return@swapStream
+                if (swapped) {
+                    servedBy[key] = stream.source to stream.kbps
+                    IosSongCache.remember(key, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
+                } else {
+                    IosPlayerHost.showMessage(tr("Could not switch to the original"))
+                }
+            }
+        }
+    }
+
+    /** The phone's "Upgrade quality": look for a better copy of the playing track now. */
+    fun upgradeQuality() {
+        val song = _song.value ?: return
+        if (!canUpgradeQuality(song) || _upgradingByHand.value == song.videoId) return
+        val key = song.videoId
+        IosOriginalVersion.unpin(key)
+        TrackLog.d(TAG, "$key: upgrade asked for by hand")
+        val kbps = servedBy[key]?.second
+        upgradeLeads.remove(key)?.lookup?.cancel()
+        upgradeLeads[key] = UpgradeLead(null, kbps?.let { StreamFormat(kbps = it) }, null)
+        _upgradingByHand.value = key
+        lookForBetterCopy(song, byHand = true)
     }
 
     /**
@@ -1176,7 +1259,8 @@ internal object IosPlayer {
         val fromYouTube = async { youtube(audio.videoId, audio, cap, opusAllowed(request, audio.videoId)) }
         // In the player's scope rather than this one: a lookup that loses the start goes on, to
         // become the track's upgrade (see lookForBetterCopy).
-        val lookup = if (!audio.isVideo && IosSources.canSubstituteForYouTube(request)) {
+        // A track sent back to YouTube's own isn't offered to the sources until asked for again.
+        val lookup = if (!audio.isVideo && !IosOriginalVersion.isPinned(audio.videoId) && IosSources.canSubstituteForYouTube(request)) {
             scope.async {
                 kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_LOOKUP_MS) {
                     runCatching { IosSources.substituteForYouTube(audio, request) }.getOrNull()
