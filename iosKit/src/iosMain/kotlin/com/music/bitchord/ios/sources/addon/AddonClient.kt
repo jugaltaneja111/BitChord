@@ -504,14 +504,20 @@ internal val addonJson = Json {
  * spec asks addons to answer search in under five seconds and streams in under
  * three.
  *
+ * Longer than the phone's 20 s, and the socket timeout no shorter than its 30 s
+ * read timeout: Darwin's socket timeout is NSURLSession's idle timeout, so a
+ * server taking 15 s to start a search answer, which the phone waits out, was
+ * cut off here. Nothing a listener hears waits on these calls (the live race
+ * gives up after its own few seconds), so a slow addon costs only its slot.
+ *
  * Never closed — see [appHttpClient].
  */
 internal val addonHttp by lazy {
     appHttpClient {
         install(HttpTimeout) {
-            requestTimeoutMillis = 20_000
+            requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 15_000
+            socketTimeoutMillis = 30_000
         }
     }
 }
