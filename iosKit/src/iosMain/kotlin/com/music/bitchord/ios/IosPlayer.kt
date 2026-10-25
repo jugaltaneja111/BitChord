@@ -626,7 +626,7 @@ internal object IosPlayer {
             analysis = IosAutomixAnalysis.analysisFor(song.videoId) ?: TrackAnalysis(),
             nextAnalysis = IosAutomixAnalysis.analysisFor(next.videoId) ?: TrackAnalysis(),
             currentTrack = song.transitionInfo(durationMs),
-            nextTrack = next.transitionInfo(trackLength(null, next)),
+            nextTrack = next.transitionInfo(phoneLength(next)),
             currentTime = engine.position.positionMs / 1000.0,
             duration = durationMs / 1000.0,
             fadeSeconds = if (crossfade > 0) crossfade.toDouble() else AUTOMIX_FALLBACK_SECONDS,
@@ -701,7 +701,7 @@ internal object IosPlayer {
             var readying = song.videoId
             try {
                 onPhone(song.videoId)?.let { (path, loudness) ->
-                    engine.prepareNext(path, emptyMap(), loudness, song.videoId, trackLength(null, song))
+                    engine.prepareNext(path, emptyMap(), loudness, song.videoId, phoneLength(song))
                     return@launch
                 }
                 val audio = musicOnly(song)
@@ -711,7 +711,7 @@ internal object IosPlayer {
                     preparing = audio.videoId
                     readying = audio.videoId
                     onPhone(audio.videoId)?.let { (path, loudness) ->
-                        engine.prepareNext(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio))
+                        engine.prepareNext(path, emptyMap(), loudness, audio.videoId, phoneLength(audio))
                         return@launch
                     }
                 }
@@ -830,7 +830,7 @@ internal object IosPlayer {
                 // A download plays from the phone, connection or not.
                 onPhone(song.videoId)?.let { (path, loudness) ->
                     TrackLog.i(TAG, "${song.videoId}: from the phone")
-                    engine.load(path, emptyMap(), loudness, song.videoId, trackLength(null, song), startMs, play)
+                    engine.load(path, emptyMap(), loudness, song.videoId, phoneLength(song), startMs, play)
                     lookForBetterCopy(song)
                     return@launch
                 }
@@ -844,7 +844,7 @@ internal object IosPlayer {
                     playedThisSession += audio.videoId
                     _song.value = audio
                     onPhone(audio.videoId)?.let { (path, loudness) ->
-                        engine.load(path, emptyMap(), loudness, audio.videoId, trackLength(null, audio), startMs, play)
+                        engine.load(path, emptyMap(), loudness, audio.videoId, phoneLength(audio), startMs, play)
                         lookForBetterCopy(audio)
                         return@launch
                     }
@@ -951,7 +951,7 @@ internal object IosPlayer {
                 val url = local?.first ?: stream!!.url
                 val headers = stream?.headers ?: emptyMap()
                 val loudness = local?.second ?: stream?.loudnessDb
-                val duration = stream?.durationMs ?: trackLength(null, target)
+                val duration = stream?.durationMs ?: phoneLength(target)
                 val route = stream?.route ?: IosAudioEngine.Route.of(url)
                 // The waiting player is the swap's; the next track is readied again afterwards.
                 prepareJob?.cancel()
@@ -1072,7 +1072,7 @@ internal object IosPlayer {
         val lookup = lead.lookup ?: return stream
         val found = kotlinx.coroutines.withTimeoutOrNull(budgetMs) { runCatching { lookup.await() }.getOrNull() }
             ?: return stream
-        val lengthSec = (trackLength(null, song) / 1000).toInt().takeIf { it > 0 }
+        val lengthSec = (phoneLength(song) / 1000).toInt().takeIf { it > 0 }
         if (!IosSources.worthSwapping(found.format, lead.playing) ||
             !IosSources.sameRecordingAs(found.durationMs?.let { (it / 1000).toInt() }, lengthSec)
         ) {
@@ -1113,7 +1113,9 @@ internal object IosPlayer {
                     while (engine.durationMs.value <= 0L || !engine.isPlaying.value) delay(UPGRADE_SETTLE_STEP_MS)
                 }
                 if (_song.value?.videoId != key) return@launch
-                val lengthMs = engine.durationMs.value.takeIf { it > 0 } ?: trackLength(null, song)
+                // A length the track came with beats the decoder's: AVPlayer's guess at a
+                // fragmented MP4 can be twice the truth, and then no copy would match.
+                val lengthMs = phoneLength(song).takeIf { it > 0 } ?: engine.durationMs.value
                 val lengthSec = (lengthMs / 1000).toInt().takeIf { it > 0 }
                 val raced = lead.lookup?.await()?.takeIf {
                     IosSources.worthSwapping(it.format, lead.playing) &&
@@ -1368,6 +1370,17 @@ internal object IosPlayer {
         if (dur != null && dur > 0) return (dur * 1000).toLong()
         return song.durationMillis().coerceAtLeast(0L)
     }
+
+    /**
+     * How long a copy on the phone of [song] runs: the catalogue's figure, else the length the song
+     * cache kept from its stream, else a download's — 0 leaves it to the decoder.
+     */
+    private fun phoneLength(song: Song): Long =
+        trackLength(null, song).takeIf { it > 0 }
+            ?: IosSongCache.lengthMs(song.videoId)
+            ?: IosDownloads.tracks.value.firstOrNull { it.videoId == song.videoId }?.durationText
+                ?.let { song.copy(durationText = it).durationMillis() }?.takeIf { it > 0 }
+            ?: 0L
 
     private fun fail(message: String) {
         TrackLog.w(TAG, "${_song.value?.videoId}: $message")

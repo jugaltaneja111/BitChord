@@ -152,7 +152,16 @@ internal class IosAudioEngine(
                 ?: return false
             // AVURLAssetHTTPHeaderFieldsKey: long-standing, if undocumented, and what every
             // AVFoundation player with request headers uses.
-            val asset = AVURLAsset(uRL = nsUrl, options = mapOf<Any?, Any?>("AVURLAssetHTTPHeaderFieldsKey" to headers))
+            // A file on the phone is read through for its length: a fragmented MP4 (the song
+            // cache's YouTube copies) otherwise gets an estimate that can be twice the truth.
+            val asset = AVURLAsset(
+                uRL = nsUrl,
+                options = if (nsUrl.isFileURL()) {
+                    mapOf<Any?, Any?>("AVURLAssetPreferPreciseDurationAndTimingKey" to true)
+                } else {
+                    mapOf<Any?, Any?>("AVURLAssetHTTPHeaderFieldsKey" to headers)
+                },
+            )
             val item = AVPlayerItem(asset = asset)
             clearObservers()
             val dsp = TapDsp()

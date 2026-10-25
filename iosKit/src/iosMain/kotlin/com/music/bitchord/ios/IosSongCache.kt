@@ -68,6 +68,8 @@ internal object IosSongCache {
         val bytes: Long,
         val lastPlayedMs: Long,
         val loudnessDb: Double? = null,
+        /** googlevideo's `dur`: the copy is a fragmented MP4, whose header doesn't say. */
+        val durationMs: Long? = null,
     )
 
     @Serializable
@@ -124,6 +126,9 @@ internal object IosSongCache {
         return path to entry.loudnessDb
     }
 
+    /** How long [videoId]'s kept copy is, when the stream it came from said; else null. */
+    fun lengthMs(videoId: String): Long? = entries.firstOrNull { it.videoId == videoId }?.durationMs?.takeIf { it > 0 }
+
     /**
      * The cached file for [videoId], or null, without marking it played: for Automix's analyser,
      * which reads tracks that may never play and must not keep them from being let go.
@@ -156,7 +161,9 @@ internal object IosSongCache {
                 val file = if (webmIds.remove(videoId)) "$videoId.webm" else "$videoId.m4a"
                 files.removeItemAtPath("$dir/$file", null)
                 files.moveItemAtPath(part, "$dir/$file", null)
-                publish(listOf(Entry(videoId, file, size, wallClockMs(), rest.second)) + entries.filterNot { it.videoId == videoId })
+                val length = runCatching { Url(url).parameters["dur"]?.toDoubleOrNull() }.getOrNull()
+                    ?.takeIf { it > 0 }?.let { (it * 1000).toLong() }
+                publish(listOf(Entry(videoId, file, size, wallClockMs(), rest.second, length)) + entries.filterNot { it.videoId == videoId })
                 trim()
                 save()
             } catch (e: CancellationException) {
