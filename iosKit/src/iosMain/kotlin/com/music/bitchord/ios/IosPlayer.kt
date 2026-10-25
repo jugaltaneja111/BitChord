@@ -69,8 +69,17 @@ internal object IosPlayer {
 
     /** A version switch's blend, the phone's. */
     private const val VERSION_FADE_MS = 550L
-    /** How long a track plays before a better copy is looked for: started, its length settled. */
+    /** The longest a better copy waits for the playing track's length to settle before it is swapped in. */
     private const val UPGRADE_SETTLE_MS = 5_000L
+    private const val UPGRADE_SETTLE_STEP_MS = 250L
+    /**
+     * The most a track being readied ahead lets the sources take, rather than [SUBSTITUTE_WAIT_MS]:
+     * nothing is waiting on it while the one before plays, so a slow addon's FLAC can be the copy
+     * the track starts on instead of a swap seconds into it.
+     */
+    private const val PREPARE_SUBSTITUTE_WAIT_MS = 25_000L
+    /** What readying ahead leaves free before the blend or the end, so the track is in hand by then. */
+    private const val PREPARE_SPARE_MS = 5_000L
     /** No upgrade with less than this left: the swap would cost more than it gives. */
     private const val UPGRADE_MIN_REMAINING_MS = 20_000L
     private const val LOW_KBPS = 64
@@ -653,6 +662,15 @@ internal object IosPlayer {
     private fun prepare(song: Song) {
         prepareJob?.cancel()
         preparing = song.videoId
+        // Time the sources may have: up to the blend (Automix plans its own, well inside its lead) or the end.
+        val reserve = if (IosSettings.automix.flow.value && !inParty) {
+            AUTOMIX_PREPARE_AHEAD_MS - PREPARE_AHEAD_MS
+        } else {
+            IosSettings.crossfadeSeconds.flow.value * 1000L
+        } + PREPARE_SPARE_MS
+        val budgetMs = (engine.durationMs.value - engine.position.positionMs - reserve)
+            .coerceIn(SUBSTITUTE_WAIT_MS, PREPARE_SUBSTITUTE_WAIT_MS)
+        val started = kotlin.time.TimeSource.Monotonic.markNow()
         prepareJob = scope.launch {
             // What this job is readying: the queued track, or its audio release once swapped in.
             var readying = song.videoId
@@ -672,14 +690,15 @@ internal object IosPlayer {
                         return@launch
                     }
                 }
-                val stream = networkStream(audio) ?: return@launch
+                var stream = networkStream(audio, budgetMs) ?: return@launch
+                noteUpgradeLead(audio, stream)
+                stream = betterBeforeStart(audio, stream, budgetMs - started.elapsedNow().inWholeMilliseconds)
                 // The queue may have moved on while that resolved.
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
                 TrackLog.i(TAG, "${audio.videoId}: readied from ${stream.source}, ${stream.kbps} kbps")
                 servedBy[audio.videoId] = stream.source to stream.kbps
                 engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
-                noteUpgradeLead(audio, stream)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1015,6 +1034,29 @@ internal object IosPlayer {
     }
 
     /**
+     * The better copy [stream]'s upgrade lead finds within [budgetMs], taken before the track
+     * starts rather than swapped in once it plays — for a track readied ahead, where the time is
+     * free. Else [stream], its lead left for [lookForBetterCopy].
+     */
+    private suspend fun betterBeforeStart(song: Song, stream: Picked, budgetMs: Long): Picked {
+        if (budgetMs <= 0L) return stream
+        val lead = upgradeLeads[song.videoId] ?: return stream
+        val lookup = lead.lookup ?: return stream
+        val found = kotlinx.coroutines.withTimeoutOrNull(budgetMs) { runCatching { lookup.await() }.getOrNull() }
+            ?: return stream
+        val lengthSec = (trackLength(null, song) / 1000).toInt().takeIf { it > 0 }
+        if (!IosSources.worthSwapping(found.format, lead.playing) ||
+            !IosSources.sameRecordingAs(found.durationMs?.let { (it / 1000).toInt() }, lengthSec)
+        ) {
+            return stream
+        }
+        upgradeLeads.remove(song.videoId)
+        TrackLog.i(TAG, "${song.videoId}: readied on ${found.sourceName}, ${found.format.summary}, before it starts")
+        // Still short of the request — JioSaavn's AAC in place of YouTube's — it gets its own second look.
+        return found.picked(song).also { noteUpgradeLead(song, it) }
+    }
+
+    /**
      * The phone's quality upgrade: a track that started on YouTube (or its cached copy) because no
      * better source answered in time is swapped, mid-play and at the same point, onto a better copy
      * when one turns up — the lookup that lost the start if it finishes with one, else a fresh ask
@@ -1037,7 +1079,10 @@ internal object IosPlayer {
         }
         upgradeJob = scope.launch {
             try {
-                delay(UPGRADE_SETTLE_MS)
+                // The phone's wait: only until the decoder reports the length a candidate must match.
+                kotlinx.coroutines.withTimeoutOrNull(UPGRADE_SETTLE_MS) {
+                    while (engine.durationMs.value <= 0L || !engine.isPlaying.value) delay(UPGRADE_SETTLE_STEP_MS)
+                }
                 if (_song.value?.videoId != key) return@launch
                 val lengthMs = engine.durationMs.value.takeIf { it > 0 } ?: trackLength(null, song)
                 val lengthSec = (lengthMs / 1000).toInt().takeIf { it > 0 }
@@ -1090,7 +1135,7 @@ internal object IosPlayer {
      * YouTube while YouTube's own stream resolves beside it; a substitute that hasn't answered in
      * [SUBSTITUTE_WAIT_MS] loses to YouTube, so a slow add-on delays a track rather than stalls it.
      */
-    private suspend fun networkStream(audio: Song): Picked? = kotlinx.coroutines.coroutineScope {
+    private suspend fun networkStream(audio: Song, substituteWaitMs: Long = SUBSTITUTE_WAIT_MS): Picked? = kotlinx.coroutines.coroutineScope {
         // A local file that has gone has nothing to ask YouTube or the sources for.
         if (IosLocalMusic.isLocal(audio)) return@coroutineScope null
         val request = IosSources.requestFor(IosSettings.effectiveAudioQuality)
@@ -1113,7 +1158,7 @@ internal object IosPlayer {
             null
         }
         if (lookup != null) {
-            val substitute = kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_WAIT_MS) { lookup.await() }
+            val substitute = kotlinx.coroutines.withTimeoutOrNull(substituteWaitMs) { lookup.await() }
             if (substitute != null) {
                 fromYouTube.cancel()
                 return@coroutineScope substitute.picked(audio)
