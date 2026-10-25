@@ -670,3 +670,6 @@
 "Maximum duration difference allowed for a replacement stream" = "Selisih durasi maksimum yang diizinkan untuk stream pengganti";
 "A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Toleransi lebih besar menerima lebih banyak kecocokan sumber; toleransi lebih kecil lebih ketat. Bawaannya 3 detik.";
 "{0} s" = "{0} dtk";
+
+"Search settings" = "Search settings";
+"No settings match “{0}”" = "No settings match “{0}”";

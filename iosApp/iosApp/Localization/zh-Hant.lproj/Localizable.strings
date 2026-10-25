@@ -670,3 +670,6 @@
 "Maximum duration difference allowed for a replacement stream" = "替換音訊流允許的最大時長差";
 "A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "容差越大，接受的來源匹配越多；容差越小則越嚴格。預設為 3 秒。";
 "{0} s" = "{0} 秒";
+
+"Search settings" = "Search settings";
+"No settings match “{0}”" = "No settings match “{0}”";

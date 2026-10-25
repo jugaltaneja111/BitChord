@@ -677,3 +677,6 @@
 "Maximum duration difference allowed for a replacement stream" = "הפרש המשך המרבי המותר לזרם חלופי";
 "A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "סבילות גדולה יותר מקבלת יותר התאמות ממקורות; סבילות קטנה יותר מחמירה יותר. ברירת המחדל היא 3 שניות.";
 "{0} s" = "{0} שנ׳";
+
+"Search settings" = "Search settings";
+"No settings match “{0}”" = "No settings match “{0}”";

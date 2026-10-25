@@ -670,3 +670,6 @@
 "Maximum duration difference allowed for a replacement stream" = "Chênh lệch thời lượng tối đa cho phép của luồng thay thế";
 "A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Dung sai lớn hơn chấp nhận nhiều kết quả khớp hơn; dung sai nhỏ hơn sẽ chặt chẽ hơn. Mặc định là 3 giây.";
 "{0} s" = "{0} giây";
+
+"Search settings" = "Search settings";
+"No settings match “{0}”" = "No settings match “{0}”";

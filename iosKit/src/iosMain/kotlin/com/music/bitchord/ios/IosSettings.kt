@@ -16,6 +16,13 @@ import com.music.bitchord.data.lyrics.translationLanguageName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
@@ -374,8 +381,11 @@ internal fun SettingsPage(
     val account by IosAccount.account.collectAsState()
     val accounts by IosAccount.accounts.collectAsState()
     val scope = rememberCoroutineScope()
+    var query by rememberSaveable { mutableStateOf("") }
+    val pageHits = remember { SearchHits() }
     // The phone's page, group for group. A row whose feature the iOS app does not have yet is
     // listed, greyed and marked, rather than left out or offered as a switch that does nothing.
+    CompositionLocalProvider(LocalSettingsQuery provides query, LocalPageHits provides pageHits) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = topPadding, bottom = contentPadding.calculateBottomPadding()),
@@ -389,8 +399,23 @@ internal fun SettingsPage(
             )
         }
         item {
+            SettingsSearchField(query) { query = it }
+        }
+        if (query.isNotBlank()) {
+            item {
+                // Counted as the rows below compose, so it shows once they have, and only if none did.
+                if (pageHits.count == 0) {
+                    Text(
+                        tr("No settings match “{0}”", query.trim()),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+                    )
+                }
+            }
+        }
+        item {
             Group(tr("Account & integrations")) {
-                if (signedIn) {
+                if (signedIn) Searchable(tr("Account"), account?.name, account?.email, "YouTube Music", tr("Switch")) {
                     Row(
                         Modifier.fillMaxWidth().clickable { IosOverlays.switcher = true }.padding(16.dp, 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -415,13 +440,15 @@ internal fun SettingsPage(
                         Text(tr("Switch"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                if (signedIn) {
                     Divider()
                     ActionRow(tr("Add account")) { IosOverlays.login = true }
                     Divider()
                     ActionRow(if (accounts.size > 1) tr("Sign out of all accounts") else tr("Sign out"), destructive = true) {
                         IosAccount.signOut()
                     }
-                } else {
+                } else Searchable(tr("Sign in to YouTube Music"), tr("Your library, likes and personal Home"), tr("Account")) {
                     Row(
                         Modifier.fillMaxWidth().clickable { IosOverlays.login = true }.padding(16.dp, 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -572,7 +599,7 @@ internal fun SettingsPage(
             }
         }
         item {
-            Group(tr("App icon")) { AppIconPicker() }
+            Group(tr("App icon")) { Searchable(tr("App icon")) { AppIconPicker() } }
         }
         item {
             val folderName by IosLocalMusic.folderName.collectAsState()
@@ -667,11 +694,49 @@ internal fun SettingsPage(
         item {
             val version = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
             Group(tr("About")) {
-                Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(tr("Version"), color = MaterialTheme.colorScheme.onSurface)
-                    Text(version ?: "–", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Searchable(tr("Version"), version) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(tr("Version"), color = MaterialTheme.colorScheme.onSurface)
+                        Text(version ?: "–", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
+        }
+    }
+    }
+}
+
+/** The phone's "Search settings" field, a rounded iOS search bar under the page title. */
+@Composable
+private fun SettingsSearchField(query: String, onChange: (String) -> Unit) {
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp)).background(GroupColor).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) Text(tr("Search settings"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.text.BasicTextField(
+                value = query,
+                onValueChange = onChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { focus.clearFocus() }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = tr("Clear"),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onChange("") },
+            )
         }
     }
 }
@@ -903,7 +968,7 @@ private fun QualityRow(title: String, pref: StringPref) {
 
 /** The phone's Theme row: System, Light or Dark, as a segmented control under the title. */
 @Composable
-private fun ThemeRow() {
+private fun ThemeRow() = Searchable(tr("Theme"), tr("System"), tr("Light"), tr("Dark")) {
     val mode by IosSettings.themeMode.flow.collectAsState()
     Column(Modifier.fillMaxWidth().padding(16.dp, 12.dp)) {
         Text(tr("Theme"), color = MaterialTheme.colorScheme.onSurface)
@@ -936,7 +1001,7 @@ private fun ThemeRow() {
 
 /** The phone's Song cache limit slider, with Off at the left. */
 @Composable
-private fun SongCacheRow() {
+private fun SongCacheRow() = Searchable(tr("Song cache"), tr("Keeps songs you’ve played on this iPhone for instant replays, saved over Wi-Fi only")) {
     val mb by IosSettings.songCacheMb.flow.collectAsState()
     val label = when (mb) {
         0 -> tr("Off")
@@ -975,7 +1040,7 @@ private fun SongCacheRow() {
 
 /** The phone's crossfade slider: off, or one to twelve seconds of blend. */
 @Composable
-private fun CrossfadeRow() {
+private fun CrossfadeRow() = Searchable(tr("Crossfade"), tr("Blends one track into the next")) {
     val seconds by IosSettings.crossfadeSeconds.flow.collectAsState()
     Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1022,10 +1087,52 @@ private fun megabytes(bytes: Long): String {
     return "${tenths / 10}.${tenths % 10} MB"
 }
 
+/**
+ * The phone's settings search: what is typed in the Settings page's field, read by every row.
+ * Empty everywhere else, where rows show as they always do.
+ */
+private val LocalSettingsQuery = compositionLocalOf { "" }
+
+/** How many rows are showing for the query, in a group or on the whole page. */
+private class SearchHits {
+    var count by mutableIntStateOf(0)
+}
+
+private val LocalGroupHits = compositionLocalOf<SearchHits?> { null }
+private val LocalPageHits = compositionLocalOf<SearchHits?> { null }
+
+/**
+ * [content] if any of [words] holds the settings query (or there is none), counted for its group
+ * and the page so a group with nothing left hides, and the page can say nothing matched.
+ */
+@Composable
+internal fun Searchable(vararg words: String?, content: @Composable () -> Unit) {
+    val query = LocalSettingsQuery.current.trim()
+    if (query.isNotEmpty() && words.none { it != null && it.contains(query, ignoreCase = true) }) return
+    if (query.isNotEmpty()) {
+        val group = LocalGroupHits.current
+        val page = LocalPageHits.current
+        DisposableEffect(group, page) {
+            group?.let { it.count++ }
+            page?.let { it.count++ }
+            onDispose {
+                group?.let { it.count-- }
+                page?.let { it.count-- }
+            }
+        }
+    }
+    content()
+}
+
 @Composable
 internal fun Group(header: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 20.dp)) {
-        if (header.isNotEmpty()) {
+    val query = LocalSettingsQuery.current.trim()
+    // A group found by its own name shows whole.
+    val whole = query.isNotEmpty() && header.contains(query, ignoreCase = true)
+    val hits = remember { SearchHits() }
+    val showing = query.isEmpty() || whole || hits.count > 0
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = if (showing) 20.dp else 0.dp)) {
+        if (header.isNotEmpty() && showing) {
             Text(
                 header.uppercase(),
                 style = MaterialTheme.typography.labelMedium,
@@ -1033,17 +1140,31 @@ internal fun Group(header: String, content: @Composable () -> Unit) {
                 modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
             )
         }
-        Column(Modifier.fillMaxWidth().clip(GroupShape).background(GroupColor)) { content() }
+        val box = if (showing) Modifier.fillMaxWidth().clip(GroupShape).background(GroupColor) else Modifier.fillMaxWidth()
+        Column(box) {
+            if (whole) {
+                val page = LocalPageHits.current
+                DisposableEffect(page) {
+                    page?.let { it.count++ }
+                    onDispose { page?.let { it.count-- } }
+                }
+                CompositionLocalProvider(LocalSettingsQuery provides "", content = content)
+            } else {
+                CompositionLocalProvider(LocalGroupHits provides hits, content = content)
+            }
+        }
     }
 }
 
 @Composable
 internal fun Divider() {
+    // Searching, the rows left in a group are seldom neighbours: they stand without rules.
+    if (LocalSettingsQuery.current.isNotBlank()) return
     HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.5.dp, color = HairlineColor)
 }
 
 @Composable
-internal fun Toggle(title: String, subtitle: String, pref: BoolPref) {
+internal fun Toggle(title: String, subtitle: String, pref: BoolPref) = Searchable(title, subtitle) {
     val checked by pref.flow.collectAsState()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { pref.set(!checked) }.padding(16.dp, 10.dp),
@@ -1075,7 +1196,7 @@ internal fun IosSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
 }
 
 @Composable
-internal fun ActionRow(title: String, destructive: Boolean = false, value: String? = null, onClick: () -> Unit) {
+internal fun ActionRow(title: String, destructive: Boolean = false, value: String? = null, onClick: () -> Unit) = Searchable(title, value) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 15.dp)) {
         Text(title, color = if (destructive) Color(0xFFFF6B6B) else MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         value?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }

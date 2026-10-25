@@ -51,7 +51,7 @@ private enum class Plural { ONE, FEW, MANY, OTHER }
 private var stringsFor: Pair<String?, NSBundle>? = null
 
 /**
- * The bundle [tr] reads: the chosen language's `.lproj` ("zh-Hant", else just "hi" of "hi-IN"),
+ * The bundle [tr] reads: the chosen language's `.lproj` (zh-Hant.lproj for "zh-Hant-TW", hi.lproj for "hi-IN"),
  * or the app's own, which iOS localises into the iPhone's language. English has no `.lproj`: its
  * keys are its words.
  */
@@ -60,7 +60,8 @@ private fun strings(): NSBundle {
     stringsFor?.let { (cached, bundle) -> if (cached == tag) return bundle }
     val main = NSBundle.mainBundle
     val bundle = tag?.let {
-        listOf(it, it.substringBefore('-')).firstNotNullOfOrNull { name ->
+        // "zh-Hans-CN" is found as zh-Hans.lproj: the tag, then shorter, a subtag at a time.
+        it.split('-').indices.reversed().map { n -> it.split('-').take(n + 1).joinToString("-") }.firstNotNullOfOrNull { name ->
             main.pathForResource(name, ofType = "lproj")?.let { path -> NSBundle.bundleWithPath(path) }
         } ?: if (it.substringBefore('-') == "en") englishOnly else null
     } ?: main

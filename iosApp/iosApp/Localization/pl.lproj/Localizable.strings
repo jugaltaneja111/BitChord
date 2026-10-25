@@ -689,3 +689,6 @@
 "Maximum duration difference allowed for a replacement stream" = "Maksymalna dozwolona różnica długości dla strumienia zastępczego";
 "A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds." = "Większa tolerancja akceptuje więcej dopasowań ze źródeł; mniejsza jest bardziej rygorystyczna. Domyślnie 3 sekundy.";
 "{0} s" = "{0} s";
+
+"Search settings" = "Search settings";
+"No settings match “{0}”" = "No settings match “{0}”";
