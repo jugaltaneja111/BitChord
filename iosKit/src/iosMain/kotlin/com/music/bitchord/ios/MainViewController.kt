@@ -43,7 +43,7 @@ fun MainViewController(): UIViewController {
                 .components { add(KtorNetworkFetcherFactory(httpClient = { appHttpClient() })) }
                 .build()
         }
-        IosApp()
+        com.music.bitchord.ui.ProvideAppLanguage { IosApp() }
     }
 }
 
@@ -54,6 +54,16 @@ private fun start() {
     started = true
     // No PoToken minter on iOS yet: InnerTubeX tries only the clients that need none.
     InnerTubeXResolver.init(CachesPlayerCache(), UserDefaultsConfigStore(), poTokenProvider = null)
+    // The App language as iOS's own preference too, in case it was lost (a restored backup sets
+    // only the setting), so the shared screens' resources agree with iosKit's words from the start.
+    com.music.bitchord.data.IosAppLanguage.tag()?.let { tag ->
+        val defaults = platform.Foundation.NSUserDefaults.standardUserDefaults
+        if ((defaults.arrayForKey("AppleLanguages")?.firstOrNull() as? String) != tag) {
+            defaults.setObject(listOf(tag), forKey = "AppleLanguages")
+        }
+    }
+    // YouTube's own words (shelf titles, search suggestions) in the App language too.
+    com.music.bitchord.data.innertube.Innertube.appLanguage = { com.music.bitchord.data.IosAppLanguage.tag() }
     AppUi.install(IosAppUiHost)
     PlayerPlatform.install(IosPlayerHost)
     // Before the first page asks for anything, so it is asked as the listener.

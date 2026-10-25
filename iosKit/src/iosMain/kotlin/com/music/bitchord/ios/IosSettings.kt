@@ -1104,15 +1104,14 @@ private val APP_LANGUAGES = listOf(
 )
 
 /**
- * The app's own language, apart from the phone's. iOS reads it from `AppleLanguages` in the app's
- * defaults as it launches, so a change applies the next time BitChord opens; the same choice is
- * offered in the iOS Settings app, under BitChord.
+ * The app's own language, apart from the phone's. Applied at once: the screens are rebuilt in it
+ * (see ProvideAppLanguage), and it is also written to `AppleLanguages`, which iOS takes in at the
+ * next launch for its own parts — the system dialogs and share sheets.
  */
 @Composable
 private fun AppLanguageRow() {
     val chosen by IosSettings.appLanguage.flow.collectAsState()
     var picking by remember { mutableStateOf(false) }
-    var changed by remember { mutableStateOf(false) }
     val name = APP_LANGUAGES.firstOrNull { it.first == chosen }?.second ?: tr("System default")
     ActionRow(tr("App language"), value = name) { picking = true }
     if (picking) {
@@ -1126,10 +1125,7 @@ private fun AppLanguageRow() {
                         item {
                             Row(
                                 Modifier.fillMaxWidth().clickable {
-                                    if (tag != chosen) {
-                                        setAppLanguage(tag)
-                                        changed = true
-                                    }
+                                    if (tag != chosen) setAppLanguage(tag)
                                     picking = false
                                 }.padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1144,18 +1140,15 @@ private fun AppLanguageRow() {
             confirmButton = { TextButton(onClick = { picking = false }) { Text(tr("Done")) } },
         )
     }
-    if (changed) {
-        AlertDialog(
-            onDismissRequest = { changed = false },
-            title = { Text(tr("Language changed")) },
-            text = { Text(tr("Close BitChord from the app switcher and open it again to see it in the new language.")) },
-            confirmButton = { TextButton(onClick = { changed = false }) { Text(tr("OK")) } },
-        )
-    }
 }
 
 private fun setAppLanguage(tag: String) {
     IosSettings.appLanguage.set(tag)
     val defaults = NSUserDefaults.standardUserDefaults
-    if (tag.isEmpty()) defaults.removeObjectForKey("AppleLanguages") else defaults.setObject(listOf(tag), forKey = "AppleLanguages")
+    if (tag.isEmpty()) {
+        defaults.removeObjectForKey("AppleLanguages")
+    } else {
+        defaults.setObject(listOf(tag), forKey = "AppleLanguages")
+    }
+    com.music.bitchord.data.IosAppLanguage.changed()
 }

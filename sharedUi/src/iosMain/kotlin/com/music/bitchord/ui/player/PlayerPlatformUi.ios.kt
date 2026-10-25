@@ -35,10 +35,10 @@ internal actual fun KeepScreenOn(enabled: Boolean) {
     }
 }
 
-// The first preferred language is the one an iOS app is localised into.
+// The App language setting's, else the first preferred language, the one an iOS app is localised into.
 @Composable
 internal actual fun appLanguageTag(): String =
-    NSLocale.preferredLanguages.firstOrNull() as? String ?: "en"
+    com.music.bitchord.data.IosAppLanguage.tag() ?: NSLocale.preferredLanguages.firstOrNull() as? String ?: "en"
 
 @Composable
 internal actual fun PlayerBackHandler(enabled: Boolean, onBack: () -> Unit) {
