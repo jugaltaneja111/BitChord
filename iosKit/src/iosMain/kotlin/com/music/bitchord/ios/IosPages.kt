@@ -546,9 +546,22 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
     LaunchedEffect(name, canvasEnabled) {
         video = if (canvasEnabled && name.isNotBlank()) AppleArtistVideo.videoFor(name)?.let { CanvasArtwork(url = it) } else null
     }
+    // The listener's artist-signature API, when one is set: the artist's hand in place of the name.
+    val signaturesOn by IosSettings.signatureApiEnabled.flow.collectAsState()
+    val signatureBase by IosSettings.signatureApiUrl.flow.collectAsState()
+    var signature by remember(page.browseId) { mutableStateOf<ArtistSignature?>(null) }
+    LaunchedEffect(name, artist != null, signaturesOn, signatureBase) {
+        val base = IosArtistSignatures.effectiveBaseUrl()
+        // The page's own name once it has loaded: the card that opened it may have said less.
+        if (base == null || artist == null || name.isBlank()) {
+            signature = null
+            return@LaunchedEffect
+        }
+        signature = IosArtistSignatures.cached(name, base) ?: IosArtistSignatures.signatureFor(name, base)
+    }
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-        item(key = "banner") { ArtistBanner(artist?.thumbnailUrl, name, video) }
+        item(key = "banner") { ArtistBanner(artist?.thumbnailUrl, name, video, signature) }
         when (val s = state) {
             UiState.Loading -> songListSkeleton(count = 5)
             is UiState.Error -> item(key = "error") {
@@ -621,7 +634,8 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
 
 /** The photograph, full width, with the name across the foot of it. */
 @Composable
-private fun ArtistBanner(url: String?, name: String, video: CanvasArtwork?) {
+private fun ArtistBanner(url: String?, name: String, video: CanvasArtwork?, signature: ArtistSignature? = null) {
+    var signed by remember(signature?.imageUrl) { mutableStateOf(false) }
     // Square on a phone; on an iPad no taller than 60% of the window, as the phone's tablet layout.
     Box(Modifier.fillMaxWidth().squareUpTo(windowHeight() * 0.6f).background(MaterialTheme.colorScheme.surface)) {
         AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -631,14 +645,26 @@ private fun ArtistBanner(url: String?, name: String, video: CanvasArtwork?) {
                 Brush.verticalGradient(0.45f to Color.Transparent, 1f to MaterialTheme.colorScheme.background),
             ),
         )
-        Text(
-            name,
-            style = MaterialTheme.typography.displayLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = PAGE_GUTTER, vertical = 12.dp),
-        )
+        signature?.let {
+            ArtistSignatureImage(
+                signature = it,
+                name = name,
+                bannerHeight = windowHeight() * 0.6f,
+                onShown = { shown -> signed = shown },
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            )
+        }
+        // Until the signature has drawn, the name stands in for it.
+        if (!signed) {
+            Text(
+                name,
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = PAGE_GUTTER, vertical = 12.dp),
+            )
+        }
     }
 }
 

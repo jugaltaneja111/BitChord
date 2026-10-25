@@ -41,6 +41,8 @@ kotlin {
             implementation(project(":sharedUi"))
             // Artwork over the Ktor client the rest of the app uses (Darwin underneath).
             implementation("io.coil-kt.coil3:coil-network-ktor3:3.4.0")
+            // Artist signatures are served as SVG first.
+            implementation("io.coil-kt.coil3:coil-svg:3.4.0")
         }
     }
 }

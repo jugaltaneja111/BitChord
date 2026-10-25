@@ -321,6 +321,11 @@ internal object IosSettings {
     val animatedCanvas = BoolPref("${PREFIX}animated_canvas", true)
     val canvasOverCellular = BoolPref("${PREFIX}canvas_over_cellular", false)
     val prioritizeSpotifyCanvas = BoolPref("${PREFIX}prioritize_spotify_canvas", false)
+    /** The listener's artist-signature API (github.com/itsmeadarsh2008/artist-signature), as the phone keeps it. */
+    val signatureApiEnabled = BoolPref("${PREFIX}signature_api_enabled", false)
+    val signatureApiUrl = StringPref("${PREFIX}signature_api_url", "")
+    /** Replay's genre chart, worked out from Last.fm's tags for each artist. */
+    val replayGenres = BoolPref("${PREFIX}replay_genres", true)
     val spotifyCanvasAutoHide = BoolPref("${PREFIX}spotify_canvas_auto_hide", true)
 
     // Playback sound, the phone's defaults.
@@ -586,6 +591,20 @@ internal fun SettingsPage(
                     Toggle(tr("Auto-hide player controls"), tr("Collapse the half-player after 5 seconds while Spotify Canvas is playing"), IosSettings.spotifyCanvasAutoHide)
                 }
                 Divider()
+                Toggle(tr("Artist signatures"), tr("Shows a handwritten signature on an artist’s page"), IosSettings.signatureApiEnabled)
+                val signatures by IosSettings.signatureApiEnabled.flow.collectAsState()
+                if (signatures) {
+                    val signatureUrl by IosSettings.signatureApiUrl.flow.collectAsState()
+                    var editingSignatureApi by remember { mutableStateOf(false) }
+                    Divider()
+                    ActionRow(
+                        tr("Signature API URL"),
+                        value = signatureUrl.ifBlank { tr("Not configured") }.removePrefix("https://"),
+                        onClick = { editingSignatureApi = true },
+                    )
+                    if (editingSignatureApi) SignatureApiEditor(onDismiss = { editingSignatureApi = false })
+                }
+                Divider()
                 Toggle(tr("Synced lyrics"), tr("Lights up the words on the player as they’re sung"), IosSettings.syncedLyrics)
                 Divider()
                 Toggle(tr("Blur other lines"), tr("Softens the lyric lines that aren’t being sung"), IosSettings.lyricsBlur)
@@ -651,6 +670,8 @@ internal fun SettingsPage(
         item {
             Group(tr("Your data")) {
                 ActionRow(tr("Replay"), value = tr("Top songs, artists, albums"), onClick = onOpenReplay)
+                Divider()
+                Toggle(tr("Work out genres"), tr("Asks Last.fm for an artist’s genres. Only the artist name is sent."), IosSettings.replayGenres)
                 Divider()
                 ActionRow(tr("Clear search history")) {
                     onClearSearchHistory()

@@ -40,7 +40,10 @@ fun MainViewController(): UIViewController {
     return ComposeUIViewController {
         setSingletonImageLoaderFactory { context ->
             ImageLoader.Builder(context)
-                .components { add(KtorNetworkFetcherFactory(httpClient = { appHttpClient() })) }
+                .components {
+                    add(KtorNetworkFetcherFactory(httpClient = { appHttpClient() }))
+                    add(coil3.svg.SvgDecoder.Factory())
+                }
                 .build()
         }
         com.music.bitchord.ui.ProvideAppLanguage { IosApp() }

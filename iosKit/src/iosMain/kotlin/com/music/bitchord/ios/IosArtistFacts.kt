@@ -75,7 +75,7 @@ internal object IosArtistFacts {
     }
 
     /** Whether a genre chart can be drawn: Last.fm answers only with a key. */
-    val genresAvailable: Boolean get() = IosLastFm.apiKey.isNotEmpty()
+    val genresAvailable: Boolean get() = IosSettings.replayGenres.flow.value && IosLastFm.apiKey.isNotEmpty()
 
     fun genresFor(artist: String): List<String> =
         if (!genresAvailable) emptyList() else known[key(artist)]?.genres.orEmpty()
