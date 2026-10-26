@@ -433,12 +433,14 @@ internal class RemoteSource(
     private suspend fun withRetries(block: suspend () -> HttpResponse): HttpResponse {
         var attempt = 0
         while (true) {
+            var error: Throwable? = null
             val result = try {
                 block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 if (attempt >= RETRIES) throw e
+                error = e
                 null
             }
             val code = result?.status?.value
@@ -446,7 +448,15 @@ internal class RemoteSource(
             if (result != null && (!retryable(code!!) || attempt >= limit)) return result
             val waitMs = if (result != null) retryAfterMs(result, attempt) else 1000L * (attempt + 1)
             attempt++
-            TrackLog.d(TAG, "fetch held off ${waitMs}ms (try $attempt)")
+            // What the server said, so a log can tell a rate limit from a server falling over.
+            val said = result?.let { response ->
+                val excerpt = runCatching { response.bodyAsText().take(120).replace('\n', ' ') }.getOrDefault("")
+                "HTTP ${response.status.value} from ${response.call.request.url.host}" +
+                    (response.headers["Retry-After"]?.let { " retry-after=$it" } ?: "") +
+                    (response.headers["Server"]?.let { " server=$it" } ?: "") +
+                    if (excerpt.isNotBlank()) " \"$excerpt\"" else ""
+            } ?: "no answer (${error?.message})"
+            TrackLog.d(TAG, "fetch held off ${waitMs}ms (try $attempt): $said")
             delay(waitMs)
         }
     }

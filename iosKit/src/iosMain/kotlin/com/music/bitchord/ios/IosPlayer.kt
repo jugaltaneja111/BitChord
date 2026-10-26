@@ -1193,45 +1193,66 @@ internal object IosPlayer {
                     IosSources.worthSwapping(it.format, lead.playing) &&
                         IosSources.sameRecordingAs(it.durationMs?.let { ms -> (ms / 1000).toInt() }, lengthSec)
                 }
+                val target = song.copy(durationText = lengthSec?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: song.durationText)
                 val found = raced ?: runCatching {
-                    IosSources.upgradeFor(song.copy(durationText = lengthSec?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: song.durationText), request, lead.playing, lead.servedBy)
+                    IosSources.upgradeFor(target, request, lead.playing, lead.servedBy)
                 }.getOrNull()
                 if (found == null) {
                     if (byHand && _song.value?.videoId == key) IosPlayerHost.showMessage(tr("No better copy found"))
                     return@launch
                 }
-                if (_song.value?.videoId != key) return@launch
-                val remaining = lengthMs - engine.position.positionMs
-                if (remaining < UPGRADE_MIN_REMAINING_MS || engine.isBlending) {
-                    TrackLog.d(TAG, "$key: upgrade to ${found.sourceName} passed over (${remaining}ms left)")
-                    return@launch
+                if (!swapTo(song, found, lengthMs)) return@launch
+                // The race takes the first copy to answer, and a quick 320 kbps one beats a slow
+                // server's FLAC to it. With that one playing, the slower sources get their hearing,
+                // as the phone's second look gives them: a lossless copy is swapped in when it lands.
+                if (found.format.isLossless != true) {
+                    TrackLog.d(TAG, "$key: ${found.sourceName} gave ${found.format.summary}; still looking for lossless")
+                    val better = runCatching {
+                        IosSources.upgradeFor(target, request, found.format, found.sourceName)
+                    }.getOrNull() ?: return@launch
+                    if (_song.value?.videoId != key) return@launch
+                    swapTo(song, better, lengthMs)
                 }
-                val stream = found.picked(song)
-                TrackLog.i(TAG, "$key: upgrading to ${found.sourceName}, ${found.format.summary}")
-                fun swap(route: IosAudioEngine.Route) {
-                    engine.swapStream(stream.url, stream.headers, stream.loudnessDb, stream.durationMs, route) { swapped ->
-                        when {
-                            _song.value?.videoId != key -> Unit
-                            swapped -> {
-                                servedBy[key] = found.sourceName to found.format.kbps
-                                TrackLog.i(TAG, "$key: upgraded to ${found.sourceName}")
-                            }
-                            // AVPlayer turning down a copy FFmpeg can open — a FLAC from a URL with
-                            // no extension to go by — is a second try, not a lost upgrade.
-                            !route.ffmpeg && !engine.isBlending -> {
-                                TrackLog.w(TAG, "$key: AVPlayer refused ${found.sourceName}'s stream; trying FFmpeg")
-                                swap(IosAudioEngine.Route(ffmpeg = true))
-                            }
-                            else -> TrackLog.w(TAG, "$key: upgrade to ${found.sourceName} didn't take")
-                        }
-                    }
-                }
-                swap(stream.route)
             } finally {
                 lead.lookup?.cancel()
                 if (byHand && _upgradingByHand.value == key) _upgradingByHand.value = null
             }
         }
+    }
+
+    /**
+     * Moves the playing [song] onto [found], blended in at the same point; true once it plays.
+     * AVPlayer turning down a copy FFmpeg can open — a FLAC from a URL with no extension to go by —
+     * is a second try, not a lost upgrade.
+     */
+    private suspend fun swapTo(song: Song, found: ResolvedStream, lengthMs: Long): Boolean {
+        val key = song.videoId
+        if (_song.value?.videoId != key) return false
+        val remaining = lengthMs - engine.position.positionMs
+        if (remaining < UPGRADE_MIN_REMAINING_MS || engine.isBlending) {
+            TrackLog.d(TAG, "$key: upgrade to ${found.sourceName} passed over (${remaining}ms left)")
+            return false
+        }
+        val stream = found.picked(song)
+        TrackLog.i(TAG, "$key: upgrading to ${found.sourceName}, ${found.format.summary}")
+        suspend fun attempt(route: IosAudioEngine.Route): Boolean {
+            val done = kotlinx.coroutines.CompletableDeferred<Boolean>()
+            engine.swapStream(stream.url, stream.headers, stream.loudnessDb, stream.durationMs, route) { done.complete(it) }
+            return done.await()
+        }
+        var swapped = attempt(stream.route)
+        if (!swapped && _song.value?.videoId == key && !stream.route.ffmpeg && !engine.isBlending) {
+            TrackLog.w(TAG, "$key: AVPlayer refused ${found.sourceName}'s stream; trying FFmpeg")
+            swapped = attempt(IosAudioEngine.Route(ffmpeg = true))
+        }
+        if (_song.value?.videoId != key) return false
+        if (swapped) {
+            servedBy[key] = found.sourceName to found.format.kbps
+            TrackLog.i(TAG, "$key: upgraded to ${found.sourceName}")
+        } else {
+            TrackLog.w(TAG, "$key: upgrade to ${found.sourceName} didn't take")
+        }
+        return swapped
     }
 
     private val _upgradingByHand = MutableStateFlow<String?>(null)
