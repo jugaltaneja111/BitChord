@@ -9,10 +9,13 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Url
+import io.ktor.utils.io.readAvailable
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -228,11 +231,13 @@ internal class RemoteSource(
                 if (dash) {
                     val plan = resolveManifest()
                     when (plan) {
-                        is DashPlan.Single -> fetchProgressive(plan.url)
+                        is DashPlan.Single -> if (chunked(plan.url)) fetchProgressive(plan.url) else fetchStreaming(plan.url)
                         is DashPlan.Segments -> fetchSegments(plan.segments)
                     }
-                } else {
+                } else if (chunked(url)) {
                     fetchProgressive(url)
+                } else {
+                    fetchStreaming(url)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -354,6 +359,114 @@ internal class RemoteSource(
         }
     }
 
+    /**
+     * A source's file — an add-on's FLAC, JioSaavn's MP4 — fetched the way a media player does: one
+     * request from where the bytes are wanted to the end, read as it arrives. Asking in megabyte
+     * pieces, as googlevideo wants, is forty requests for a lossless track, and add-on servers
+     * answer a burst like that with 429. A seek elsewhere drops the request and opens another
+     * there; a dropped connection picks up where it stopped.
+     */
+    private suspend fun fetchStreaming(target: String) {
+        val buffer = ByteArray(STREAM_READ_BYTES)
+        var attempt = 0
+        while (true) {
+            val (start, stop) = locked<Pair<Long, Long>> {
+                wantFrom?.let {
+                    cursor = it
+                    wantFrom = null
+                }
+                val limit = if (total >= 0) total else Long.MAX_VALUE
+                val gap = coverage.nextGap(cursor, limit) ?: coverage.nextGap(0, limit)
+                if (gap == null) {
+                    complete = true
+                    lock.broadcast()
+                    return
+                }
+                cursor = gap
+                gap to minOf(coverage.nextStart(gap) ?: Long.MAX_VALUE, limit)
+            }
+            var waitMs = 0L
+            val progressed = try {
+                http.prepareGet(target) {
+                    this@RemoteSource.headers.forEach { (name, value) -> header(name, value) }
+                    header("Range", if (stop != Long.MAX_VALUE) "bytes=$start-${stop - 1}" else "bytes=$start-")
+                    timeout {
+                        requestTimeoutMillis = null
+                        connectTimeoutMillis = 15_000
+                        socketTimeoutMillis = 30_000
+                    }
+                }.execute { response ->
+                    val code = response.status.value
+                    when {
+                        code == 206 -> response.headers["Content-Range"]?.substringAfter('/', "")?.toLongOrNull()?.let { length ->
+                            locked { if (total < 0) total = length }
+                        }
+                        code == 200 && start == 0L -> response.headers["Content-Length"]?.toLongOrNull()?.let { length ->
+                            locked { if (total < 0) total = length }
+                        }
+                        code == 200 -> error("the server ignored the range asked for")
+                        code == 416 && locked { total < 0 } -> {
+                            locked { total = start }
+                            return@execute 0L
+                        }
+                        retryable(code) -> {
+                            if (attempt >= THROTTLED_RETRIES) error("HTTP $code")
+                            waitMs = retryAfterMs(response, attempt)
+                            return@execute -1L
+                        }
+                        else -> error("HTTP $code")
+                    }
+                    val channel = response.bodyAsChannel()
+                    var position = start
+                    while (position < stop) {
+                        val n = channel.readAvailable(buffer, 0, minOf(buffer.size.toLong(), stop - position).toInt())
+                        if (n < 0) break
+                        if (n == 0) continue
+                        write(position, buffer, n)
+                        val moved = locked {
+                            coverage.add(position, position + n)
+                            cursor = position + n
+                            lock.broadcast()
+                            cancelled || wantFrom != null
+                        }
+                        position += n
+                        if (moved) break
+                    }
+                    // An answer that ran out with no length given was the end of the file.
+                    if (position < stop && stop == Long.MAX_VALUE && !locked { wantFrom != null }) {
+                        locked {
+                            if (total < 0) total = position
+                            lock.broadcast()
+                        }
+                    }
+                    position - start
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IllegalStateException) {
+                throw e
+            } catch (e: Throwable) {
+                // A dropped connection: what arrived is kept, and the rest is asked for again.
+                if (attempt >= THROTTLED_RETRIES) throw e
+                waitMs = 1000L * (attempt + 1)
+                -1L
+            }
+            when {
+                progressed > 0 -> attempt = 0
+                progressed == 0L && locked { total >= 0 && start < total && wantFrom == null } -> {
+                    if (attempt >= THROTTLED_RETRIES) error("download stalled")
+                    attempt++
+                    delay(1000L * attempt)
+                }
+                progressed < 0 -> {
+                    attempt++
+                    TrackLog.d(TAG, "fetch held off ${waitMs}ms (try $attempt)")
+                    delay(waitMs)
+                }
+            }
+        }
+    }
+
     private suspend fun fetchSegments(segments: List<DashSegment>) {
         locked { segmented = true }
         var offset = 0L
@@ -389,12 +502,12 @@ internal class RemoteSource(
         return plan
     }
 
-    private fun write(offset: Long, bytes: ByteArray) {
-        if (bytes.isEmpty()) return
+    private fun write(offset: Long, bytes: ByteArray, length: Int = bytes.size) {
+        if (length <= 0) return
         bytes.usePinned { pinned ->
             var done = 0
-            while (done < bytes.size) {
-                val n = pwrite(writeFd, pinned.addressOf(done), (bytes.size - done).convert(), offset + done)
+            while (done < length) {
+                val n = pwrite(writeFd, pinned.addressOf(done), (length - done).convert(), offset + done)
                 if (n <= 0) error("can't write the stream's temp file")
                 done += n.toInt()
             }
@@ -411,7 +524,10 @@ internal class RemoteSource(
             }
         }
 
-    /** Network errors and 5xx answers are tried again a couple of times; anything else is final. */
+    /**
+     * Network errors and 5xx answers are tried again a couple of times; a 429 — a server asking
+     * for a pause — a few more, waiting as long as it asks. Anything else is final.
+     */
     private suspend fun withRetries(block: suspend () -> HttpResponse): HttpResponse {
         var attempt = 0
         while (true) {
@@ -423,11 +539,22 @@ internal class RemoteSource(
                 if (attempt >= RETRIES) throw e
                 null
             }
-            if (result != null && (result.status.value < 500 || attempt >= RETRIES)) return result
+            val code = result?.status?.value
+            val limit = if (code == 429) THROTTLED_RETRIES else RETRIES
+            if (result != null && (!retryable(code!!) || attempt >= limit)) return result
+            val waitMs = if (result != null) retryAfterMs(result, attempt) else 1000L * (attempt + 1)
             attempt++
-            delay(1000L * attempt)
+            TrackLog.d(TAG, "fetch held off ${waitMs}ms (try $attempt)")
+            delay(waitMs)
         }
     }
+
+    private fun retryable(code: Int) = code == 429 || code >= 500
+
+    /** The server's Retry-After in seconds, held to something a listener would sit through. */
+    private fun retryAfterMs(response: HttpResponse, attempt: Int): Long =
+        response.headers["Retry-After"]?.trim()?.toLongOrNull()?.let { it * 1000 }?.coerceIn(500L, MAX_RETRY_WAIT_MS)
+            ?: minOf(1000L shl attempt, MAX_RETRY_WAIT_MS)
 
     private fun fail(message: String) {
         TrackLog.w(TAG, "stream failed: $message")
@@ -452,6 +579,12 @@ internal class RemoteSource(
         /** A read this far past the fetch's edge moves the fetch rather than waiting for it. */
         const val JUMP_BYTES = 2 * CHUNK_BYTES
         const val RETRIES = 2
+        const val THROTTLED_RETRIES = 5
+        const val MAX_RETRY_WAIT_MS = 8_000L
+        const val STREAM_READ_BYTES = 64 * 1024
+
+        /** googlevideo throttles a request left open, so it is asked in pieces; anyone else isn't. */
+        fun chunked(url: String) = "googlevideo.com" in url || "youtube.com" in url
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val http: HttpClient by lazy { appHttpClient { install(HttpTimeout) } }
 

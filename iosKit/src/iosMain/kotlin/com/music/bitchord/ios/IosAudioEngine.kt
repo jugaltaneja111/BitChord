@@ -139,7 +139,12 @@ internal class IosAudioEngine(
                             }
                         }
                     },
-                    onFailed = { message -> if (this === active) onFailed(message) },
+                    onFailed = { message ->
+                        if (this === active && failureReported !== ff) {
+                            failureReported = ff
+                            onFailed(message)
+                        }
+                    },
                 ).also {
                     it.skipSilence = IosSettings.skipSilence.flow.value
                     it.open(url, headers, dash = route.dash)
@@ -605,6 +610,12 @@ internal class IosAudioEngine(
                 } else {
                     incoming.seekExactly(inStep())
                 }
+                // A copy that failed on its way in — a server refusing the second request — is
+                // never put in front of the listener: they keep the one that plays.
+                if (incoming.failed()) {
+                    TrackLog.w(TAG, "swap abandoned: the new copy failed before it took over")
+                    return@launch
+                }
                 val previous = active
                 active = incoming
                 spare = previous
@@ -628,6 +639,20 @@ internal class IosAudioEngine(
                     while (elapsed < fadeMs) {
                         delay(FADE_STEP_MS)
                         elapsed += FADE_STEP_MS
+                        // Failed mid-blend: the old copy, still sounding, takes the track back.
+                        if (active.failed() && outgoing === previous) {
+                            TrackLog.w(TAG, "swap undone: the new copy failed during the blend")
+                            val failed = active
+                            active = previous
+                            spare = failed
+                            outgoing = null
+                            failed.clear()
+                            active.listen()
+                            active.fade = 1f
+                            active.applyGain()
+                            fadeJob = null
+                            return@launch
+                        }
                         val t = (elapsed.toDouble() / fadeMs).coerceIn(0.0, 1.0)
                         active.fade = sin(t * PI / 2).toFloat()
                         previous.fade = cos(t * PI / 2).toFloat()
@@ -647,6 +672,9 @@ internal class IosAudioEngine(
     }
 
     private var swapJob: Job? = null
+
+    /** The FFmpeg player whose failure has been passed on, so it is passed on once. */
+    private var failureReported: IosFfmpegPlayer? = null
 
     /** Whether [swapStream] is still bringing its copy in; the waiting player is its until then. */
     val isSwapping: Boolean get() = swapJob?.isActive == true
@@ -749,9 +777,16 @@ internal class IosAudioEngine(
 
     /** The FFmpeg deck's counterpart of [tick]; it has no time observer of its own, so it is polled. */
     private fun tickFfmpeg(ff: IosFfmpegPlayer) {
-        if (ff.failure != null) {
+        val failure = ff.failure
+        if (failure != null) {
             position.advancing = false
             _isBuffering.value = false
+            // A deck that failed while it was waiting and was handed the track anyway: said once,
+            // so the player moves it to another copy instead of sitting silent.
+            if (failureReported !== ff) {
+                failureReported = ff
+                onFailed(failure)
+            }
             return
         }
         watchFfmpeg(ff)
