@@ -1245,8 +1245,9 @@ internal object IosPlayer {
      *
      * A row from an add-on or JioSaavn plays from its own source, falling back to the next one and
      * last to YouTube's match. A YouTube track is offered to the sources the listener ranked above
-     * YouTube while YouTube's own stream resolves beside it; a substitute that hasn't answered in
-     * [SUBSTITUTE_WAIT_MS] loses to YouTube, so a slow add-on delays a track rather than stalls it.
+     * YouTube while YouTube's own stream resolves beside it, and the first to answer plays — a
+     * slower source becomes the track's upgrade instead. A track readied ahead gives the sources
+     * up to [substituteWaitMs] first. YouTube failing leaves the sources [SUBSTITUTE_WAIT_MS].
      */
     private suspend fun networkStream(audio: Song, substituteWaitMs: Long = SUBSTITUTE_WAIT_MS): Picked? = kotlinx.coroutines.coroutineScope {
         // A local file that has gone has nothing to ask YouTube or the sources for.
@@ -1286,7 +1287,21 @@ internal object IosPlayer {
             null
         }
         if (lookup != null) {
-            val substitute = kotlinx.coroutines.withTimeoutOrNull(substituteWaitMs) { lookup.await() }
+            // A track asked for now goes to whichever answers first, as on the phone: YouTube's
+            // URL usually, while the sources' lossless copy follows as a swap a few seconds in.
+            // Only a track readied ahead, which nobody is waiting on, holds out for the sources.
+            val holdOut = substituteWaitMs > SUBSTITUTE_WAIT_MS
+            val substitute = kotlinx.coroutines.withTimeoutOrNull(substituteWaitMs) {
+                if (holdOut) {
+                    lookup.await()
+                } else {
+                    kotlinx.coroutines.selects.select<ResolvedStream?> {
+                        lookup.onAwait { it }
+                        // A YouTube that came back empty has won nothing: the sources are all there is.
+                        fromYouTube.onAwait { picked -> if (picked != null) null else lookup.await() }
+                    }
+                }
+            }
             if (substitute != null) {
                 fromYouTube.cancel()
                 return@coroutineScope substitute.picked(audio)

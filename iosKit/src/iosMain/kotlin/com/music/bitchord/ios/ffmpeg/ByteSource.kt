@@ -9,13 +9,10 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Url
-import io.ktor.utils.io.readAvailable
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -214,6 +211,8 @@ internal class RemoteSource(
     private var manifestDurationMs = 0L
     private var bandwidth = 0L
     private var closed = false
+    /** Where the demuxer last read: the fetch keeps [READ_AHEAD_BYTES] ahead of it, no more. */
+    private var lastRead = 0L
 
     private val job: Job
 
@@ -231,13 +230,11 @@ internal class RemoteSource(
                 if (dash) {
                     val plan = resolveManifest()
                     when (plan) {
-                        is DashPlan.Single -> if (chunked(plan.url)) fetchProgressive(plan.url) else fetchStreaming(plan.url)
+                        is DashPlan.Single -> fetchProgressive(plan.url)
                         is DashPlan.Segments -> fetchSegments(plan.segments)
                     }
-                } else if (chunked(url)) {
-                    fetchProgressive(url)
                 } else {
-                    fetchStreaming(url)
+                    fetchProgressive(url)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -260,6 +257,7 @@ internal class RemoteSource(
         val available: Long
         lock.lock()
         try {
+            lastRead = position
             while (true) {
                 if (cancelled) return FfmpegLayout.ERROR_EXIT
                 val end = coverage.runEnd(position)
@@ -308,7 +306,19 @@ internal class RemoteSource(
         locked {
             total = runCatching { Url(target).parameters["clen"]?.toLongOrNull() }.getOrNull()?.takeIf { it > 0 } ?: -1L
         }
+        val paced = !chunkedFreely(target)
+        var first = true
         while (true) {
+            // An add-on's server is asked at the pace the track plays rather than as fast as the
+            // network allows: forty back-to-back requests for one FLAC is what it answers with 429.
+            // A seek elsewhere (wantFrom) is fetched at once.
+            if (paced && !first) {
+                delay(PACED_GAP_MS)
+                while (locked { !cancelled && wantFrom == null && cursor - lastRead > READ_AHEAD_BYTES && (total < 0 || cursor < total) }) {
+                    delay(PACED_POLL_MS)
+                }
+            }
+            first = false
             val (start, end) = locked<Pair<Long, Long>> {
                 wantFrom?.let {
                     cursor = it
@@ -359,114 +369,6 @@ internal class RemoteSource(
         }
     }
 
-    /**
-     * A source's file — an add-on's FLAC, JioSaavn's MP4 — fetched the way a media player does: one
-     * request from where the bytes are wanted to the end, read as it arrives. Asking in megabyte
-     * pieces, as googlevideo wants, is forty requests for a lossless track, and add-on servers
-     * answer a burst like that with 429. A seek elsewhere drops the request and opens another
-     * there; a dropped connection picks up where it stopped.
-     */
-    private suspend fun fetchStreaming(target: String) {
-        val buffer = ByteArray(STREAM_READ_BYTES)
-        var attempt = 0
-        while (true) {
-            val (start, stop) = locked<Pair<Long, Long>> {
-                wantFrom?.let {
-                    cursor = it
-                    wantFrom = null
-                }
-                val limit = if (total >= 0) total else Long.MAX_VALUE
-                val gap = coverage.nextGap(cursor, limit) ?: coverage.nextGap(0, limit)
-                if (gap == null) {
-                    complete = true
-                    lock.broadcast()
-                    return
-                }
-                cursor = gap
-                gap to minOf(coverage.nextStart(gap) ?: Long.MAX_VALUE, limit)
-            }
-            var waitMs = 0L
-            val progressed = try {
-                http.prepareGet(target) {
-                    this@RemoteSource.headers.forEach { (name, value) -> header(name, value) }
-                    header("Range", if (stop != Long.MAX_VALUE) "bytes=$start-${stop - 1}" else "bytes=$start-")
-                    timeout {
-                        requestTimeoutMillis = null
-                        connectTimeoutMillis = 15_000
-                        socketTimeoutMillis = 30_000
-                    }
-                }.execute { response ->
-                    val code = response.status.value
-                    when {
-                        code == 206 -> response.headers["Content-Range"]?.substringAfter('/', "")?.toLongOrNull()?.let { length ->
-                            locked { if (total < 0) total = length }
-                        }
-                        code == 200 && start == 0L -> response.headers["Content-Length"]?.toLongOrNull()?.let { length ->
-                            locked { if (total < 0) total = length }
-                        }
-                        code == 200 -> error("the server ignored the range asked for")
-                        code == 416 && locked { total < 0 } -> {
-                            locked { total = start }
-                            return@execute 0L
-                        }
-                        retryable(code) -> {
-                            if (attempt >= THROTTLED_RETRIES) error("HTTP $code")
-                            waitMs = retryAfterMs(response, attempt)
-                            return@execute -1L
-                        }
-                        else -> error("HTTP $code")
-                    }
-                    val channel = response.bodyAsChannel()
-                    var position = start
-                    while (position < stop) {
-                        val n = channel.readAvailable(buffer, 0, minOf(buffer.size.toLong(), stop - position).toInt())
-                        if (n < 0) break
-                        if (n == 0) continue
-                        write(position, buffer, n)
-                        val moved = locked {
-                            coverage.add(position, position + n)
-                            cursor = position + n
-                            lock.broadcast()
-                            cancelled || wantFrom != null
-                        }
-                        position += n
-                        if (moved) break
-                    }
-                    // An answer that ran out with no length given was the end of the file.
-                    if (position < stop && stop == Long.MAX_VALUE && !locked { wantFrom != null }) {
-                        locked {
-                            if (total < 0) total = position
-                            lock.broadcast()
-                        }
-                    }
-                    position - start
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IllegalStateException) {
-                throw e
-            } catch (e: Throwable) {
-                // A dropped connection: what arrived is kept, and the rest is asked for again.
-                if (attempt >= THROTTLED_RETRIES) throw e
-                waitMs = 1000L * (attempt + 1)
-                -1L
-            }
-            when {
-                progressed > 0 -> attempt = 0
-                progressed == 0L && locked { total >= 0 && start < total && wantFrom == null } -> {
-                    if (attempt >= THROTTLED_RETRIES) error("download stalled")
-                    attempt++
-                    delay(1000L * attempt)
-                }
-                progressed < 0 -> {
-                    attempt++
-                    TrackLog.d(TAG, "fetch held off ${waitMs}ms (try $attempt)")
-                    delay(waitMs)
-                }
-            }
-        }
-    }
-
     private suspend fun fetchSegments(segments: List<DashSegment>) {
         locked { segmented = true }
         var offset = 0L
@@ -502,12 +404,12 @@ internal class RemoteSource(
         return plan
     }
 
-    private fun write(offset: Long, bytes: ByteArray, length: Int = bytes.size) {
-        if (length <= 0) return
+    private fun write(offset: Long, bytes: ByteArray) {
+        if (bytes.isEmpty()) return
         bytes.usePinned { pinned ->
             var done = 0
-            while (done < length) {
-                val n = pwrite(writeFd, pinned.addressOf(done), (length - done).convert(), offset + done)
+            while (done < bytes.size) {
+                val n = pwrite(writeFd, pinned.addressOf(done), (bytes.size - done).convert(), offset + done)
                 if (n <= 0) error("can't write the stream's temp file")
                 done += n.toInt()
             }
@@ -581,10 +483,13 @@ internal class RemoteSource(
         const val RETRIES = 2
         const val THROTTLED_RETRIES = 5
         const val MAX_RETRY_WAIT_MS = 8_000L
-        const val STREAM_READ_BYTES = 64 * 1024
+        /** How far past the demuxer a paced fetch runs: some 30–60 s of a lossless track. */
+        const val READ_AHEAD_BYTES = 6L * 1024 * 1024
+        const val PACED_GAP_MS = 150L
+        const val PACED_POLL_MS = 250L
 
-        /** googlevideo throttles a request left open, so it is asked in pieces; anyone else isn't. */
-        fun chunked(url: String) = "googlevideo.com" in url || "youtube.com" in url
+        /** googlevideo is built for back-to-back pieces; anyone else is asked at the playing pace. */
+        fun chunkedFreely(url: String) = "googlevideo.com" in url || "youtube.com" in url
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val http: HttpClient by lazy { appHttpClient { install(HttpTimeout) } }
 
