@@ -200,6 +200,14 @@ jobs:
             build
           mkdir -p build/ipa/Payload
           cp -R build/ios-device/Build/Products/Release-iphoneos/BitChord.app build/ipa/Payload/
+          # Ad-hoc signed, inside out, with the App Group entitlement: no certificate, so still
+          # needs the installer's own signing, but tools that keep an app's entitlements (AltStore,
+          # SideStore) then register the group the widget reads the song from.
+          app=build/ipa/Payload/BitChord.app
+          find "$app/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - {} \;
+          codesign --force --sign - --entitlements iosApp/Widget/BitChordWidget.entitlements "$app/PlugIns/BitChordWidget.appex"
+          codesign --force --sign - --entitlements iosApp/BitChord.entitlements "$app"
+          codesign -d --entitlements - "$app" 2>&1 | grep application-groups >/dev/null || { echo "App Group entitlement missing"; exit 1; }
           (cd build/ipa && zip -qry ../BitChord-unsigned.ipa Payload)
           ls -lh build/BitChord-unsigned.ipa
 

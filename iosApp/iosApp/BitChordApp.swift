@@ -1,10 +1,16 @@
 import BitChordKit
 import SwiftUI
 import UIKit
+import WidgetKit
 
 /// The whole app is Compose (see iosKit); this shell only hosts it.
 @main
 struct BitChordApp: App {
+    init() {
+        // WidgetCenter is Swift-only: the Kotlin side asks through this when the song changes.
+        IosWidgetKt.setWidgetReloader { WidgetCenter.shared.reloadAllTimelines() }
+    }
+
     var body: some Scene {
         WindowGroup {
             ComposeView()

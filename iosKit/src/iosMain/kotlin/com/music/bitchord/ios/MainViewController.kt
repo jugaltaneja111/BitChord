@@ -52,6 +52,9 @@ fun MainViewController(): UIViewController {
 
 private var started = false
 
+/** The app's services up, without a window: a widget button can wake the app in the background. */
+internal fun ensureStarted() = start()
+
 private fun start() {
     if (started) return
     started = true
@@ -95,6 +98,7 @@ private fun start() {
     startAutoplayIfAsked()
     // Once a launch, as the phone: a newer release on GitHub is worth a word.
     IosUpdates.check()
+    IosWidget.start()
 }
 
 /** The shared pages' settings, at the phone's defaults until iOS has a settings screen. */
