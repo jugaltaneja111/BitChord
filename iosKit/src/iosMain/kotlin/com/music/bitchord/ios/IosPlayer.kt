@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import com.music.bitchord.ios.automix.IosAutomixAnalysis
 import com.music.bitchord.ios.automix.IosVersionAligner
+import com.music.bitchord.ios.automix.IosAutomixRide
 import com.music.bitchord.playback.smart.CrossfadeMode
 import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.TransitionTrackInfo
@@ -249,6 +250,9 @@ internal object IosPlayer {
             }
         }
     }
+
+    /** A transition doing what a plain crossfade could not is running: the scrubber lights up. */
+    val mixing: StateFlow<Boolean> get() = engine.mixing
 
     /** What the Audio Pipeline dialog reads: the heard deck's format, chain and where it came from. */
     fun pipeline(): Triple<IosAudioEngine.DecodedFormat?, IosAudioEngine.Chain?, String?> {
@@ -651,11 +655,18 @@ internal object IosPlayer {
             duration = durationMs / 1000.0,
             fadeSeconds = if (crossfade > 0) crossfade.toDouble() else AUTOMIX_FALLBACK_SECONDS,
             mode = CrossfadeMode.SMART,
-            // The filters, echo and tempo ramps of the phone's advanced mode aren't built here.
-            advanced = false,
+            // The phone's advanced mode: DJ fader curves, filters and bass swaps on the beat, echo
+            // outs and tempo ramps (see IosAutomixRide).
+            advanced = true,
             mixWindow = true,
         )
-        if (plan.blocked) return false
+        if (plan.blocked) {
+            if (rampRate != 1f) {
+                rampRate = 1f
+                engine.setHeardRate(1f)
+            }
+            return false
+        }
         // Cued only once it has opened: a seek before then can be lost.
         if (!engine.readyFor(next.videoId)) return true
         val cueMs = (plan.incomingCueTime * 1000).toLong().coerceAtLeast(0L)
@@ -663,17 +674,50 @@ internal object IosPlayer {
             engine.cueNext(cueMs)
             automixCue = next.videoId to cueMs
         }
-        if (!plan.shouldStart) return true
+        val beatMs = (plan.beatSeconds * 1000).toLong()
+        if (!plan.shouldStart) {
+            rampOutgoing(plan.outgoingPlaybackRate, (plan.transitionStart * 1000).toLong(), beatMs)
+            return true
+        }
+        val ride = IosAutomixRide(plan)
         TrackLog.i(
             TAG,
             "Automix: ${plan.transitionStyle} over ${plan.fadeMs}ms at ${engine.position.positionMs}ms, " +
-                "next in at ${cueMs}ms" + if (plan.incomingPlaybackRate != 1.0) " ×${plan.incomingPlaybackRate}" else "",
+                "next in at ${cueMs}ms" + (if (plan.incomingPlaybackRate != 1.0) " in ×${plan.incomingPlaybackRate}" else "") +
+                (if (rampRate != 1f) " out ×$rampRate" else "") +
+                " bassSwap=${plan.bassSwap} sweep=${plan.filterSweep} variant=${plan.filterVariant} " +
+                "vocals=${plan.vocalOverlap} echo=${if (ride.echo) "${plan.echoSeconds}s" else "off"}",
         )
         automixCue = null
         advancingFromEnd = true
-        transition(nextIndex, plan.fadeMs.coerceAtLeast(1L), cueMs, plan.incomingPlaybackRate.toFloat())
+        val outgoingRate = rampRate
+        rampRate = 1f
+        transition(nextIndex, plan.fadeMs.coerceAtLeast(1L), cueMs, plan.incomingPlaybackRate.toFloat(), ride, outgoingRate, beatMs)
         advancingFromEnd = false
         return true
+    }
+
+    /** The speed the heard track has been ramped up to for the coming blend; 1 when it hasn't. */
+    private var rampRate = 1f
+
+    /**
+     * Advanced Automix, when the heard track is the slower: brings it up to [rate] over its last
+     * beats before the blend starts at [startMs], one small step a beat, so it arrives at the next
+     * track's tempo rather than the next track being slowed to its own. The phone's `rampOutgoing`.
+     */
+    private fun rampOutgoing(rate: Double, startMs: Long, beatMs: Long) {
+        val stretch = rate - 1.0
+        if (stretch < 1e-4 || beatMs <= 0L) return
+        val steps = kotlin.math.ceil(stretch / EASE_STEP_PER_BEAT).toInt()
+        val rampStartMs = startMs - steps * beatMs
+        val position = engine.position.positionMs
+        if (position < rampStartMs) return
+        val due = ((position - rampStartMs) / beatMs + 1).toInt().coerceIn(0, steps)
+        val target = (1.0 + stretch * due / steps).toFloat()
+        if (target != rampRate) {
+            rampRate = target
+            engine.setHeardRate(target)
+        }
     }
 
     private fun Song.transitionInfo(durationMs: Long) = TransitionTrackInfo(
@@ -755,7 +799,15 @@ internal object IosPlayer {
     }
 
     /** Moves the queue on to [index], whose track the waiting player already holds. */
-    private fun transition(index: Int, fadeMs: Long, startAtMs: Long = 0L, incomingRate: Float = 1f) {
+    private fun transition(
+        index: Int,
+        fadeMs: Long,
+        startAtMs: Long = 0L,
+        incomingRate: Float = 1f,
+        ride: IosAutomixRide? = null,
+        outgoingRate: Float = 1f,
+        beatMs: Long = 0L,
+    ) {
         val song = _queue.value.getOrNull(index) ?: return
         loadJob?.cancel()
         _resolving.value = false
@@ -768,7 +820,7 @@ internal object IosPlayer {
             extendWithRadio(playNext = false)
         }
         upgradeJob?.cancel()
-        engine.startNext(fadeMs, startAtMs, incomingRate)
+        engine.startNext(fadeMs, startAtMs, incomingRate, ride, outgoingRate, beatMs)
         // The engine never stops between the two tracks, so the new one is started here.
         IosScrobbler.onPlaying(engine.isPlaying.value, 0L)
         lookForBetterCopy(song)

@@ -139,7 +139,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
         IosAutomixAnalysis.smartAnalysis(queue.getOrNull(index)?.videoId, queue.getOrNull(index + 1)?.videoId)
     }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main), SharingStarted.Eagerly, SmartAnalysis())
     override val smartFadeEnabled = IosSettings.automix.flow
-    override val smartMixInProgress = MutableStateFlow(false)
+    override val smartMixInProgress = IosPlayer.mixing
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
     override val spotifyCanvasAutoHide = IosSettings.spotifyCanvasAutoHide.flow

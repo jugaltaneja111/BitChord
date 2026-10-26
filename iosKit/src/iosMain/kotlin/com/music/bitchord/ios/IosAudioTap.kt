@@ -133,6 +133,9 @@ internal class TapDsp {
 
     private val limiter = PeakLimiter()
 
+    /** Advanced Automix's filters and echo out, after the equaliser; parked between transitions. */
+    val fx = com.music.bitchord.ios.automix.IosTransitionFx()
+
     fun prepare(format: AudioStreamBasicDescription) {
         sampleRate = format.mSampleRate.toInt()
         channels = format.mChannelsPerFrame.toInt()
@@ -149,6 +152,7 @@ internal class TapDsp {
         limiter.configure(sampleRate)
         running.fill(false)
         snapToTarget()
+        if (usable) fx.configure(sampleRate, channels)
     }
 
     fun process(buffers: AudioBufferList, frames: Int) {
@@ -164,6 +168,7 @@ internal class TapDsp {
             return
         }
         equalise(frames)
+        fx.process(channelData, channelStride, channelOffset, frames)
         if (unmuteRamp < 1f) {
             // Back from a skipped gap: ~5 ms up from nothing, so it doesn't click in.
             val step = 1f / (sampleRate * 0.005f).coerceAtLeast(1f)

@@ -2,6 +2,9 @@ package com.music.bitchord.ios
 
 import kotlinx.cinterop.pointed
 import platform.AVFoundation.AVMediaTypeAudio
+import platform.AVFoundation.AVAudioTimePitchAlgorithmSpectral
+import platform.AVFoundation.audioTimePitchAlgorithm
+import com.music.bitchord.ios.automix.IosAutomixRide
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
 import platform.AVFoundation.AVPlayerItemTrack
 import platform.AVFoundation.estimatedDataRate
@@ -168,6 +171,8 @@ internal class IosAudioEngine(
                 },
             )
             val item = AVPlayerItem(asset = asset)
+            // Automix's tempo stretch: the best of AVFoundation's time-stretchers for music.
+            item.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmSpectral
             clearObservers()
             val dsp = TapDsp()
             this.item = item
@@ -529,7 +534,21 @@ internal class IosAudioEngine(
      * [startAtMs] (see [cueNext]) and may play it at [incomingRate] through the blend, to hold
      * the two beats together; only AVPlayer can, so a track the FFmpeg player holds stays at 1.
      */
-    fun startNext(fadeMs: Long, startAtMs: Long = 0L, incomingRate: Float = 1f) {
+    /**
+     * Starts the waiting track, blended in over [fadeMs] from [startAtMs] at [incomingRate]. With
+     * [ride], advanced Automix's moves set both faders and both decks' filters and echo each tick
+     * instead of the plain equal-power pair; [outgoingRate] is the speed the heard track was ramped
+     * up to for it, held through the blend; [beatMs] paces the incoming track's ease back to its
+     * own tempo afterwards.
+     */
+    fun startNext(
+        fadeMs: Long,
+        startAtMs: Long = 0L,
+        incomingRate: Float = 1f,
+        ride: IosAutomixRide? = null,
+        outgoingRate: Float = 1f,
+        beatMs: Long = 0L,
+    ) {
         abandonSwap()
         finishFade()
         val previous = active
@@ -552,10 +571,14 @@ internal class IosAudioEngine(
         active.fade = 0f
         active.applyGain()
         play()
+        // play() puts an AVPlayer back at 1x: the ramped outgoing speed and the incoming stretch go on after it.
+        if (outgoingRate != 1f && previous.ff == null) previous.player.setRate(outgoingRate)
         if (incomingRate != 1f && active.ff == null) {
             blendRate = incomingRate
+            easeBeatMs = beatMs
             active.player.setRate(incomingRate)
         }
+        _mixing.value = ride?.isRealMix == true
         fadeJob = scope.launch {
             var elapsed = 0L
             while (elapsed < fadeMs) {
@@ -563,11 +586,31 @@ internal class IosAudioEngine(
                 // Paused, the blend waits where it is.
                 if (_isPlaying.value) elapsed += FADE_STEP_MS
                 val t = (elapsed.toDouble() / fadeMs).coerceIn(0.0, 1.0)
-                // Equal power, so the middle of the blend is not a dip.
-                active.fade = sin(t * PI / 2).toFloat()
-                previous.fade = cos(t * PI / 2).toFloat()
+                if (ride != null) {
+                    val moves = ride.at(t.toFloat())
+                    active.fade = moves.incomingGain
+                    previous.fade = moves.outgoingGain
+                    active.dsp?.fx?.aim(moves.incomingLowPassHz, moves.incomingHighPassHz)
+                    previous.dsp?.fx?.let { fx ->
+                        fx.aim(moves.outgoingLowPassHz, moves.outgoingHighPassHz)
+                        moves.echoSend?.let { fx.setEcho(ride.echoSeconds, it, moves.echoDry) }
+                    }
+                } else {
+                    // Equal power, so the middle of the blend is not a dip.
+                    active.fade = sin(t * PI / 2).toFloat()
+                    previous.fade = cos(t * PI / 2).toFloat()
+                }
                 active.applyGain()
                 previous.applyGain()
+            }
+            active.dsp?.fx?.park()
+            // An echo out rings on over the new track: the old one plays on, silent but for its repeats.
+            if (ride != null && ride.echoTailMs > 0L) {
+                var tail = 0L
+                while (tail < ride.echoTailMs && outgoing === previous) {
+                    delay(FADE_STEP_MS)
+                    if (_isPlaying.value) tail += FADE_STEP_MS
+                }
             }
             fadeJob = null
             finishFade()
@@ -711,16 +754,59 @@ internal class IosAudioEngine(
     /** The rate Automix brought the new track in at, put back to 1 when the blend ends. */
     private var blendRate = 1f
 
-    /** Ends a blend at once: the new track at full volume, the old one gone. */
+    /** One beat of the blend's grid, for easing the incoming track back to its own tempo; 0 snaps. */
+    private var easeBeatMs = 0L
+    private var easeJob: Job? = null
+
+    /** A transition doing what a plain crossfade could not is running: the scrubber lights up. */
+    private val _mixing = MutableStateFlow(false)
+    val mixing: StateFlow<Boolean> = _mixing.asStateFlow()
+
+    /**
+     * The heard track's speed, for advanced Automix ramping it up to the next one's tempo over its
+     * last beats. An AVPlayer only, and only while it plays: a pause puts it back at 1x.
+     */
+    fun setHeardRate(rate: Float) {
+        if (active.ff != null || active.player.rate == 0f || isBlending) return
+        active.player.setRate(rate)
+    }
+
+    /**
+     * Ends a blend: the new track at full volume, the old one gone. One that ran its course eases
+     * the new track back to its own tempo a step a beat; one cut short puts it straight back.
+     */
     private fun finishFade() {
+        val cutShort = fadeJob != null
         fadeJob?.cancel()
         fadeJob = null
+        _mixing.value = false
+        active.dsp?.fx?.park()
+        easeJob?.cancel()
+        easeJob = null
         if (blendRate != 1f) {
+            val from = blendRate
             blendRate = 1f
-            if (active.ff == null && active.player.rate != 0f) active.player.setRate(1f)
+            val deck = active
+            if (deck.ff == null && deck.player.rate != 0f) {
+                if (cutShort || easeBeatMs <= 0L) {
+                    deck.player.setRate(1f)
+                } else {
+                    val beat = easeBeatMs
+                    easeJob = scope.launch {
+                        var rate = from
+                        while (kotlin.math.abs(rate - 1f) > 1e-4f) {
+                            delay(beat)
+                            if (deck !== active || deck.player.rate == 0f) return@launch
+                            rate = if (rate > 1f) maxOf(1f, rate - EASE_STEP_PER_BEAT) else minOf(1f, rate + EASE_STEP_PER_BEAT)
+                            deck.player.setRate(rate)
+                        }
+                    }
+                }
+            }
         }
         outgoing?.let { old ->
             outgoing = null
+            old.dsp?.fx?.park()
             old.clear()
         }
         if (active.fade != 1f) {
@@ -936,3 +1022,6 @@ internal class IosAudioEngine(
         val FOURCC_LPCM = fourCc("lpcm")
     }
 }
+
+/** The phone's TEMPO_STEP_PER_BEAT: how far Automix moves a track's tempo each beat of a ramp or an ease back. */
+internal const val EASE_STEP_PER_BEAT = 0.0075f
