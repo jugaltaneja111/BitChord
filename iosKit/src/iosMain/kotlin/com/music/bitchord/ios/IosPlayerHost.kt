@@ -103,7 +103,8 @@ internal object IosPlayerHost : PlayerHost {
     }
 
     @Composable
-    override fun AudioPipelineDialog(hazeState: HazeState, isPlaying: Boolean, onDismiss: () -> Unit) = Unit
+    override fun AudioPipelineDialog(hazeState: HazeState, isPlaying: Boolean, onDismiss: () -> Unit) =
+        IosAudioPipelineDialog(hazeState, onDismiss)
 }
 
 /**

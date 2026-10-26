@@ -49,6 +49,19 @@ internal class IosFeeds {
         scope.launch {
             IosAccount.generation.drop(1).collect { loadHome() }
         }
+        // Back online after a failed load: try again without waiting for Retry.
+        scope.launch {
+            var wasOffline = false
+            IosNetwork.metered.collect { metered ->
+                if (metered == null) {
+                    wasOffline = true
+                } else if (wasOffline) {
+                    wasOffline = false
+                    if (_home.value is UiState.Error) loadHome()
+                    if (_explore.value is UiState.Error) loadExplore()
+                }
+            }
+        }
     }
 
     fun loadHome() {
@@ -79,7 +92,7 @@ internal class IosFeeds {
                 }
                 .onFailure {
                     if (current == generation && _home.value !is UiState.Success) {
-                        _home.value = UiState.Error(it.message ?: tr("Could not load Home"))
+                        _home.value = UiState.Error(loadError(it, tr("Could not load Home")))
                     }
                 }
         }
@@ -119,7 +132,7 @@ internal class IosFeeds {
                     _explore.value = UiState.Success(it)
                     loadCategoryArtwork(it)
                 }
-                .onFailure { _explore.value = UiState.Error(it.message ?: tr("Could not load Explore")) }
+                .onFailure { _explore.value = UiState.Error(loadError(it, tr("Could not load Explore"))) }
         }
     }
 

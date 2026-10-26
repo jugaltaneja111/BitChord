@@ -143,7 +143,7 @@ internal class IosSearch {
                     continuation = page.continuation
                     _results.value = UiState.Success(page.rows)
                 }
-                .onFailure { _results.value = UiState.Error(it.message ?: tr("Search failed")) }
+                .onFailure { _results.value = UiState.Error(loadError(it, tr("Search failed"))) }
         }
     }
 

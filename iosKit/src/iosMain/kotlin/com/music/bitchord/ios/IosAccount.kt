@@ -286,7 +286,7 @@ internal object IosAccount {
                 }
                 .onFailure {
                     if (!quietly || _library.value !is UiState.Success) {
-                        _library.value = UiState.Error(it.message ?: tr("Could not load your library"))
+                        _library.value = UiState.Error(loadError(it, tr("Could not load your library")))
                     }
                 }
         }

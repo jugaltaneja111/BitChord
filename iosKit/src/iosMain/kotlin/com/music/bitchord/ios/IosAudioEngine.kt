@@ -333,6 +333,27 @@ internal class IosAudioEngine(
         val key: String?,
     )
 
+    /** What the Audio Pipeline readout says about the deck being heard, past its format. */
+    data class Chain(
+        /** FFmpeg for what AVFoundation can't open, else AVFoundation's own decoder. */
+        val ffmpeg: Boolean,
+        /** The track's level correction in dB, 0 when none applies; null with no measurement. */
+        val loudnessGainDb: Double?,
+        /** The audio tap (equaliser, loudness, skip silence) is in the chain. */
+        val tapAttached: Boolean,
+    )
+
+    fun chain(): Chain? {
+        val deck = active
+        if (deck.ff == null && deck.item == null) return null
+        val gain = IosSound.loudnessGain(deck.loudnessDb)
+        return Chain(
+            ffmpeg = deck.ff != null,
+            loudnessGainDb = deck.loudnessDb?.let { 20.0 * kotlin.math.log10(gain.toDouble()) },
+            tapAttached = deck.dsp?.attached == true,
+        )
+    }
+
     fun decodedFormat(): DecodedFormat? {
         active.ff?.let { ff ->
             if (!ff.isReady) return null

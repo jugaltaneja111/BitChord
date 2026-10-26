@@ -234,7 +234,7 @@ private fun CollectionPage(page: IosPage.Collection, contentPadding: PaddingValu
                         ),
                     )
                 } else {
-                    UiState.Error(error.message ?: tr("Could not open this page"))
+                    UiState.Error(loadError(error, tr("Could not open this page")))
                 }
             },
         )
@@ -530,7 +530,7 @@ private fun ArtistPageView(page: IosPage.Artist, navigator: IosNavigator, conten
                 PageCache.put(key, it)
                 state = UiState.Success(it)
             },
-            onFailure = { state = UiState.Error(it.message ?: tr("Could not open {0}", page.name)) },
+            onFailure = { state = UiState.Error(loadError(it, tr("Could not open {0}", page.name))) },
         )
     }
     val artist = (state as? UiState.Success)?.data
@@ -699,7 +699,7 @@ private fun CategoryPage(page: IosPage.Category, navigator: IosNavigator, conten
                     state = UiState.Success(shelves)
                 }
             },
-            onFailure = { state = UiState.Error(it.message ?: tr("Could not load this category")) },
+            onFailure = { state = UiState.Error(loadError(it, tr("Could not load this category"))) },
         )
     }
     MoodGenrePlaylistsScreen(
@@ -744,7 +744,7 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
         state = UiState.Loading
         state = YtMusicRepository.history().fold(
             onSuccess = { UiState.Success(it) },
-            onFailure = { UiState.Error(it.message ?: tr("Could not load your history")) },
+            onFailure = { UiState.Error(loadError(it, tr("Could not load your history"))) },
         )
     }
     val current by IosPlayer.song.collectAsState()

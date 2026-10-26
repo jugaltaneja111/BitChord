@@ -17,6 +17,9 @@ import com.music.bitchord.ios.party.IosPartyPlayer
 import com.music.bitchord.ios.party.IosPartyKeepAlive
 import com.music.bitchord.ios.party.IosPartySync
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
+import platform.Foundation.dataWithBytes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +42,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import platform.MediaPlayer.MPMediaItemPropertyArtist
+import platform.MediaPlayer.MPMediaItemArtwork
+import platform.MediaPlayer.MPMediaItemPropertyArtwork
+import platform.UIKit.UIImage
+import io.ktor.client.request.get
+import io.ktor.client.statement.readRawBytes
+import io.ktor.http.isSuccess
+import com.music.bitchord.data.model.artworkAt
 import platform.MediaPlayer.MPMediaItemPropertyPlaybackDuration
 import platform.MediaPlayer.MPMediaItemPropertyTitle
 import platform.MediaPlayer.MPNowPlayingInfoCenter
@@ -59,6 +69,9 @@ import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 internal object IosPlayer {
     private const val TAG = "IosPlayer"
     private const val SUBSTITUTE_WAIT_MS = 6_000L
+
+    /** Big enough for the lock screen's full-width cover on the largest phone. */
+    private const val LOCK_SCREEN_ART_PX = 1000
     /**
      * How long a source lookup that lost the start may go on, to become an upgrade instead. Long,
      * because nothing waits on it any more: an addon fronting a hi-res catalogue can take 10–15 s to
@@ -235,6 +248,13 @@ internal object IosPlayer {
                 NerdStats.current.value = snapshot
             }
         }
+    }
+
+    /** What the Audio Pipeline dialog reads: the heard deck's format, chain and where it came from. */
+    fun pipeline(): Triple<IosAudioEngine.DecodedFormat?, IosAudioEngine.Chain?, String?> {
+        val format = runCatching { engine.decodedFormat() }.getOrNull()
+        val source = format?.key?.let { servedBy[it]?.first }
+        return Triple(format, engine.chain(), source)
     }
 
     /** A queue row held mid-drag: the party hears the move once it is let go. */
@@ -1409,14 +1429,53 @@ internal object IosPlayer {
             center.nowPlayingInfo = null
             return
         }
-        center.nowPlayingInfo = mapOf<Any?, Any?>(
-            MPMediaItemPropertyTitle to song.title,
-            MPMediaItemPropertyArtist to song.artist,
-            MPMediaItemPropertyPlaybackDuration to durationMs / 1000.0,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime to engine.position.positionMs / 1000.0,
-            MPNowPlayingInfoPropertyPlaybackRate to if (playing) 1.0 else 0.0,
-        )
+        val cover = song.thumbnailUrl?.let { if (it.startsWith("/")) it else it.artworkAt(LOCK_SCREEN_ART_PX) ?: it }
+        val artwork = nowPlayingArt?.takeIf { it.first == cover }?.second
+        if (cover != null && artwork == null && artLoading != cover) loadNowPlayingArt(cover)
+        center.nowPlayingInfo = buildMap<Any?, Any?> {
+            put(MPMediaItemPropertyTitle, song.title)
+            put(MPMediaItemPropertyArtist, song.artist)
+            put(MPMediaItemPropertyPlaybackDuration, durationMs / 1000.0)
+            put(MPNowPlayingInfoPropertyElapsedPlaybackTime, engine.position.positionMs / 1000.0)
+            put(MPNowPlayingInfoPropertyPlaybackRate, if (playing) 1.0 else 0.0)
+            artwork?.let { put(MPMediaItemPropertyArtwork, it) }
+        }
     }
+
+    /** The lock screen's cover, kept against the address it came from so a track change drops it. */
+    private var nowPlayingArt: Pair<String, MPMediaItemArtwork>? = null
+    private var artLoading: String? = null
+
+    /**
+     * The cover for the lock screen, Control Centre and the Dynamic Island: the copy on the phone
+     * for a download, else fetched once, then the Now Playing card is stated again with it.
+     */
+    private fun loadNowPlayingArt(cover: String) {
+        artLoading = cover
+        scope.launch {
+            val image = runCatching {
+                if (cover.startsWith("/")) {
+                    UIImage.imageWithContentsOfFile(cover)
+                } else {
+                    val bytes = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                        artHttp.get(cover).takeIf { it.status.isSuccess() }?.readRawBytes()
+                    }
+                    bytes?.let { UIImage.imageWithData(it.toNSData()) }
+                }
+            }.onFailure { TrackLog.w(TAG, "lock screen artwork: ${it.message}") }.getOrNull()
+            if (artLoading == cover) artLoading = null
+            if (image == null) return@launch
+            nowPlayingArt = cover to MPMediaItemArtwork(boundsSize = image.size, requestHandler = { _ -> image })
+            publishNowPlaying(_song.value, engine.isPlaying.value, engine.durationMs.value)
+        }
+    }
+
+    private val artHttp by lazy { com.music.bitchord.data.appHttpClient() }
+
+    private fun ByteArray.toNSData(): platform.Foundation.NSData =
+        if (isEmpty()) platform.Foundation.NSData() else usePinned {
+            platform.Foundation.NSData.dataWithBytes(it.addressOf(0), size.toULong())
+        }
 
     private fun wireRemoteCommands() {
         val commands = MPRemoteCommandCenter.sharedCommandCenter()
