@@ -55,8 +55,15 @@ private var started = false
 private fun start() {
     if (started) return
     started = true
-    // No PoToken minter on iOS yet: InnerTubeX tries only the clients that need none.
-    InnerTubeXResolver.init(CachesPlayerCache(), UserDefaultsConfigStore(), poTokenProvider = null)
+    // BotGuard PoTokens minted in a hidden WKWebView, as the phone's WebView does: what WEB_REMIX
+    // needs for the tracks the other clients refuse (age-restricted, some region-locked).
+    InnerTubeXResolver.init(
+        CachesPlayerCache(),
+        UserDefaultsConfigStore(),
+        poTokenProvider = com.music.bitchord.data.innertube.potoken.PoTokenGenerator(
+            createMinter = { IosPoTokenWebView.create() },
+        ).asTokenProvider(),
+    )
     // The App language as iOS's own preference too, in case it was lost (a restored backup sets
     // only the setting), so the shared screens' resources agree with iosKit's words from the start.
     com.music.bitchord.data.IosAppLanguage.tag()?.let { tag ->

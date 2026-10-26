@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
-import okio.ByteString.Companion.decodeBase64
-import okio.ByteString.Companion.toByteString
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Parses the raw challenge data obtained from the Create endpoint and returns an object that can be
@@ -75,7 +75,7 @@ fun parseIntegrityTokenData(rawIntegrityTokenData: String): Pair<String, Long> {
  * `Uint8Array` that can be embedded directly in JavaScript code.
  */
 fun stringToU8(identifier: String): String {
-    return newUint8Array(identifier.toByteArray())
+    return newUint8Array(identifier.encodeToByteArray())
 }
 
 /**
@@ -83,12 +83,9 @@ fun stringToU8(identifier: String): String {
  * (e.g. "97,98,99" would be "abc"), which is the output of `Uint8Array::toString()` in JavaScript,
  * and converts it to the specific base64 representation for poTokens.
  */
+@OptIn(ExperimentalEncodingApi::class)
 fun u8ToBase64(poToken: String): String {
-    return poToken.split(",")
-        .map { it.toUByte().toByte() }
-        .toByteArray()
-        .toByteString()
-        .base64()
+    return Base64.encode(poToken.split(",").map { it.toUByte().toByte() }.toByteArray())
         .replace("+", "-")
         .replace("/", "_")
 }
@@ -118,12 +115,13 @@ private fun newUint8Array(contents: ByteArray): String {
 /**
  * Decodes a base64 string encoded in the specific base64 representation used by YouTube.
  */
+@OptIn(ExperimentalEncodingApi::class)
 private fun base64ToByteString(base64: String): ByteArray {
     val base64Mod = base64
         .replace('-', '+')
         .replace('_', '/')
         .replace('.', '=')
 
-    return (base64Mod.decodeBase64() ?: throw PoTokenException("Cannot base64 decode"))
-        .toByteArray()
+    return runCatching { Base64.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL).decode(base64Mod) }
+        .getOrElse { throw PoTokenException("Cannot base64 decode") }
 }
