@@ -1169,7 +1169,7 @@ internal object IosPlayer {
         val lead = upgradeLeads.remove(key)
             ?: if (servedBy[key]?.first == "Song cache") UpgradeLead(null, null, null) else return
         // Sent back to YouTube's own by the listener: only their "Upgrade quality" looks again.
-        if (song.isVideo || inParty || IosSources.isSourceTrack(song) || (!byHand && IosOriginalVersion.isPinned(key))) {
+        if (song.isVideo || inParty || IosSources.isSourceTrack(song) || (!byHand && (IosOriginalVersion.isPinned(key) || key in avPlayerOnly))) {
             lead.lookup?.cancel()
             return
         }
@@ -1375,7 +1375,9 @@ internal object IosPlayer {
         // In the player's scope rather than this one: a lookup that loses the start goes on, to
         // become the track's upgrade (see lookForBetterCopy).
         // A track sent back to YouTube's own isn't offered to the sources until asked for again.
-        val lookup = if (!audio.isVideo && !IosOriginalVersion.isPinned(audio.videoId) && IosSources.canSubstituteForYouTube(request)) {
+        // A track whose stream FFmpeg couldn't play this session is YouTube's AAC, as promised
+        // when it failed: offering it round the sources again only finds the copy that failed.
+        val lookup = if (!audio.isVideo && audio.videoId !in avPlayerOnly && !IosOriginalVersion.isPinned(audio.videoId) && IosSources.canSubstituteForYouTube(request)) {
             scope.async {
                 kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_LOOKUP_MS) {
                     runCatching { IosSources.substituteForYouTube(audio, request) }.getOrNull()

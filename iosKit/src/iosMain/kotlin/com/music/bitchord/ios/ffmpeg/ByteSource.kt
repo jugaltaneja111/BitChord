@@ -332,7 +332,10 @@ internal class RemoteSource(
                     return
                 }
                 cursor = gap
-                val stop = minOf(gap + CHUNK_BYTES, coverage.nextStart(gap) ?: Long.MAX_VALUE, limit)
+                // Past the opening, an add-on's server is asked in larger pieces: fewer requests
+                // for one track is what keeps a rate-limited host answering.
+                val chunk = if (paced && gap > 0) PACED_CHUNK_BYTES else CHUNK_BYTES
+                val stop = minOf(gap + chunk, coverage.nextStart(gap) ?: Long.MAX_VALUE, limit)
                 gap to stop
             }
             val response = withRetries { get(target, start, end - 1) }
@@ -444,6 +447,12 @@ internal class RemoteSource(
                 null
             }
             val code = result?.status?.value
+            if (code == 429) {
+                com.music.bitchord.ios.sources.ThrottledHosts.refused(
+                    result.call.request.url.toString(),
+                    result.headers["Retry-After"]?.trim()?.toLongOrNull()?.let { it * 1000 },
+                )
+            }
             val limit = if (code == 429) THROTTLED_RETRIES else RETRIES
             if (result != null && (!retryable(code!!) || attempt >= limit)) return result
             val waitMs = if (result != null) retryAfterMs(result, attempt) else 1000L * (attempt + 1)
@@ -488,6 +497,7 @@ internal class RemoteSource(
     private companion object {
         const val TAG = "IosFfmpeg"
         const val CHUNK_BYTES = 1024L * 1024
+        const val PACED_CHUNK_BYTES = 4 * CHUNK_BYTES
         /** A read this far past the fetch's edge moves the fetch rather than waiting for it. */
         const val JUMP_BYTES = 2 * CHUNK_BYTES
         const val RETRIES = 2

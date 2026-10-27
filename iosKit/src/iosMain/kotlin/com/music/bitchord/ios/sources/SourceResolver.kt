@@ -410,7 +410,12 @@ internal object SourceResolver {
     ): SourceStream? {
         val matches = matchRows(source, target, request, waitForAll, strictLength, requireSharedArtist)
             ?: return null
-        return streamBest(source, matches, target, request)
+        val stream = streamBest(source, matches, target, request) ?: return null
+        if (ThrottledHosts.isCooling(stream.url)) {
+            TrackLog.d(TAG, "${source.displayName}'s copy of '${target.title}' is on a host rate-limiting this phone; passed over for now")
+            return null
+        }
+        return stream
     }
 
     /**
