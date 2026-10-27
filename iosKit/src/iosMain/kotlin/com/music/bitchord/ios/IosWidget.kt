@@ -19,6 +19,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSBundle
+import platform.Foundation.dataUsingEncoding
+import platform.Foundation.dataWithContentsOfFile
+import platform.Foundation.NSPropertyListSerialization
+import platform.Foundation.NSISOLatin1StringEncoding
+import platform.Foundation.create
+import platform.Foundation.NSString
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDefaults
@@ -48,23 +54,44 @@ internal object IosWidget {
     var reload: (() -> Unit)? = null
 
     /**
-     * AltStore and SideStore register the group under the installer's team and write its real
-     * name into the Info.plist; the widget reads the same key.
+     * Every App Group name this signing might have granted, in the order the widget tries them
+     * (BitChordWidget.swift): AltStore and SideStore write theirs into the Info.plist; a
+     * certificate's own profile grants groups of its maker's naming, listed in the embedded
+     * profile. The first the system opens a folder for is the one both sides use.
      */
-    private val group: String by lazy {
+    private fun candidates(): List<String> = buildList {
         (NSBundle.mainBundle.objectForInfoDictionaryKey("ALTAppGroups") as? List<*>)
-            ?.firstOrNull { it is String && it.isNotEmpty() } as? String
-            ?: DEFAULT_GROUP
+            ?.filterIsInstance<String>()?.filter { it.isNotEmpty() }?.let(::addAll)
+        add(DEFAULT_GROUP)
+        addAll(profileGroups("${NSBundle.mainBundle.bundlePath}/embedded.mobileprovision"))
+    }
+
+    /** The application-groups a provisioning profile grants: the plist inside its signed envelope. */
+    private fun profileGroups(path: String): List<String> {
+        val data = NSData.dataWithContentsOfFile(path) ?: return emptyList()
+        // Latin-1 keeps every byte one character, so offsets in the text are offsets in the file.
+        val text = NSString.create(data = data, encoding = NSISOLatin1StringEncoding)?.toString() ?: return emptyList()
+        val start = text.indexOf("<?xml").takeIf { it >= 0 } ?: return emptyList()
+        val end = text.indexOf("</plist>", start).takeIf { it >= 0 } ?: return emptyList()
+        val plist = text.substring(start, end + "</plist>".length)
+        val xml = NSString.create(string = plist).dataUsingEncoding(NSISOLatin1StringEncoding) ?: return emptyList()
+        val root = NSPropertyListSerialization.propertyListWithData(xml, 0u, null, null) as? Map<*, *> ?: return emptyList()
+        val entitlements = root["Entitlements"] as? Map<*, *> ?: return emptyList()
+        return (entitlements["com.apple.security.application-groups"] as? List<*>)
+            ?.filterIsInstance<String>()?.filterNot { "*" in it }.orEmpty()
     }
 
     fun start() {
         if (started) return
         started = true
-        val container = NSFileManager.defaultManager.containerURLForSecurityApplicationGroupIdentifier(group)
-        if (container == null) {
-            TrackLog.i(TAG, "no App Group ($group): the widget has nothing to show")
+        val tried = candidates()
+        val group = tried.firstOrNull { NSFileManager.defaultManager.containerURLForSecurityApplicationGroupIdentifier(it) != null }
+        val container = group?.let { NSFileManager.defaultManager.containerURLForSecurityApplicationGroupIdentifier(it) }
+        if (group == null || container == null) {
+            TrackLog.i(TAG, "no App Group (tried ${tried.joinToString()}): the widget has nothing to show")
             return
         }
+        TrackLog.i(TAG, "widget shares App Group $group")
         val defaults = NSUserDefaults(suiteName = group)
         scope.launch {
             combine(IosPlayer.song, IosPlayer.isPlaying) { song, playing -> song to playing }

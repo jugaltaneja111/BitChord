@@ -6,14 +6,50 @@ import WidgetKit
 // The app writes the song into the App Group both are signed into (IosWidget.kt) and asks for a
 // redraw; the buttons are App Intents the system runs in the app (PlaybackIntents.swift).
 
-/// AltStore and SideStore register the group under the installer's team and write its real name
-/// into the Info.plist; the app reads the same key.
-private func appGroup() -> String {
-    if let groups = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String],
-       let first = groups.first, !first.isEmpty {
-        return first
+/// The App Group this widget shares with the app. Its name is set at signing, not here: AltStore
+/// and SideStore write theirs into the Info.plist; a certificate's own profile grants groups of
+/// its maker's naming. So every candidate is tried — Info.plist, then the groups the embedded
+/// profile lists, in its order — and the first the system opens a folder for is the one: the
+/// app walks the same list the same way (IosWidget.kt).
+private func appGroup() -> String? {
+    for group in groupCandidates() where
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil {
+        return group
     }
-    return "group.com.music.bitchord"
+    return nil
+}
+
+private func groupCandidates() -> [String] {
+    var candidates: [String] = []
+    if let groups = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] {
+        candidates += groups.filter { !$0.isEmpty }
+    }
+    candidates.append("group.com.music.bitchord")
+    // The widget's own profile, else the app's two folders up (BitChord.app/PlugIns/x.appex).
+    let here = Bundle.main.bundleURL
+    let app = here.deletingLastPathComponent().deletingLastPathComponent()
+    for url in [here, app].map({ $0.appendingPathComponent("embedded.mobileprovision") }) {
+        let groups = profileGroups(url)
+        if !groups.isEmpty {
+            candidates += groups
+            break
+        }
+    }
+    return candidates
+}
+
+/// The application-groups a provisioning profile grants: the plist inside its signed envelope.
+private func profileGroups(_ url: URL) -> [String] {
+    guard let data = try? Data(contentsOf: url),
+          let start = data.range(of: Data("<?xml".utf8)),
+          let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+          let plist = try? PropertyListSerialization.propertyList(
+              from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil
+          ) as? [String: Any],
+          let entitlements = plist["Entitlements"] as? [String: Any],
+          let groups = entitlements["com.apple.security.application-groups"] as? [String]
+    else { return [] }
+    return groups.filter { !$0.contains("*") }
 }
 
 struct NowPlayingEntry: TimelineEntry {
@@ -43,8 +79,7 @@ struct NowPlayingProvider: TimelineProvider {
     }
 
     private func read() -> NowPlayingEntry {
-        let group = appGroup()
-        guard let defaults = UserDefaults(suiteName: group) else {
+        guard let group = appGroup(), let defaults = UserDefaults(suiteName: group) else {
             return NowPlayingEntry(date: Date(), hasSong: false, title: "", artist: "", playing: false, art: nil)
         }
         var art: UIImage?
