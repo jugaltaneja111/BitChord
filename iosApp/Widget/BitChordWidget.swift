@@ -202,7 +202,11 @@ struct NowPlayingView: View {
     let entry: NowPlayingEntry
 
     var body: some View {
-        content.containerBackground(for: .widget) { background }
+        content
+            .containerBackground(for: .widget) { background }
+            // A tap outside the buttons opens the app by its URL scheme rather than by bundle
+            // ID, which a re-signing can leave pointing nowhere.
+            .widgetURL(URL(string: "bitchord://player"))
     }
 
     @ViewBuilder
