@@ -1124,7 +1124,8 @@ internal object IosPlayer {
             TrackLog.d(TAG, "$videoId: ${stream.source} gave ${playing.summary}, below the request; looking further")
             scope.async {
                 kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_LOOKUP_MS) {
-                    runCatching { IosSources.upgradeFor(song, request, playing, stream.source) }.getOrNull()
+                    runCatching { IosSources.upgradeFor(song, request, playing, stream.source) }
+                        .onFailure { noteLookupFailure(videoId, it) }.getOrNull()
                 }
             }
         } else {
@@ -1163,6 +1164,12 @@ internal object IosPlayer {
      * of every source ranked above YouTube. Only a copy worth the swap (lossless, or 96 kbps more)
      * of the same recording (length within two seconds), and only with 20 s or more still to play.
      */
+    /** A lookup that threw rather than finding nothing: said, so a missing upgrade isn't silent. */
+    private fun noteLookupFailure(key: String, failure: Throwable) {
+        if (failure is kotlinx.coroutines.CancellationException) return
+        TrackLog.w(TAG, "$key: the lookup for a better copy failed: ${failure::class.simpleName}: ${failure.message}")
+    }
+
     private fun lookForBetterCopy(song: Song, byHand: Boolean = false) {
         upgradeJob?.cancel()
         val key = song.videoId
@@ -1196,7 +1203,7 @@ internal object IosPlayer {
                 val target = song.copy(durationText = lengthSec?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: song.durationText)
                 val found = raced ?: runCatching {
                     IosSources.upgradeFor(target, request, lead.playing, lead.servedBy)
-                }.getOrNull()
+                }.onFailure { noteLookupFailure(key, it) }.getOrNull()
                 if (found == null) {
                     if (byHand && _song.value?.videoId == key) IosPlayerHost.showMessage(tr("No better copy found"))
                     return@launch
@@ -1210,7 +1217,7 @@ internal object IosPlayer {
                     val asked = kotlin.time.TimeSource.Monotonic.markNow()
                     val better = runCatching {
                         IosSources.upgradeFor(target, request, found.format, found.sourceName)
-                    }.getOrNull()
+                    }.onFailure { noteLookupFailure(key, it) }.getOrNull()
                     if (better == null) {
                         TrackLog.d(TAG, "$key: no lossless copy anywhere after ${asked.elapsedNow().inWholeMilliseconds}ms; staying on ${found.sourceName}")
                         return@launch

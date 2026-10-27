@@ -366,7 +366,10 @@ internal object SourceResolver {
         val running: MutableList<Deferred<Pair<MusicSource, SourceStream?>>> = sources
             .map { source ->
                 async {
-                    source to matchAndStream(source, target, request, waitForAll, strictLength, requireSharedArtist)
+                    // One source throwing costs that source its answer, not every other source theirs.
+                    source to attempt(source) {
+                        matchAndStream(source, target, request, waitForAll, strictLength, requireSharedArtist)
+                    }
                 }
             }
             .toMutableList()

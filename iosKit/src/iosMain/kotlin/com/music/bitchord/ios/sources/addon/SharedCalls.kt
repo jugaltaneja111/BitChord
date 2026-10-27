@@ -78,6 +78,7 @@ internal class SharedCalls<T>(
                 live
             } else {
                 if (entries.size >= MAX_ENTRIES) prune()
+                log(describe())
                 Pending(scope.async { produce() }, now()).also { entries[key] = it }
             }
         }

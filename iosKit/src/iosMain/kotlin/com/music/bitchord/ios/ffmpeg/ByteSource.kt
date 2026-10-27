@@ -391,6 +391,9 @@ internal class RemoteSource(
                 pour(target, start)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: Refused) {
+                // The server's answer, already retried as far as it is worth: final.
+                throw e
             } catch (e: Throwable) {
                 if (++failures > RETRIES) throw e
                 TrackLog.d(TAG, "stream broke at ${start}B (try $failures): ${e.message}; picking up from there")
@@ -451,10 +454,12 @@ internal class RemoteSource(
                 total = start
                 lock.broadcast()
             }
-            else -> error("HTTP $code")
+            else -> throw Refused(code)
         }
         return got
     }
+
+    private class Refused(code: Int) : Exception("HTTP $code")
 
     private suspend fun drain(body: ByteReadChannel, start: Long): Long {
         val buffer = ByteArray(BUFFER_BYTES)
@@ -566,7 +571,14 @@ internal class RemoteSource(
                     result.headers["Retry-After"]?.trim()?.toLongOrNull()?.let { it * 1000 },
                 )
             }
-            val limit = if (code == 429) THROTTLED_RETRIES else RETRIES
+            // Only googlevideo is waited out. Any other server answering 429 has rate-limited this
+            // phone for minutes, and each retry only extends it: the stream fails at once, so the
+            // player stays on (or goes back to) the copy it has.
+            val limit = when {
+                code != 429 -> RETRIES
+                result.call.request.url.toString().let { "googlevideo.com" in it || "youtube.com" in it } -> THROTTLED_RETRIES
+                else -> 0
+            }
             if (result != null && (!retryable(code!!) || attempt >= limit)) return result
             val waitMs = if (result != null) retryAfterMs(result, attempt) else 1000L * (attempt + 1)
             attempt++

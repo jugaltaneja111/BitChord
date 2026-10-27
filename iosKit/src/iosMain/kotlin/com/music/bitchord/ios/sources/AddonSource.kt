@@ -254,6 +254,9 @@ internal class AddonSource(
             val failure = result.exceptionOrNull()
             if (failure !is AddonNotFound) {
                 TrackLog.w(TAG, "${config.displayName}: stream failed for $trackId — ${failure?.message}")
+            } else {
+                // Its search listed the row, so "not found" here is usually its own backend failing.
+                TrackLog.d(TAG, "${config.displayName}: no stream for $trackId (HTTP 404), though its search listed it")
             }
             return fromRow(trackId, tier)
         }
