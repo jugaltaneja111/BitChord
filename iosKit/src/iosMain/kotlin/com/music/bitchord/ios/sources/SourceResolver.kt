@@ -581,6 +581,75 @@ internal object SourceResolver {
     }
 
     /**
+     * The copy of [target] to keep as a file, from a configured source, or
+     * null for YouTube's own AAC (the phone's `forDownload`).
+     *
+     * Under [StreamRequest.Lossless] the sources that can serve lossless are
+     * walked in rank for a bit-exact (or Dolby Atmos) copy, while the rest
+     * race for their best lossy one; under [StreamRequest.Best] everything
+     * races on rendition alone. A lossy winner is kept only when it beats
+     * YouTube's best AAC. [StreamRequest.Capped] is YouTube's: a source can't
+     * be asked for a smaller file.
+     *
+     * Not budgeted by the playback list: what a download keeps is the download
+     * setting's answer, so every enabled source whose manifest allows
+     * downloads is asked. A DASH manifest is passed over — it can't be saved
+     * as one file here.
+     */
+    suspend fun forDownload(
+        target: TrackMatcher.Target,
+        request: StreamRequest,
+    ): Pair<MusicSource, SourceStream>? = coroutineScope {
+        if (target.title.isBlank()) return@coroutineScope null
+        val wantsLossless = when (request) {
+            is StreamRequest.Lossless -> true
+            is StreamRequest.Best -> false
+            is StreamRequest.Capped -> return@coroutineScope null
+        }
+        val active = SourceRegistry.activeForDownload()
+        val youtubeId = active.firstOrNull { it.kind == SourceKind.YOUTUBE }?.configId
+        val ranked = rankedAbove(youtubeId.orEmpty(), active)
+        val strictLength = target.durationSec != null
+        val bitExact = if (wantsLossless) ranked.filter { it.kind.canServeLossless } else emptyList()
+        val elsewhere = ranked - bitExact.toSet()
+
+        val elsewhereBest = async {
+            bestAcross(elsewhere, target, StreamRequest.Best, waitForAll = true, strictLength = strictLength) { source, stream ->
+                // Bit-exact audio is over budget on the High rung: that listener picked the smaller file.
+                val ok = !stream.dash && (wantsLossless || stream.format.isLossless != true)
+                if (!ok) TrackLog.d(TAG, "${source.displayName} offered ${stream.format.summary}; not what this download asked for")
+                ok
+            }
+        }
+
+        var best: Pair<MusicSource, SourceStream>? = null
+        for (source in bitExact) {
+            val stream = matchAndStream(source, target, request, waitForAll = true, strictLength = strictLength) ?: continue
+            if (stream.dash) {
+                TrackLog.d(TAG, "${source.displayName} offered a DASH manifest to download; passed over")
+                continue
+            }
+            if (stream.format.isLossless == true || stream.format.isDolbyAtmos) {
+                TrackLog.d(TAG, "download: '${target.title}' from ${source.displayName} at ${stream.format.summary}")
+                elsewhereBest.cancel()
+                return@coroutineScope source to stream
+            }
+            TrackLog.d(TAG, "${source.displayName} offered ${stream.format.summary} to download; not lossless or Dolby")
+            if (isBetter(stream.format, best?.second?.format)) best = source to stream
+        }
+        elsewhereBest.await()?.let { (source, stream) ->
+            if (isBetter(stream.format, best?.second?.format)) best = source to stream
+        }
+        val (winner, chosen) = best ?: return@coroutineScope null
+        if ((chosen.format.kbps ?: 0) <= YOUTUBE_BEST_AAC_KBPS) {
+            TrackLog.d(TAG, "best offered for '${target.title}' is ${winner.displayName}'s ${chosen.format.summary}; taking YouTube's AAC over that")
+            return@coroutineScope null
+        }
+        TrackLog.d(TAG, "download: '${target.title}' from ${winner.displayName} at ${chosen.format.summary}, over YouTube's AAC")
+        winner to chosen
+    }
+
+    /**
      * Whether [candidate] is a better rendition than [current], by mix first,
      * codec second and bitrate third. A null [current] is beaten by anything.
      *
@@ -651,4 +720,7 @@ internal object SourceResolver {
 
     /** How many kbps a lossy stream has to gain before it earns a seam in the audio — see [worthSwapping]. */
     private const val UPGRADE_MIN_GAIN_KBPS = 96
+
+    /** The most YouTube's AAC ladder holds; a lossy download from a source has to beat it. */
+    private const val YOUTUBE_BEST_AAC_KBPS = 256
 }

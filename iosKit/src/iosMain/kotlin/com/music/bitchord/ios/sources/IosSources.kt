@@ -117,6 +117,15 @@ internal object IosSources {
         return SourceResolver.upgradeFor(TrackMatcher.targetOf(song), request, playing, servedBy)?.toResolved()
     }
 
+    /**
+     * The copy of a YouTube [song] to save from a source above YouTube, or
+     * null for YouTube's own — see [SourceResolver.forDownload].
+     */
+    suspend fun forDownload(song: Song, request: StreamRequest): ResolvedStream? {
+        if (isSourceTrack(song)) return null
+        return SourceResolver.forDownload(TrackMatcher.targetOf(song), request)?.toResolved()
+    }
+
     /** Whether [candidate] is enough better than [playing] to be worth a swap mid-track. */
     fun worthSwapping(candidate: StreamFormat, playing: StreamFormat?): Boolean =
         SourceResolver.worthSwapping(candidate, playing)

@@ -8,6 +8,7 @@ import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.wallClockMs
 import com.music.bitchord.ios.sources.IosSources
+import com.music.bitchord.ios.sources.ResolvedStream
 import com.music.bitchord.ios.sources.StreamRequest
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import platform.Foundation.NSData
@@ -122,6 +124,9 @@ internal sealed interface DownloadProgress {
 internal object IosDownloads {
     private const val TAG = "IosDownloads"
     private const val CHUNK_BYTES = 2L * 1024 * 1024
+
+    /** How long the sources may hold a download up before it goes to YouTube: the phone's bound. */
+    private const val SOURCE_LOOKUP_MS = 85_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val json = Json { ignoreUnknownKeys = true }
@@ -390,30 +395,55 @@ internal object IosDownloads {
     }
 
     /**
-     * What to save for [song]: YouTube's AAC for a YouTube track; for a row from an add-on or
-     * JioSaavn, its own source's best (lossless where it has it, as the phone's Lossless
-     * download quality), falling back to YouTube's match.
+     * What to save for [song], under High as the phone's Lossless download quality: for a YouTube
+     * track, the copy a source ranked above YouTube holds (lossless where one has it, else a lossy
+     * one only when it beats YouTube's best AAC), else YouTube's AAC; for a row from an add-on or
+     * JioSaavn, its own source's best, falling back to YouTube's match.
      */
     private suspend fun streamFor(song: Song, maxKbps: Int): InnerTubeXResolver.Extracted? {
+        val request = if (maxKbps >= 256) StreamRequest.Lossless else StreamRequest.Capped(maxKbps)
         if (!IosSources.isSourceTrack(song)) {
+            fromSources(song, request)?.let { return it }
             return InnerTubeXResolver.extract(song.videoId, maxKbps = maxKbps, requireM4a = true)
         }
-        val request = if (maxKbps >= 256) StreamRequest.Lossless else StreamRequest.Capped(maxKbps)
-        IosSources.resolve(song, request)?.let { resolved ->
-            return InnerTubeXResolver.Extracted(
-                videoId = song.videoId,
-                profileId = "",
-                url = resolved.url,
-                headers = resolved.headers,
-                kbps = resolved.format.kbps ?: 0,
-                mimeType = resolved.format.codec?.let { "audio/$it" } ?: "audio/mp4",
-                clientName = resolved.sourceName,
-                loudnessDb = null,
-            )
-        }
+        IosSources.resolve(song, request)?.takeUnless { it.dash }?.let { return it.extracted(song) }
         val id = IosSources.youtubeFallback(song) ?: return null
         return InnerTubeXResolver.extract(id, maxKbps = maxKbps, requireM4a = true)
     }
+
+    /**
+     * A YouTube track's copy from the sources, or null for YouTube's. Bounded, as the phone's:
+     * an add-on waits on every backend it fronts, and a track none of them holds would otherwise
+     * stall the queue on its way to the YouTube file it was always going to be.
+     */
+    private suspend fun fromSources(song: Song, request: StreamRequest): InnerTubeXResolver.Extracted? {
+        if (request is StreamRequest.Capped) return null
+        var timedOut = true
+        val found = withTimeoutOrNull(SOURCE_LOOKUP_MS) {
+            runCatching { IosSources.forDownload(song, request) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .onFailure { TrackLog.w(TAG, "source lookup failed for ${song.videoId}: ${it.message}") }
+                .getOrNull()
+                .also { timedOut = false }
+        }
+        if (found == null) {
+            if (timedOut) TrackLog.w(TAG, "source lookup for ${song.videoId} ran past ${SOURCE_LOOKUP_MS}ms; downloading it from YouTube")
+            return null
+        }
+        TrackLog.i(TAG, "${song.videoId}: downloading from ${found.sourceName}, ${found.format.summary}")
+        return found.extracted(song)
+    }
+
+    private fun ResolvedStream.extracted(song: Song) = InnerTubeXResolver.Extracted(
+        videoId = song.videoId,
+        profileId = "",
+        url = url,
+        headers = headers,
+        kbps = format.kbps ?: 0,
+        mimeType = format.codec?.let { "audio/$it" } ?: "audio/mp4",
+        clientName = sourceName,
+        loudnessDb = null,
+    )
 
     /** The cover beside the audio, so lists and the player have it with no connection. */
     private suspend fun saveArtwork(videoId: String, url: String): String? = runCatching {

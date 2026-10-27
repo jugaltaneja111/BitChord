@@ -1377,6 +1377,9 @@ internal object IosPlayer {
                 }
             }
         } else {
+            if (audio.isVideo && IosSources.canSubstituteForYouTube(request)) {
+                TrackLog.d(TAG, "${audio.videoId}: a music video, so YouTube's own audio; \"Prefer music-only version\" finds its release for the sources")
+            }
             null
         }
         if (lookup != null) {
