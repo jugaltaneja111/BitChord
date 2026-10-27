@@ -565,6 +565,7 @@ internal class RemoteSource(
                 null
             }
             val code = result?.status?.value
+            if (code == 200 || code == 206) com.music.bitchord.ios.sources.ThrottledHosts.served(result.call.request.url.toString())
             if (code == 429) {
                 com.music.bitchord.ios.sources.ThrottledHosts.refused(
                     result.call.request.url.toString(),

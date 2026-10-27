@@ -1,6 +1,7 @@
 package com.music.bitchord.ios
 
 import com.music.bitchord.ios.sources.IosSources
+import com.music.bitchord.ios.sources.ThrottledHosts
 import com.music.bitchord.ios.sources.ResolvedStream
 import com.music.bitchord.ios.sources.StreamRequest
 import kotlinx.coroutines.async
@@ -784,7 +785,7 @@ internal object IosPlayer {
                 stream = betterBeforeStart(audio, stream, budgetMs - started.elapsedNow().inWholeMilliseconds)
                 // The queue may have moved on while that resolved.
                 if (upcomingIndex()?.let { _queue.value.getOrNull(it)?.videoId } != audio.videoId) return@launch
-                TrackLog.i(TAG, "${audio.videoId}: readied from ${stream.source}, ${stream.kbps} kbps")
+                TrackLog.i(TAG, "${audio.videoId}: readied from ${stream.source}, ${stream.format?.summary ?: "${stream.kbps} kbps"}")
                 servedBy[audio.videoId] = stream.source to stream.kbps
                 engine.prepareNext(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
@@ -926,7 +927,7 @@ internal object IosPlayer {
                     fail(tr("No playable stream for this track"))
                     return@launch
                 }
-                TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.kbps} kbps")
+                TrackLog.i(TAG, "${audio.videoId}: from ${stream.source}, ${stream.format?.summary ?: "${stream.kbps} kbps"}")
                 servedBy[audio.videoId] = stream.source to stream.kbps
                 engine.load(stream.url, stream.headers, stream.loudnessDb, audio.videoId, stream.durationMs, startMs, play, stream.route)
                 if (stream.fromYouTube) IosSongCache.remember(audio.videoId, stream.url, stream.headers, stream.loudnessDb, stream.route.ffmpeg)
@@ -1097,7 +1098,8 @@ internal object IosPlayer {
 
     /** What a track was started on short of the best, for [lookForBetterCopy] once it plays. */
     private class UpgradeLead(
-        val lookup: Deferred<ResolvedStream?>?,
+        /** Every copy it found, best first: the next one is tried when the first won't open. */
+        val lookup: Deferred<List<ResolvedStream>>?,
         val playing: StreamFormat?,
         val servedBy: String?,
     )
@@ -1126,10 +1128,13 @@ internal object IosPlayer {
                 kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_LOOKUP_MS) {
                     runCatching { IosSources.upgradeFor(song, request, playing, stream.source) }
                         .onFailure { noteLookupFailure(videoId, it) }.getOrNull()
-                }
+                }.orEmpty()
             }
         } else {
-            stream.lookup
+            stream.lookup?.let { single ->
+                scope.async { listOfNotNull(single.await()) }
+                    .also { listed -> listed.invokeOnCompletion { if (it != null) single.cancel() } }
+            }
         }
         upgradeLeads[videoId] = UpgradeLead(lookup, playing, stream.source.takeIf { settled })
     }
@@ -1143,14 +1148,10 @@ internal object IosPlayer {
         if (budgetMs <= 0L) return stream
         val lead = upgradeLeads[song.videoId] ?: return stream
         val lookup = lead.lookup ?: return stream
-        val found = kotlinx.coroutines.withTimeoutOrNull(budgetMs) { runCatching { lookup.await() }.getOrNull() }
-            ?: return stream
         val lengthSec = (phoneLength(song) / 1000).toInt().takeIf { it > 0 }
-        if (!IosSources.worthSwapping(found.format, lead.playing) ||
-            !IosSources.sameRecordingAs(found.durationMs?.let { (it / 1000).toInt() }, lengthSec)
-        ) {
-            return stream
-        }
+        val found = kotlinx.coroutines.withTimeoutOrNull(budgetMs) { runCatching { lookup.await() }.getOrNull() }
+            ?.firstOrNull { usable(it, lead.playing, lengthSec) }
+            ?: return stream
         upgradeLeads.remove(song.videoId)
         TrackLog.i(TAG, "${song.videoId}: readied on ${found.sourceName}, ${found.format.summary}, before it starts")
         // Still short of the request — JioSaavn's AAC in place of YouTube's — it gets its own second look.
@@ -1196,35 +1197,45 @@ internal object IosPlayer {
                 // fragmented MP4 can be twice the truth, and then no copy would match.
                 val lengthMs = phoneLength(song).takeIf { it > 0 } ?: engine.durationMs.value
                 val lengthSec = (lengthMs / 1000).toInt().takeIf { it > 0 }
-                val raced = lead.lookup?.await()?.takeIf {
-                    IosSources.worthSwapping(it.format, lead.playing) &&
-                        IosSources.sameRecordingAs(it.durationMs?.let { ms -> (ms / 1000).toInt() }, lengthSec)
-                }
+                val raced = lead.lookup?.await().orEmpty().filter { usable(it, lead.playing, lengthSec) }
                 val target = song.copy(durationText = lengthSec?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: song.durationText)
-                val found = raced ?: runCatching {
-                    IosSources.upgradeFor(target, request, lead.playing, lead.servedBy)
-                }.onFailure { noteLookupFailure(key, it) }.getOrNull()
-                if (found == null) {
+                val candidates = raced.ifEmpty {
+                    runCatching {
+                        IosSources.upgradeFor(target, request, lead.playing, lead.servedBy)
+                    }.onFailure { noteLookupFailure(key, it) }.getOrNull().orEmpty()
+                }
+                if (candidates.isEmpty()) {
                     if (byHand && _song.value?.videoId == key) IosPlayerHost.showMessage(tr("No better copy found"))
                     return@launch
                 }
-                if (!swapTo(song, found, lengthMs)) return@launch
+                val found = swapToFirst(song, candidates, lengthMs) ?: return@launch
                 // The race takes the first copy to answer, and a quick 320 kbps one beats a slow
                 // server's FLAC to it. With that one playing, the slower sources get their hearing,
-                // as the phone's second look gives them: a lossless copy is swapped in when it lands.
-                if (found.format.isLossless != true) {
-                    TrackLog.d(TAG, "$key: ${found.sourceName} gave ${found.format.summary}; still looking for lossless")
-                    val asked = kotlin.time.TimeSource.Monotonic.markNow()
-                    val better = runCatching {
+                // as the phone's second look gives them: a lossless copy is swapped in when it lands,
+                // and over a lossless one, a higher resolution — once, as each swap is a seam.
+                val lossless = found.format.isLossless == true
+                if (lossless && found.format.bitDepth == null && found.format.sampleRateHz == null) return@launch
+                TrackLog.d(
+                    TAG,
+                    "$key: ${found.sourceName} gave ${found.format.summary}; " +
+                        if (lossless) "looking once more for a higher resolution" else "still looking for lossless",
+                )
+                val asked = kotlin.time.TimeSource.Monotonic.markNow()
+                val better = kotlinx.coroutines.withTimeoutOrNull(SUBSTITUTE_LOOKUP_MS) {
+                    runCatching {
                         IosSources.upgradeFor(target, request, found.format, found.sourceName)
                     }.onFailure { noteLookupFailure(key, it) }.getOrNull()
-                    if (better == null) {
-                        TrackLog.d(TAG, "$key: no lossless copy anywhere after ${asked.elapsedNow().inWholeMilliseconds}ms; staying on ${found.sourceName}")
-                        return@launch
-                    }
-                    if (_song.value?.videoId != key) return@launch
-                    swapTo(song, better, lengthMs)
+                }.orEmpty()
+                if (better.isEmpty()) {
+                    TrackLog.d(
+                        TAG,
+                        "$key: no ${if (lossless) "higher-resolution" else "lossless"} copy anywhere after " +
+                            "${asked.elapsedNow().inWholeMilliseconds}ms; staying on ${found.sourceName}",
+                    )
+                    return@launch
                 }
+                if (_song.value?.videoId != key) return@launch
+                swapToFirst(song, better, lengthMs)
             } finally {
                 lead.lookup?.cancel()
                 if (byHand && _upgradingByHand.value == key) _upgradingByHand.value = null
@@ -1232,18 +1243,52 @@ internal object IosPlayer {
         }
     }
 
+    /** Whether [found] may replace what is playing: better, and the same recording. */
+    private fun usable(found: ResolvedStream, playing: StreamFormat?, lengthSec: Int?): Boolean =
+        IosSources.worthSwapping(found.format, playing) &&
+            IosSources.sameRecordingAs(found.durationMs?.let { (it / 1000).toInt() }, lengthSec)
+
     /**
-     * Moves the playing [song] onto [found], blended in at the same point; true once it plays.
+     * [swapTo] each of [candidates] in turn, best first, until one plays: the one that played, or
+     * null. A copy whose server won't hand it over — a host rate-limiting the phone, an addon whose
+     * backend is down — costs that copy, not the upgrade, while another source has the track.
+     */
+    private suspend fun swapToFirst(song: Song, candidates: List<ResolvedStream>, lengthMs: Long): ResolvedStream? {
+        val key = song.videoId
+        for ((i, candidate) in candidates.withIndex()) {
+            if (_song.value?.videoId != key) return null
+            val next = candidates.getOrNull(i + 1)
+            if (ThrottledHosts.isCooling(candidate.url)) {
+                TrackLog.d(TAG, "$key: ${candidate.sourceName}'s copy is on a host rate-limiting this phone" + (next?.let { "; trying ${it.sourceName}" } ?: ""))
+                continue
+            }
+            when (swapTo(song, candidate, lengthMs)) {
+                Swap.DONE -> return candidate
+                Swap.SKIPPED -> return null
+                Swap.FAILED -> {
+                    IosSources.didNotOpen(candidate)
+                    next?.let { TrackLog.w(TAG, "$key: ${candidate.sourceName} didn't take; trying ${it.sourceName}") }
+                }
+            }
+        }
+        return null
+    }
+
+    private enum class Swap { DONE, FAILED, SKIPPED }
+
+    /**
+     * Moves the playing [song] onto [found], blended in at the same point: [Swap.DONE] once it plays,
+     * [Swap.FAILED] when its stream won't, [Swap.SKIPPED] when the moment for it has passed.
      * AVPlayer turning down a copy FFmpeg can open — a FLAC from a URL with no extension to go by —
      * is a second try, not a lost upgrade.
      */
-    private suspend fun swapTo(song: Song, found: ResolvedStream, lengthMs: Long): Boolean {
+    private suspend fun swapTo(song: Song, found: ResolvedStream, lengthMs: Long): Swap {
         val key = song.videoId
-        if (_song.value?.videoId != key) return false
+        if (_song.value?.videoId != key) return Swap.SKIPPED
         val remaining = lengthMs - engine.position.positionMs
         if (remaining < UPGRADE_MIN_REMAINING_MS || engine.isBlending) {
             TrackLog.d(TAG, "$key: upgrade to ${found.sourceName} passed over (${remaining}ms left)")
-            return false
+            return Swap.SKIPPED
         }
         val stream = found.picked(song)
         TrackLog.i(TAG, "$key: upgrading to ${found.sourceName}, ${found.format.summary}")
@@ -1257,14 +1302,14 @@ internal object IosPlayer {
             TrackLog.w(TAG, "$key: AVPlayer refused ${found.sourceName}'s stream; trying FFmpeg")
             swapped = attempt(IosAudioEngine.Route(ffmpeg = true))
         }
-        if (_song.value?.videoId != key) return false
+        if (_song.value?.videoId != key) return Swap.SKIPPED
         if (swapped) {
             servedBy[key] = found.sourceName to found.format.kbps
             TrackLog.i(TAG, "$key: upgraded to ${found.sourceName}")
         } else {
             TrackLog.w(TAG, "$key: upgrade to ${found.sourceName} didn't take")
         }
-        return swapped
+        return if (swapped) Swap.DONE else Swap.FAILED
     }
 
     private val _upgradingByHand = MutableStateFlow<String?>(null)

@@ -109,6 +109,7 @@ import com.music.bitchord.data.model.BrowseItem
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.artworkAt
 import com.music.bitchord.data.model.QueueTier
+import com.music.bitchord.data.sources.SourceHealthGate
 import com.music.bitchord.data.sources.SourceRegistry
 import com.music.bitchord.download.Downloads
 import java.util.concurrent.ConcurrentHashMap
@@ -4286,8 +4287,28 @@ class PlaybackService : MediaLibraryService() {
             val better = withContext(Dispatchers.IO) {
                 QualityUpgrade.lookAgain(mediaId, playingSeconds)
             } ?: return@launch
+            // Taken now: a failed audition forgets the track's upgrade state, these with it.
+            val fallbacks = QualityUpgrade.takeFallbacks(mediaId)
             try {
-                swapIn(mediaId, better)
+                // A copy whose server won't hand it over — a host rate-limiting
+                // this phone, an addon whose backend is down — costs that copy,
+                // not the upgrade, while another source has the track.
+                var candidate = better
+                for (next in fallbacks + listOf<SourceStream?>(null)) {
+                    if (!swapIn(mediaId, candidate)) break
+                    candidate.sourceConfigId?.let { id ->
+                        SourceHealthGate.failed(id, SourceRegistry.config(id)?.displayName ?: id, "its stream wouldn't open")
+                    }
+                    if (next == null) break
+                    TrackLog.w(
+                        "BitChord",
+                        "${candidate.format.summary} didn't prove itself; trying " +
+                            "${next.sourceConfigId?.let { SourceRegistry.config(it)?.displayName } ?: "the next copy"} " +
+                            "(${next.format.summary})",
+                        about = mediaId,
+                    )
+                    candidate = next
+                }
             } finally {
                 // The badge comes down when the upgrade is done, not when the
                 // search that found it was — including the deliberate wait in
@@ -4483,11 +4504,12 @@ class PlaybackService : MediaLibraryService() {
      * playback URI differs, so an item rebuilt identically would be accepted
      * and quietly keep playing the old stream.
      */
-    private suspend fun swapIn(mediaId: String, stream: SourceStream) {
-        val at = withContext(Dispatchers.Main) { swapPointFor(mediaId) } ?: return
+    /** Swaps [stream] in for the playing [mediaId]; true only when its audition failed, so another copy may be tried. */
+    private suspend fun swapIn(mediaId: String, stream: SourceStream): Boolean {
+        val at = withContext(Dispatchers.Main) { swapPointFor(mediaId) } ?: return false
         if (at.duration > 0 && at.duration - at.position < UPGRADE_MIN_REMAINING_MS) {
             TrackLog.d("BitChord", "upgrade abandoned: only ${at.duration - at.position}ms of the track left")
-            return
+            return false
         }
 
         val upgradedUri = QualityUpgrade.upgradedUri(at.uri)
@@ -4513,7 +4535,7 @@ class PlaybackService : MediaLibraryService() {
             // to prove itself.
             QualityUpgrade.forget(mediaId)
             withContext(Dispatchers.IO) { AudioCache.discardRendition(Uri.parse(upgradedUri)) }
-            return
+            return true
         }
 
         // There used to be an unconditional five-second hold here, keyed off the
@@ -4701,6 +4723,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         }
+        return false
     }
 
     /** Main thread. Null unless [mediaId] is still current and has another upgrade slot. */

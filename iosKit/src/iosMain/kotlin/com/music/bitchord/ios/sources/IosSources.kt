@@ -112,10 +112,19 @@ internal object IosSources {
      * source's display name, or null for YouTube), or null — see
      * [SourceResolver.upgradeFor].
      */
-    suspend fun upgradeFor(song: Song, request: StreamRequest, playing: StreamFormat?, servedBy: String?): ResolvedStream? {
-        if (isSourceTrack(song) && SourceRegistry.config(SourceRegistry.parseTrackKey(song.videoId)!!.first)?.kind == SourceKind.ADDON) return null
-        return SourceResolver.upgradeFor(TrackMatcher.targetOf(song), request, playing, servedBy)?.toResolved()
+    suspend fun upgradeFor(song: Song, request: StreamRequest, playing: StreamFormat?, servedBy: String?): List<ResolvedStream> {
+        if (isSourceTrack(song) && SourceRegistry.config(SourceRegistry.parseTrackKey(song.videoId)!!.first)?.kind == SourceKind.ADDON) return emptyList()
+        return SourceResolver.upgradeFor(TrackMatcher.targetOf(song), request, playing, servedBy).map { it.toResolved() }
     }
+
+    /** A copy that wouldn't open: counted against its source, see [SourceHealthGate]. */
+    fun didNotOpen(stream: ResolvedStream) {
+        stream.sourceId?.let { SourceHealthGate.failed(it, stream.sourceName, "its stream wouldn't open") }
+    }
+
+    /** Whether [candidate] is a higher-resolution lossless copy than lossless [playing]. */
+    fun higherResolution(candidate: StreamFormat, playing: StreamFormat): Boolean =
+        SourceResolver.higherResolution(candidate, playing)
 
     /**
      * The copy of a YouTube [song] to save from a source above YouTube, or
@@ -208,6 +217,7 @@ internal object IosSources {
             dash = stream.dash,
             sourceName = source.displayName,
             durationMs = stream.durationSec?.let { it * 1000L },
+            sourceId = stream.sourceConfigId ?: source.configId,
         )
     }
 
@@ -223,4 +233,6 @@ internal data class ResolvedStream(
     val dash: Boolean = false,
     val sourceName: String,      // display name of the source that served it, for "stats for nerds"
     val durationMs: Long?,
+    /** The config of the source that served it, for [SourceHealthGate]. */
+    val sourceId: String? = null,
 )

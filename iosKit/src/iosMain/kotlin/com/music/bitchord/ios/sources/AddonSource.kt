@@ -196,8 +196,10 @@ internal class AddonSource(
         val tier = request?.tier ?: AddonClient.TIER_LOSSLESS
         val tracks = client.search(query, tier).getOrElse { failure ->
             TrackLog.w(TAG, "${config.displayName}: search failed — ${failure.message}")
+            SourceHealthGate.failed(config.id, config.displayName, failure.message?.substringBefore(" [url="))
             return emptyList()
         }
+        SourceHealthGate.answered(config.id)
         return tracks.asSequence()
             .filter { it.id.isNotBlank() && it.title.isNotBlank() }
             .take(limit)
@@ -254,6 +256,7 @@ internal class AddonSource(
             val failure = result.exceptionOrNull()
             if (failure !is AddonNotFound) {
                 TrackLog.w(TAG, "${config.displayName}: stream failed for $trackId — ${failure?.message}")
+                SourceHealthGate.failed(config.id, config.displayName, failure?.message?.substringBefore(" [url="))
             } else {
                 // Its search listed the row, so "not found" here is usually its own backend failing.
                 TrackLog.d(TAG, "${config.displayName}: no stream for $trackId (HTTP 404), though its search listed it")

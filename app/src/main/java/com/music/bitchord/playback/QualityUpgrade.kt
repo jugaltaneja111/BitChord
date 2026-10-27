@@ -109,6 +109,29 @@ object QualityUpgrade {
             !format.isDolbyAtmos
 
     /**
+     * Copies found beside the one being swapped in, best first, for when its server won't serve
+     * it — see [takeFallbacks].
+     */
+    private val fallbacks = ConcurrentHashMap<String, List<SourceStream>>()
+
+    /** Tracks that have had their one look for a higher resolution over a lossless swap. */
+    private val hiResLooked: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Whether a swap onto [format] earns another look: for lossless when it is lossy, and — once
+     * per track, as each swap is a seam — for a higher resolution over a lossless copy whose
+     * resolution is known. [SourceResolver.worthSwapping] then holds that look to strictly better.
+     */
+    private fun needsFollowUp(mediaId: String, format: StreamFormat): Boolean {
+        if (needsLosslessFollowUp(format)) return true
+        if (format.isLossless != true || (format.bitDepth == null && format.sampleRateHz == null)) return false
+        return hiResLooked.add(mediaId)
+    }
+
+    /** The copies found beside the one just offered for [mediaId], best first; handed over once. */
+    fun takeFallbacks(mediaId: String): List<SourceStream> = fallbacks.remove(mediaId).orEmpty()
+
+    /**
      * Tracks whose upgraded stream is being *proved* rather than played — see
      * [PlaybackService][com.music.bitchord.playback.PlaybackService]'s
      * audition.
@@ -469,7 +492,7 @@ object QualityUpgrade {
                     SourceResolver.sameRecordingAs(late.durationSec, effectiveDurationSec)
                 ) {
                     found = late
-                    if (needsLosslessFollowUp(late.format)) {
+                    if (needsFollowUp(mediaId, late.format)) {
                         followUps[mediaId] = waiting.copy(
                             target = waiting.target.copy(durationSec = effectiveDurationSec),
                             inFlight = null,
@@ -485,13 +508,16 @@ object QualityUpgrade {
             // again from scratch — this time waiting on every module, which is
             // what the live path could not afford to do. The source already
             // serving the track is left out — see [SourceResolver.upgradeFor].
-            SourceResolver.upgradeFor(
+            SourceResolver.upgradeCandidates(
                 waiting.target.copy(durationSec = effectiveDurationSec),
                 playing = waiting.playing,
                 servedBy = waiting.servedBy,
-            ).also {
+            ).let { candidates ->
+                if (candidates.size > 1) fallbacks[mediaId] = candidates.drop(1)
+                candidates.firstOrNull()
+            }.also {
                 found = it
-                if (it != null && needsLosslessFollowUp(it.format)) {
+                if (it != null && needsFollowUp(mediaId, it.format)) {
                     followUps[mediaId] = waiting.copy(
                         target = waiting.target.copy(durationSec = effectiveDurationSec),
                         inFlight = null,
@@ -629,6 +655,8 @@ object QualityUpgrade {
         followUps.remove(mediaId)?.inFlight?.cancel()
         forced.remove(mediaId)
         shelved.remove(mediaId)
+        fallbacks.remove(mediaId)
+        hiResLooked -= mediaId
         auditioning -= mediaId
         // A request made by hand is about the track the listener was listening
         // to. Once the queue has moved off it there is nothing left to honour,

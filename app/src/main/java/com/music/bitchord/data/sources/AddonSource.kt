@@ -194,8 +194,10 @@ class AddonSource(
             val tier = request?.tier ?: AddonClient.TIER_LOSSLESS
             val tracks = client.search(query, tier).getOrElse { failure ->
                 TrackLog.w(TAG, "${config.displayName}: search failed — ${failure.message}")
+                SourceHealthGate.failed(config.id, config.displayName, failure.message)
                 return@withContext emptyList()
             }
+            SourceHealthGate.answered(config.id)
             tracks.asSequence()
                 .filter { it.id.isNotBlank() && it.title.isNotBlank() }
                 .take(limit)
@@ -256,6 +258,7 @@ class AddonSource(
                 val failure = result.exceptionOrNull()
                 if (failure !is AddonNotFound) {
                     TrackLog.w(TAG, "${config.displayName}: stream failed for $trackId — ${failure?.message}")
+                    SourceHealthGate.failed(config.id, config.displayName, failure?.message)
                 }
                 return@withContext fromRow(trackId, tier)
             }

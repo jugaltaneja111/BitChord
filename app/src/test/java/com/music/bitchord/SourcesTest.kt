@@ -1045,6 +1045,38 @@ class SourcesTest {
     }
 
     /**
+     * Two lossless copies are ranked by resolution, never by stated bitrate: a
+     * FLAC's bitrate is how well the music compressed. One addon stating it
+     * where another didn't made a 16-bit FLAC outrank a 24-bit/96 kHz one.
+     */
+    @Test
+    fun `ranks lossless copies by resolution, not stated bitrate`() {
+        val cd = StreamFormat(codec = "flac", kbps = 1529, bitDepth = 16, sampleRateHz = 44100)
+        val hiRes = StreamFormat(codec = "flac", bitDepth = 24, sampleRateHz = 96000)
+        assertTrue(SourceResolver.isBetter(hiRes, cd))
+        assertFalse(SourceResolver.isBetter(cd, hiRes))
+        // The same master from two servers is a tie, left to the listener's source order.
+        assertFalse(
+            SourceResolver.isBetter(cd, StreamFormat(codec = "flac", bitDepth = 16, sampleRateHz = 44100)),
+        )
+        assertTrue(
+            SourceResolver.isBetter(
+                StreamFormat(codec = "flac", bitDepth = 24, sampleRateHz = 96000),
+                StreamFormat(codec = "flac", bitDepth = 24, sampleRateHz = 48000),
+            ),
+        )
+    }
+
+    /** Over a lossless copy that is playing, only a higher resolution earns a seam. */
+    @Test
+    fun `swaps one lossless copy for another only at a higher resolution`() {
+        val cd = StreamFormat(codec = "flac", bitDepth = 16, sampleRateHz = 44100)
+        assertTrue(SourceResolver.worthSwapping(StreamFormat(codec = "flac", bitDepth = 24, sampleRateHz = 96000), cd))
+        assertFalse(SourceResolver.worthSwapping(StreamFormat(codec = "flac", bitDepth = 16, sampleRateHz = 44100), cd))
+        assertFalse(SourceResolver.worthSwapping(StreamFormat(codec = "flac"), cd))
+    }
+
+    /**
      * An unstated bitrate ranks as nothing rather than as a win. A source that
      * declines to describe its stream should not be able to displace one that
      * has stated a good rate — see [StreamFormat] on why null means "not

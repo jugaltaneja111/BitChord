@@ -249,11 +249,11 @@ internal object SourceResolver {
         request: StreamRequest,
         playing: StreamFormat?,
         servedBy: String?,
-    ): Pair<MusicSource, SourceStream>? {
-        if (target.title.isBlank() || target.durationSec == null || target.isVideo) return null
+    ): List<Pair<MusicSource, SourceStream>> {
+        if (target.title.isBlank() || target.durationSec == null || target.isVideo) return emptyList()
         val active = SourceRegistry.activeForPlayback(request)
-        val youtube = active.firstOrNull { it.kind == SourceKind.YOUTUBE } ?: return null
-        val found = bestAcross(
+        val youtube = active.firstOrNull { it.kind == SourceKind.YOUTUBE } ?: return emptyList()
+        val found = rankedAcross(
             rankedAbove(youtube.configId, active).filterNot { it.displayName == servedBy || it.configId == servedBy },
             target,
             request,
@@ -270,8 +270,14 @@ internal object SourceResolver {
                     )
                 }
             }
-        } ?: return null
-        TrackLog.d(TAG, "upgrade found: '${target.title}' at ${found.second.format.summary} from ${found.first.displayName}")
+        }
+        val first = found.firstOrNull() ?: return emptyList()
+        TrackLog.d(
+            TAG,
+            "upgrade found: '${target.title}' at ${first.second.format.summary} from ${first.first.displayName}" +
+                found.drop(1).takeIf { it.isNotEmpty() }
+                    ?.joinToString(prefix = "; then ") { "${it.first.displayName} (${it.second.format.summary})" }.orEmpty(),
+        )
         return found
     }
 
@@ -297,6 +303,9 @@ internal object SourceResolver {
         // Never away from an immersive mix. A FLAC is a better *copy* and a
         // worse *mix* once Atmos is what the listener chose.
         if (playing?.isDolbyAtmos == true && !candidate.isDolbyAtmos) return false
+        // Between two lossless copies only a higher resolution earns the seam: the same 16-bit
+        // master from another server is no upgrade.
+        if (playing?.isLossless == true && candidate.isLossless == true) return higherResolution(candidate, playing)
         if (candidate.isLossless == true || candidate.isDolbyAtmos) return true
         val gain = (candidate.kbps ?: return false) - (playing?.kbps ?: return false)
         return gain >= UPGRADE_MIN_GAIN_KBPS
@@ -322,6 +331,8 @@ internal object SourceResolver {
         active.indexOfFirst { it.configId == configId }
             .let { if (it < 0) active.size else it }
             .let { active.take(it) }
+            // A source that keeps failing waits out its rest rather than holding every track up.
+            .filterNot { SourceHealthGate.isResting(it.configId) }
 
     /**
      * The best stream the configured [sources] can serve for [target] — **all
@@ -363,7 +374,28 @@ internal object SourceResolver {
         strictLength: Boolean = false,
         requireSharedArtist: Boolean = false,
         accept: (MusicSource, SourceStream) -> Boolean = { _, _ -> true },
-    ): Pair<MusicSource, SourceStream>? = coroutineScope {
+    ): Pair<MusicSource, SourceStream>? =
+        rankedAcross(sources, target, request, waitForAll, strictLength, requireSharedArtist, accept).firstOrNull()
+
+    /**
+     * As [bestAcross], with every accepted answer kept, best first: by [compareQuality], and an
+     * equal pair in [sources]' order — the listener's rank, not whichever server was quicker. The
+     * rest are what a caller falls back on when the first one's server won't serve it.
+     */
+    internal suspend fun rankedAcross(
+        sources: List<MusicSource>,
+        target: TrackMatcher.Target,
+        request: StreamRequest,
+        waitForAll: Boolean = false,
+        strictLength: Boolean = false,
+        requireSharedArtist: Boolean = false,
+        accept: (MusicSource, SourceStream) -> Boolean = { _, _ -> true },
+    ): List<Pair<MusicSource, SourceStream>> = coroutineScope {
+        val rank = sources.withIndex().associate { (i, source) -> source.configId to i }
+        val order = Comparator<Pair<MusicSource, SourceStream>> { a, b ->
+            compareQuality(b.second.format, a.second.format).takeIf { it != 0 }
+                ?: ((rank[a.first.configId] ?: Int.MAX_VALUE) - (rank[b.first.configId] ?: Int.MAX_VALUE))
+        }
         val running: MutableList<Deferred<Pair<MusicSource, SourceStream?>>> = sources
             .map { source ->
                 async {
@@ -374,7 +406,8 @@ internal object SourceResolver {
                 }
             }
             .toMutableList()
-        var best: Pair<MusicSource, SourceStream>? = null
+        val accepted = ArrayList<Pair<MusicSource, SourceStream>>()
+        val best: () -> Pair<MusicSource, SourceStream>? = { accepted.minWithOrNull(order) }
         // When a lossless copy came in while others were still searching.
         var losslessAt: kotlin.time.TimeMark? = null
         try {
@@ -385,7 +418,7 @@ internal object SourceResolver {
                 // to time out, which held a found FLAC back until the song had changed.
                 val grace = losslessAt?.let { LOSSLESS_GRACE_MS - it.elapsedNow().inWholeMilliseconds }
                 if (grace != null && grace <= 0) {
-                    TrackLog.d(TAG, "taking ${best?.first?.displayName}'s lossless copy of '${target.title}' without waiting on ${running.size} slower source(s)")
+                    TrackLog.d(TAG, "taking ${best()?.first?.displayName}'s lossless copy of '${target.title}' without waiting on ${running.size} slower source(s)")
                     break
                 }
                 val first = (if (grace != null) withTimeoutOrNull(grace) { awaitFirst(running) } else awaitFirst(running))
@@ -400,17 +433,17 @@ internal object SourceResolver {
                     val (source, stream) = done.await()
                     if (stream == null) continue
                     if (!accept(source, stream)) continue
-                    if (isBetter(stream.format, best?.second?.format)) best = source to stream
+                    accepted += source to stream
                 }
-                if (best != null && !waitForAll) break
-                if (losslessAt == null && best?.second?.format?.let { it.isLossless == true || it.isDolbyAtmos } == true) {
+                if (accepted.isNotEmpty() && !waitForAll) break
+                if (losslessAt == null && best()?.second?.format?.let { it.isLossless == true || it.isDolbyAtmos } == true) {
                     losslessAt = kotlin.time.TimeSource.Monotonic.markNow()
                 }
             }
         } finally {
             running.forEach { it.cancel() }
         }
-        best
+        accepted.sortedWith(order)
     }
 
     private suspend fun <T> awaitFirst(running: List<Deferred<T>>): Deferred<T> = select {
@@ -703,12 +736,29 @@ internal object SourceResolver {
      * reaches here has already cleared [StreamChecks.unplayable], so it is a mix
      * the listener switched on.
      */
-    internal fun isBetter(candidate: StreamFormat, current: StreamFormat?): Boolean {
-        if (current == null) return true
-        if (candidate.isDolbyAtmos != current.isDolbyAtmos) return candidate.isDolbyAtmos
-        if (candidate.isLossless != current.isLossless) return candidate.isLossless == true
-        return (candidate.kbps ?: 0) > (current.kbps ?: 0)
+    internal fun isBetter(candidate: StreamFormat, current: StreamFormat?): Boolean =
+        current == null || compareQuality(candidate, current) > 0
+
+    /**
+     * Positive when [a] is the better rendition: mix, then lossless over lossy, then — between two
+     * lossless copies — bit depth and sample rate, and between two lossy ones bitrate. A lossless
+     * copy's bitrate says nothing about it (it's how well the music compressed), and one addon
+     * stating it where another doesn't made a 16-bit FLAC outrank a 24-bit one. Zero is a tie,
+     * which the caller breaks by the listener's source order.
+     */
+    internal fun compareQuality(a: StreamFormat, b: StreamFormat): Int {
+        if (a.isDolbyAtmos != b.isDolbyAtmos) return if (a.isDolbyAtmos) 1 else -1
+        val aLossless = a.isLossless == true
+        if (aLossless != (b.isLossless == true)) return if (aLossless) 1 else -1
+        if (aLossless) {
+            return compareValuesBy(a, b, { it.bitDepth ?: 0 }, { it.sampleRateHz ?: 0 })
+        }
+        return (a.kbps ?: 0).compareTo(b.kbps ?: 0)
     }
+
+    /** Whether lossless [candidate] is a higher resolution than lossless [playing]: the one swap between two FLACs. */
+    fun higherResolution(candidate: StreamFormat, playing: StreamFormat): Boolean =
+        candidate.isLossless == true && playing.isLossless == true && compareQuality(candidate, playing) > 0
 
     /** The higher-quality of two streams — see [isBetter]. */
     private fun betterOf(current: SourceStream?, candidate: SourceStream): SourceStream =
