@@ -6,13 +6,18 @@ import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.appHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Url
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readAvailable
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -171,9 +176,14 @@ internal class Coverage {
 }
 
 /**
- * A stream fetched in the background into a temp file the demuxer reads back, as IosDownloads
- * fetches a track: in bounded ranges (googlevideo paces one long response down to playback
- * speed, but serves ranges at line rate), with the resolving client's headers.
+ * A stream fetched in the background into a temp file the demuxer reads back, the way the phone's
+ * player fetches it (ChunkedDataSource under its disk cache), with the resolving client's headers:
+ *
+ *  - A googlevideo URL (one carrying `clen`) in bounded ranges, back to back: googlevideo paces
+ *    one long response down to playback speed, but serves ranges at line rate.
+ *  - Anything else (an add-on's or JioSaavn's server) as one open-ended GET read straight
+ *    through at line rate, so the whole track is on the phone seconds in and its server has
+ *    seen one request. Asking such a server in pieces is what it answers with 429 mid-song.
  *
  * A progressive file is fetched front to back, and a read far from the download edge moves the
  * fetch there (an MP4 with its index at the end, a seek ahead), so the file fills in as runs. A
@@ -211,8 +221,6 @@ internal class RemoteSource(
     private var manifestDurationMs = 0L
     private var bandwidth = 0L
     private var closed = false
-    /** Where the demuxer last read: the fetch keeps [READ_AHEAD_BYTES] ahead of it, no more. */
-    private var lastRead = 0L
 
     private val job: Job
 
@@ -230,11 +238,11 @@ internal class RemoteSource(
                 if (dash) {
                     val plan = resolveManifest()
                     when (plan) {
-                        is DashPlan.Single -> fetchProgressive(plan.url)
+                        is DashPlan.Single -> fetchFile(plan.url)
                         is DashPlan.Segments -> fetchSegments(plan.segments)
                     }
                 } else {
-                    fetchProgressive(url)
+                    fetchFile(url)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -257,7 +265,6 @@ internal class RemoteSource(
         val available: Long
         lock.lock()
         try {
-            lastRead = position
             while (true) {
                 if (cancelled) return FfmpegLayout.ERROR_EXIT
                 val end = coverage.runEnd(position)
@@ -302,42 +309,41 @@ internal class RemoteSource(
         unlink(path)
     }
 
-    private suspend fun fetchProgressive(target: String) {
-        locked {
-            total = runCatching { Url(target).parameters["clen"]?.toLongOrNull() }.getOrNull()?.takeIf { it > 0 } ?: -1L
+    /** A single file: in ranges from googlevideo, in one read from anyone else. */
+    private suspend fun fetchFile(target: String) {
+        val clen = runCatching { Url(target).parameters["clen"]?.toLongOrNull() }.getOrNull()?.takeIf { it > 0 }
+        if (clen != null) fetchRanges(target, clen) else fetchWhole(target)
+    }
+
+    /**
+     * Where the fetch goes next: a seek's position if one was asked for, else the first byte not
+     * held from the edge onward, then from the start. Null, and the stream complete, when every
+     * byte is held. Called with the lock held.
+     */
+    private fun nextStart(): Long? {
+        wantFrom?.let {
+            cursor = it
+            wantFrom = null
         }
-        val paced = !chunkedFreely(target)
-        var first = true
+        val limit = if (total >= 0) total else Long.MAX_VALUE
+        val gap = coverage.nextGap(cursor, limit) ?: coverage.nextGap(0, limit)
+        if (gap == null) {
+            complete = true
+            lock.broadcast()
+            return null
+        }
+        cursor = gap
+        return gap
+    }
+
+    private suspend fun fetchRanges(target: String, clen: Long) {
+        locked { total = clen }
         while (true) {
-            // An add-on's server is asked at the pace the track plays rather than as fast as the
-            // network allows: forty back-to-back requests for one FLAC is what it answers with 429.
-            // A seek elsewhere (wantFrom) is fetched at once.
-            if (paced && !first) {
-                delay(PACED_GAP_MS)
-                while (locked { !cancelled && wantFrom == null && cursor - lastRead > READ_AHEAD_BYTES && (total < 0 || cursor < total) }) {
-                    delay(PACED_POLL_MS)
-                }
-            }
-            first = false
-            val (start, end) = locked<Pair<Long, Long>> {
-                wantFrom?.let {
-                    cursor = it
-                    wantFrom = null
-                }
+            val (start, end) = locked<Pair<Long, Long>?> {
+                val gap = nextStart() ?: return@locked null
                 val limit = if (total >= 0) total else Long.MAX_VALUE
-                val gap = coverage.nextGap(cursor, limit) ?: coverage.nextGap(0, limit)
-                if (gap == null) {
-                    complete = true
-                    lock.broadcast()
-                    return
-                }
-                cursor = gap
-                // Past the opening, an add-on's server is asked in larger pieces: fewer requests
-                // for one track is what keeps a rate-limited host answering.
-                val chunk = if (paced && gap > 0) PACED_CHUNK_BYTES else CHUNK_BYTES
-                val stop = minOf(gap + chunk, coverage.nextStart(gap) ?: Long.MAX_VALUE, limit)
-                gap to stop
-            }
+                gap to minOf(gap + CHUNK_BYTES, coverage.nextStart(gap) ?: Long.MAX_VALUE, limit)
+            } ?: return
             val response = withRetries { get(target, start, end - 1) }
             val code = response.status.value
             val bytes: ByteArray
@@ -370,6 +376,113 @@ internal class RemoteSource(
                 lock.broadcast()
             }
         }
+    }
+
+    /**
+     * As the phone's player reads a source's stream: one open-ended GET poured to disk as fast as
+     * it arrives. Another request goes out only when the demuxer jumps past what has arrived (as
+     * ExoPlayer reopens on a seek), for the hole that leaves behind, or when the connection drops.
+     */
+    private suspend fun fetchWhole(target: String) {
+        var failures = 0
+        while (true) {
+            val start = locked { nextStart() } ?: return
+            val got = try {
+                pour(target, start)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (++failures > RETRIES) throw e
+                TrackLog.d(TAG, "stream broke at ${start}B (try $failures): ${e.message}; picking up from there")
+                delay(1000L * failures)
+                continue
+            }
+            if (got > 0) {
+                failures = 0
+            } else if (++failures > RETRIES) {
+                error("download stalled")
+            }
+        }
+    }
+
+    /**
+     * One open-ended request from [start], written to the file as it arrives until the end, a
+     * byte already held, or a seek elsewhere. How many bytes it brought.
+     */
+    private suspend fun pour(target: String, start: Long): Long {
+        var got = 0L
+        var broke: Throwable? = null
+        val response = withRetries {
+            http.prepareGet(target) {
+                this@RemoteSource.headers.forEach { (name, value) -> header(name, value) }
+                if (start > 0) header("Range", "bytes=$start-")
+                timeout {
+                    requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                    connectTimeoutMillis = 15_000
+                    socketTimeoutMillis = 30_000
+                }
+            }.execute { response ->
+                val code = response.status.value
+                if (code == 200 || code == 206) {
+                    try {
+                        if (code == 200 && start > 0) error("the server ignored the range asked for")
+                        val length = if (code == 206) {
+                            response.headers["Content-Range"]?.substringAfter('/', "")?.toLongOrNull()
+                        } else {
+                            response.headers["Content-Length"]?.toLongOrNull()
+                        }
+                        locked { if (total < 0 && length != null && length > 0) total = length }
+                        got = drain(response.bodyAsChannel(), start)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        // Past the opening: picked up from the edge rather than asked for again.
+                        broke = e
+                    }
+                }
+                response
+            }
+        }
+        broke?.let { throw it }
+        val code = response.status.value
+        when {
+            code == 200 || code == 206 -> Unit
+            code == 416 && locked { total < 0 } -> locked {
+                total = start
+                lock.broadcast()
+            }
+            else -> error("HTTP $code")
+        }
+        return got
+    }
+
+    private suspend fun drain(body: ByteReadChannel, start: Long): Long {
+        val buffer = ByteArray(BUFFER_BYTES)
+        val stop = locked { coverage.nextStart(start) } ?: Long.MAX_VALUE
+        var at = start
+        while (at < stop) {
+            val n = body.readAvailable(buffer, 0, minOf(buffer.size.toLong(), stop - at).toInt())
+            if (n < 0) {
+                // The end of the file, when no length was given.
+                locked {
+                    if (total < 0) total = at
+                    lock.broadcast()
+                }
+                break
+            }
+            if (n == 0) continue
+            write(at, if (n == buffer.size) buffer else buffer.copyOf(n))
+            val from = at
+            at += n
+            val moved = locked {
+                coverage.add(from, at)
+                cursor = at
+                lock.broadcast()
+                cancelled || wantFrom != null
+            }
+            if (moved) break
+        }
+        return at - start
     }
 
     private suspend fun fetchSegments(segments: List<DashSegment>) {
@@ -497,19 +610,12 @@ internal class RemoteSource(
     private companion object {
         const val TAG = "IosFfmpeg"
         const val CHUNK_BYTES = 1024L * 1024
-        const val PACED_CHUNK_BYTES = 4 * CHUNK_BYTES
+        const val BUFFER_BYTES = 64 * 1024
         /** A read this far past the fetch's edge moves the fetch rather than waiting for it. */
         const val JUMP_BYTES = 2 * CHUNK_BYTES
         const val RETRIES = 2
         const val THROTTLED_RETRIES = 5
         const val MAX_RETRY_WAIT_MS = 8_000L
-        /** How far past the demuxer a paced fetch runs: some 30–60 s of a lossless track. */
-        const val READ_AHEAD_BYTES = 6L * 1024 * 1024
-        const val PACED_GAP_MS = 150L
-        const val PACED_POLL_MS = 250L
-
-        /** googlevideo is built for back-to-back pieces; anyone else is asked at the playing pace. */
-        fun chunkedFreely(url: String) = "googlevideo.com" in url || "youtube.com" in url
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val http: HttpClient by lazy { appHttpClient { install(HttpTimeout) } }
 

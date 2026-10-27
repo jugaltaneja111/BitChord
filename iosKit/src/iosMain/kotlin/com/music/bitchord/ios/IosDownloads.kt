@@ -11,13 +11,17 @@ import com.music.bitchord.ios.sources.IosSources
 import com.music.bitchord.ios.sources.ResolvedStream
 import com.music.bitchord.ios.sources.StreamRequest
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Url
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readAvailable
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -124,6 +128,7 @@ internal sealed interface DownloadProgress {
 internal object IosDownloads {
     private const val TAG = "IosDownloads"
     private const val CHUNK_BYTES = 2L * 1024 * 1024
+    private const val DIRECT_BUFFER_BYTES = 64 * 1024
 
     /** How long the sources may hold a download up before it goes to YouTube: the phone's bound. */
     private const val SOURCE_LOOKUP_MS = 85_000L
@@ -322,14 +327,33 @@ internal object IosDownloads {
     private suspend fun fetchAudio(song: Song, lyrics: kotlinx.coroutines.Deferred<IosDownloadTags.Lyrics?>): DownloadedTrack {
         val maxKbps = IosSettings.downloadKbps.flow.value
         var stream = streamFor(song, maxKbps) ?: error("No downloadable stream")
-        val total = contentLength(stream.url, stream.headers) ?: error("Track unavailable: no length to fetch")
         val part = "$dir/${song.videoId}.part"
         files.removeItemAtPath(part, null)
         files.createFileAtPath(part, null, null)
-        val handle = NSFileHandle.fileHandleForWritingAtPath(part) ?: error("Couldn’t write the download")
+        var handle = NSFileHandle.fileHandleForWritingAtPath(part) ?: error("Couldn’t write the download")
+        var direct = !isGooglevideo(stream.url)
         var position = 0L
         var reresolved = false
         try {
+            if (direct) {
+                try {
+                    fetchDirect(song.videoId, stream.url, stream.headers, handle)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // As the phone: a source's server that won't hand the file over is answered with
+                    // YouTube's copy, not asked again.
+                    if (IosSources.isSourceTrack(song)) throw e
+                    TrackLog.w(TAG, "${song.videoId}: ${stream.clientName} failed (${e.message}); downloading it from YouTube")
+                    handle.closeFile()
+                    files.removeItemAtPath(part, null)
+                    files.createFileAtPath(part, null, null)
+                    handle = NSFileHandle.fileHandleForWritingAtPath(part) ?: error("Couldn’t write the download")
+                    stream = InnerTubeXResolver.extract(song.videoId, maxKbps = maxKbps, requireM4a = true) ?: throw e
+                    direct = false
+                }
+            }
+            val total = if (direct) 0L else contentLength(stream.url, stream.headers) ?: error("Track unavailable: no length to fetch")
             while (position < total) {
                 coroutineContext.ensureActive()
                 val length = minOf(CHUNK_BYTES, total - position)
@@ -386,7 +410,7 @@ internal object IosDownloads {
             remoteThumbnail = song.thumbnailUrl?.takeUnless { it.startsWith("/") },
             audioFile = audioFile,
             artworkFile = artworkFile,
-            bytes = fileSize("$dir/$audioFile").takeIf { it > 0 } ?: total,
+            bytes = fileSize("$dir/$audioFile"),
             kbps = stream.kbps,
             addedAt = wallClockMs(),
             loudnessDb = stream.loudnessDb,
@@ -454,6 +478,45 @@ internal object IosDownloads {
         response.readRawBytes().toNSData().writeToFile("$dir/$name", atomically = true)
         name
     }.getOrNull()
+
+    /** googlevideo's progressive URLs carry their length as `clen`; nothing else does. */
+    private fun isGooglevideo(url: String) =
+        runCatching { Url(url).parameters["clen"] }.getOrNull() != null
+
+    /**
+     * All of a stream that isn't googlevideo's, as the phone's Downloader.fetchDirect: one GET
+     * read straight through, not ranges. Ranges exist to beat googlevideo's pacing, which nothing
+     * else does; an add-on's server asked for a FLAC in twenty pieces answers 429, and one that
+     * ignores Range would have its opening written mid-file. A stated length that didn't all
+     * arrive is a failure, not a file that stops halfway through the song.
+     */
+    private suspend fun fetchDirect(videoId: String, url: String, headers: Map<String, String>, handle: NSFileHandle) {
+        http.prepareGet(url) {
+            headers.forEach { (name, value) -> header(name, value) }
+            timeout {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                connectTimeoutMillis = 15_000
+                socketTimeoutMillis = 30_000
+            }
+        }.execute { response ->
+            if (!response.status.isSuccess()) error("Download failed (HTTP ${response.status.value})")
+            val total = response.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0 }
+            val body = response.bodyAsChannel()
+            val buffer = ByteArray(DIRECT_BUFFER_BYTES)
+            var written = 0L
+            while (true) {
+                coroutineContext.ensureActive()
+                val n = body.readAvailable(buffer, 0, buffer.size)
+                if (n < 0) break
+                if (n == 0) continue
+                handle.writeData(buffer.copyOf(n).toNSData())
+                written += n
+                if (total != null) _progress.update { it + (videoId to DownloadProgress.Running(written.toFloat() / total)) }
+            }
+            if (written == 0L) error("Download stalled")
+            if (total != null && written < total) error("Download stopped at ${written}B of $total, try again")
+        }
+    }
 
     private suspend fun range(url: String, headers: Map<String, String>, position: Long, length: Long): HttpResponse =
         http.get(url) {
