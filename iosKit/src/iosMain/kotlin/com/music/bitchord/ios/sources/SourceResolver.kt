@@ -449,9 +449,11 @@ internal object SourceResolver {
                 )
             } ?: return null
             var matches = TrackMatcher.ranked(candidates, target)
+            val ranked = matches.size
             if (requireSharedArtist) {
                 matches = matches.filter { TrackMatcher.sharesArtist(target.artist, it.artist) }
             }
+            val sharingArtist = matches.size
             // JioSaavn can return different audio under the same title and
             // artist on different releases. With no album on the requested
             // track there is no honest way to choose between those rows;
@@ -479,7 +481,23 @@ internal object SourceResolver {
             if (strictLength) {
                 matches = matches.filter { TrackMatcher.withinSeconds(it, target, SourcePrefs.lengthSlackSeconds.value) }
             }
-            if (matches.isEmpty()) continue
+            if (matches.isEmpty()) {
+                // Why a source had nothing, so a missing upgrade reads as missing, not as silence.
+                TrackLog.d(
+                    TAG,
+                    "${source.displayName}: no match for '${target.title}' by '${target.artist}'" +
+                        " (${target.durationSec?.let { "${it}s" } ?: "length unknown"}) from \"$query\": " +
+                        when {
+                            candidates.isEmpty() -> "no results"
+                            ranked == 0 -> "${candidates.size} results, none the same title and artist: " +
+                                candidates.take(3).joinToString { "'${it.title}' by '${it.artist}' ${it.durationText ?: "?"}" }
+                            sharingArtist == 0 -> "$ranked by other artists"
+                            else -> "$sharingArtist the wrong length: " +
+                                candidates.take(3).joinToString { "'${it.title}' ${it.durationText ?: "?"}" }
+                        },
+                )
+                continue
+            }
             return matches
         }
         return null

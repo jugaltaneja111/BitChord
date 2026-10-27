@@ -1207,9 +1207,14 @@ internal object IosPlayer {
                 // as the phone's second look gives them: a lossless copy is swapped in when it lands.
                 if (found.format.isLossless != true) {
                     TrackLog.d(TAG, "$key: ${found.sourceName} gave ${found.format.summary}; still looking for lossless")
+                    val asked = kotlin.time.TimeSource.Monotonic.markNow()
                     val better = runCatching {
                         IosSources.upgradeFor(target, request, found.format, found.sourceName)
-                    }.getOrNull() ?: return@launch
+                    }.getOrNull()
+                    if (better == null) {
+                        TrackLog.d(TAG, "$key: no lossless copy anywhere after ${asked.elapsedNow().inWholeMilliseconds}ms; staying on ${found.sourceName}")
+                        return@launch
+                    }
                     if (_song.value?.videoId != key) return@launch
                     swapTo(song, better, lengthMs)
                 }
