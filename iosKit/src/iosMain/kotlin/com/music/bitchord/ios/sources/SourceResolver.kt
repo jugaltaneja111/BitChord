@@ -9,6 +9,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Turns a queued track into an openable stream, using whichever source can
@@ -374,11 +375,21 @@ internal object SourceResolver {
             }
             .toMutableList()
         var best: Pair<MusicSource, SourceStream>? = null
+        // When a lossless copy came in while others were still searching.
+        var losslessAt: kotlin.time.TimeMark? = null
         try {
             while (running.isNotEmpty()) {
-                val first = select {
-                    running.forEach { candidate -> candidate.onAwait { candidate } }
+                // Waiting for every source is so a quick lossy answer can't shut out a slower
+                // lossless one. Once a lossless copy is in hand, the rest get a short grace to
+                // better it (a 24-bit beside a 16-bit) rather than as long as a dead addon takes
+                // to time out, which held a found FLAC back until the song had changed.
+                val grace = losslessAt?.let { LOSSLESS_GRACE_MS - it.elapsedNow().inWholeMilliseconds }
+                if (grace != null && grace <= 0) {
+                    TrackLog.d(TAG, "taking ${best?.first?.displayName}'s lossless copy of '${target.title}' without waiting on ${running.size} slower source(s)")
+                    break
                 }
+                val first = (if (grace != null) withTimeoutOrNull(grace) { awaitFirst(running) } else awaitFirst(running))
+                    ?: continue
                 // Anything that crossed the line while that one was being waited
                 // on is already sitting there. Folding those in costs no time at
                 // all and is what lets rank break a tie between two sources that
@@ -392,11 +403,18 @@ internal object SourceResolver {
                     if (isBetter(stream.format, best?.second?.format)) best = source to stream
                 }
                 if (best != null && !waitForAll) break
+                if (losslessAt == null && best?.second?.format?.let { it.isLossless == true || it.isDolbyAtmos } == true) {
+                    losslessAt = kotlin.time.TimeSource.Monotonic.markNow()
+                }
             }
         } finally {
             running.forEach { it.cancel() }
         }
         best
+    }
+
+    private suspend fun <T> awaitFirst(running: List<Deferred<T>>): Deferred<T> = select {
+        running.forEach { candidate -> candidate.onAwait { candidate } }
     }
 
     /**
@@ -746,6 +764,9 @@ internal object SourceResolver {
 
     /** How many kbps a lossy stream has to gain before it earns a seam in the audio — see [worthSwapping]. */
     private const val UPGRADE_MIN_GAIN_KBPS = 96
+
+    /** How long the other sources may go on looking once one has offered a lossless copy. */
+    private const val LOSSLESS_GRACE_MS = 4_000L
 
     /** The most YouTube's AAC ladder holds; a lossy download from a source has to beat it. */
     private const val YOUTUBE_BEST_AAC_KBPS = 256
