@@ -1,8 +1,8 @@
 name: iOS
 
-# macOS minutes are limited, so only the Linux job runs on every push. It compiles the iOS klibs,
-# which catches most breakage. The macOS jobs run only when started by hand, or (the app) for an
-# `ios-v*` tag.
+# Only the Linux job runs on every push. It compiles the iOS klibs, which catches most breakage.
+# The macOS jobs run only when started by hand, or (the app) for an `ios-v*` tag, and start beside
+# the Linux job rather than after it.
 on:
   push:
     branches: [main, ios-port]
@@ -107,7 +107,8 @@ jobs:
   macos:
     name: Shared · iOS simulator (macOS)
     if: github.event_name == 'workflow_dispatch' && inputs.tests
-    needs: compile
+    # Not after the Linux job: the Mac compiles everything itself, so waiting on it only adds its
+    # six minutes. Public repository, so the Mac's minutes cost nothing.
     # Apple silicon, so the simulator tests run on iosSimulatorArm64 natively.
     runs-on: macos-15
     steps:
@@ -162,7 +163,7 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' && (inputs.app || inputs.smoke)) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ios-v'))
-    needs: compile
+    # Beside the Linux job rather than after it, as above.
     runs-on: ${{ inputs.runner || 'macos-15' }}
     permissions:
       # To attach the IPA to the tag's release.
@@ -176,7 +177,23 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      # Gradle's caches and build cache saved from this branch too (by default only main writes),
+      # so a rebuild reuses the compiled klibs and fetched dependencies instead of starting cold.
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Turn on Gradle's build cache
+        run: |
+          mkdir -p ~/.gradle
+          echo 'org.gradle.caching=true' >> ~/.gradle/gradle.properties
+
+      # Kotlin/Native's toolchain and platform libraries, some 1 GB fetched on every cold run.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'shared/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: konan-${{ runner.os }}-${{ runner.arch }}-
 
       - run: chmod +x gradlew
 
