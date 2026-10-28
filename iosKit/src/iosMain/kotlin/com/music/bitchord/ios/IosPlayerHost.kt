@@ -54,12 +54,8 @@ internal object IosPlayerHost : PlayerHost {
     @Composable
     override fun rememberRemoteArtworkUrl(song: Song?): String? = song?.thumbnailUrl
 
-    // The hardware buttons own the volume on iOS; the player's bar is hidden (see settings).
-    override val volume: SystemVolume = object : SystemVolume {
-        override val level: StateFlow<Float> = MutableStateFlow(1f)
-        override fun set(level: Float) = Unit
-        override fun refresh() = Unit
-    }
+    // The phone's own volume, which the Audio output drawer's bar reads and moves.
+    override val volume: SystemVolume = IosSystemVolume
 
     @Composable
     override fun rememberAudioOutputs(): List<AudioOutputDevice> = emptyList()
