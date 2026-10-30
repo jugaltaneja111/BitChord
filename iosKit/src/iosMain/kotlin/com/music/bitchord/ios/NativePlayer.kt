@@ -100,6 +100,48 @@ object NativePlayer {
         open()
     }
 
+    // ── The bars under the pages ─────────────────────────────────────────────────────────────
+
+    /** Whether Swift draws the mini player and the tabs; Compose then leaves them out. */
+    internal var nativeBars by mutableStateOf(false)
+        private set
+
+    /** How much of the screen's foot Swift's bars cover, in points, safe area included. */
+    internal var nativeBarsHeight by mutableStateOf(0.0)
+        private set
+
+    private val chrome = MutableStateFlow(ChromeState(tab = 0, visible = false, dark = true))
+
+    /** Called by Swift at launch, before the Compose view is made, so its bars never show. */
+    fun useNativeBars() {
+        nativeBars = true
+    }
+
+    fun setBarsHeight(points: Double) {
+        nativeBarsHeight = points
+    }
+
+    /** What the app beneath is doing, given by [IosApp] as it changes. */
+    internal fun showChrome(state: ChromeState) {
+        chrome.value = state
+    }
+
+    fun observeChrome(onChange: (ChromeState) -> Unit): PlayerSubscription =
+        PlayerSubscription(scope.launch { chrome.collect(onChange) })
+
+    /** The tabs' names, in their order, in the app's language. */
+    fun tabTitles(): List<String> = IosTab.entries.map { it.label }
+
+    /** A tab; the one already showing goes back to its own page, as the Compose bar does. */
+    fun selectTab(index: Int) {
+        IosTab.entries.getOrNull(index)?.let { navigator?.select(it) }
+    }
+
+    /** The mini player's open: the screen, or the Compose player if Swift never said how. */
+    fun openPlayer() {
+        present()
+    }
+
     // ── What the screen shows ──────────────────────────────────────────────────────────────────
 
     fun observe(onChange: (NowPlayingSnapshot) -> Unit): PlayerSubscription {
@@ -597,6 +639,12 @@ data class LyricsView(
 
 /** A lyrics provider; [state] 0 not asked, 1 asking, 2 has this track, 3 doesn't. */
 data class LyricsProviderRow(val key: String, val name: String, val detail: String, val state: Int, val selected: Boolean)
+
+/**
+ * The bars' state: the selected [tab], whether they show at all (not over the welcome, the sign-in
+ * screens or Replay's stories, which the Compose bars sat under), and the app's theme.
+ */
+data class ChromeState(val tab: Int, val visible: Boolean, val dark: Boolean)
 
 /** A Canvas clip. [fullScreen] for Spotify's tall ones, drawn behind the whole screen. */
 data class CanvasClip(val url: String, val fallbackUrl: String?, val fullScreen: Boolean)

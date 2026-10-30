@@ -143,7 +143,10 @@ internal fun IosApp() {
         val density = LocalDensity.current
         // The floating bars' measured height, so the last row of a page clears them.
         var barsHeight by remember { mutableIntStateOf(0) }
-        val contentPadding = PaddingValues(bottom = with(density) { barsHeight.toDp() } + 8.dp)
+        // Swift's bars on this branch, measured there in points (which are dp).
+        val nativeBars = NativePlayer.nativeBars
+        val barsDp = if (nativeBars) NativePlayer.nativeBarsHeight.toFloat().dp else with(density) { barsHeight.toDp() }
+        val contentPadding = PaddingValues(bottom = barsDp + 8.dp)
 
         fun back() {
             if (playerOpen) {
@@ -208,7 +211,7 @@ internal fun IosApp() {
                 )
             }
             // On an iPad the mini player and the tabs stop growing and centre, as on a tablet.
-            Column(
+            if (!nativeBars) Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .widthIn(max = FLOATING_BAR_MAX_WIDTH)
@@ -280,6 +283,12 @@ internal fun IosApp() {
                     if (IosAccount.signedIn.value && navigator.top == null) navigator.select(IosTab.LIBRARY)
                 })
             }
+            // Swift's bars hide under what the Compose ones sat under.
+            val barsShown = onboarded && !IosOverlays.login && !IosOverlays.spotifyLogin && !IosOverlays.discordLogin &&
+                !IosOverlays.switcher && !IosOverlays.spotifyImport && IosReplay.story == null && !playerOpen
+            LaunchedEffect(navigator.tab, barsShown, darkTheme) {
+                NativePlayer.showChrome(ChromeState(navigator.tab.ordinal, barsShown, darkTheme))
+            }
             IosDeepLink.invite?.let { invite ->
                 LaunchedEffect(invite) {
                     playerOpen = false
@@ -318,7 +327,7 @@ internal fun IosApp() {
             IosToast.Host(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = with(density) { barsHeight.toDp() } + 12.dp, start = 24.dp, end = 24.dp)
+                    .padding(bottom = barsDp + 12.dp, start = 24.dp, end = 24.dp)
                     .widthIn(max = FLOATING_BAR_MAX_WIDTH),
             )
         }
@@ -595,7 +604,7 @@ private fun SearchSourceSwitch(selected: IosSearch.Source, onSelect: (IosSearch.
     }
 }
 
-private val IosTab.label: String
+internal val IosTab.label: String
     get() = when (this) {
         IosTab.HOME -> tr("Home")
         IosTab.EXPLORE -> tr("Explore")
