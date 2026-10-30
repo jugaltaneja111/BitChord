@@ -654,6 +654,8 @@ private suspend fun runTour(
     setPlayerOpen: (Boolean) -> Unit,
 ) {
     fun step(name: String) = println("tour: $name")
+    // A fresh simulator has never been welcomed, and the welcome would cover every page shot.
+    IosSettings.onboardingComplete.set(true)
     step("home")
     delay(TOUR_STEP_MS)
     navigator.select(IosTab.EXPLORE)

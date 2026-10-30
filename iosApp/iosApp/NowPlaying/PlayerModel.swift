@@ -13,7 +13,10 @@ final class NativePlayerPresenter: ObservableObject {
 
     init() {
         NativePlayer.shared.setPresenter { [weak self] show in
-            DispatchQueue.main.async { self?.shown = show.boolValue }
+            DispatchQueue.main.async {
+                print("native player: asked to \(show.boolValue ? "open" : "close")")
+                self?.shown = show.boolValue
+            }
         }
         NativePlayer.shared.setPanelHandler { name in
             DispatchQueue.main.async {

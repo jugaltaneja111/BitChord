@@ -45,6 +45,8 @@ struct NowPlayingView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
+            // The simulator tour reads this to know the native screen came up.
+            print("native player: shown")
             model.start()
             if let name = NativePlayerPresenter.requestedPanel { panel = Self.panel(named: name) }
         }
