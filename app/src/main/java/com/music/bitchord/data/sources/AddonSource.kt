@@ -7,6 +7,7 @@ import com.music.bitchord.data.sources.addon.AddonClient
 import com.music.bitchord.data.sources.addon.AddonException
 import com.music.bitchord.data.sources.addon.AddonManifest
 import com.music.bitchord.data.sources.addon.AddonNotFound
+import com.music.bitchord.data.sources.addon.AddonRefused
 import com.music.bitchord.data.sources.addon.AddonStream
 import com.music.bitchord.data.sources.addon.AddonTrack
 import com.music.bitchord.playback.StreamContainer
@@ -84,6 +85,16 @@ class AddonSource(
      * rather than after it. The manifest is the client's shared, cached copy,
      * which the request was about to read for its settings anyway.
      */
+    /** A hard failure for [SourceHealthGate]: a refusal rests the addon at once, anything else is a strike. */
+    private fun report(failure: Throwable?) {
+        val why = failure?.message
+        if (failure is AddonRefused) {
+            SourceHealthGate.refused(config.id, config.displayName, why)
+        } else {
+            SourceHealthGate.failed(config.id, config.displayName, why)
+        }
+    }
+
     private suspend fun admitted(what: String): Boolean {
         if (shutOut(what)) return false
         client.manifest().getOrNull()?.let(::recordPolicy)
@@ -194,7 +205,7 @@ class AddonSource(
             val tier = request?.tier ?: AddonClient.TIER_LOSSLESS
             val tracks = client.search(query, tier).getOrElse { failure ->
                 TrackLog.w(TAG, "${config.displayName}: search failed — ${failure.message}")
-                SourceHealthGate.failed(config.id, config.displayName, failure.message)
+                report(failure)
                 return@withContext emptyList()
             }
             SourceHealthGate.answered(config.id)
@@ -258,7 +269,7 @@ class AddonSource(
                 val failure = result.exceptionOrNull()
                 if (failure !is AddonNotFound) {
                     TrackLog.w(TAG, "${config.displayName}: stream failed for $trackId — ${failure?.message}")
-                    SourceHealthGate.failed(config.id, config.displayName, failure?.message)
+                    report(failure)
                 }
                 return@withContext fromRow(trackId, tier)
             }

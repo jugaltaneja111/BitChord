@@ -8,6 +8,7 @@ import com.music.bitchord.ios.sources.addon.AddonClient
 import com.music.bitchord.ios.sources.addon.AddonException
 import com.music.bitchord.ios.sources.addon.AddonManifest
 import com.music.bitchord.ios.sources.addon.AddonNotFound
+import com.music.bitchord.ios.sources.addon.AddonRefused
 import com.music.bitchord.ios.sources.addon.AddonStream
 import com.music.bitchord.ios.sources.addon.AddonTrack
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -87,6 +88,16 @@ internal class AddonSource(
      * rather than after it. The manifest is the client's shared, cached copy,
      * which the request was about to read for its settings anyway.
      */
+    /** A hard failure for [SourceHealthGate]: a refusal rests the addon at once, anything else is a strike. */
+    private fun report(failure: Throwable?) {
+        val why = failure?.message?.substringBefore(" [url=")
+        if (failure is AddonRefused) {
+            SourceHealthGate.refused(config.id, config.displayName, why)
+        } else {
+            SourceHealthGate.failed(config.id, config.displayName, why)
+        }
+    }
+
     private suspend fun admitted(what: String): Boolean {
         if (shutOut(what)) return false
         val manifest = client.manifest().getOrNull() ?: return true
@@ -196,7 +207,7 @@ internal class AddonSource(
         val tier = request?.tier ?: AddonClient.TIER_LOSSLESS
         val tracks = client.search(query, tier).getOrElse { failure ->
             TrackLog.w(TAG, "${config.displayName}: search failed — ${failure.message}")
-            SourceHealthGate.failed(config.id, config.displayName, failure.message?.substringBefore(" [url="))
+            report(failure)
             return emptyList()
         }
         SourceHealthGate.answered(config.id)
@@ -256,7 +267,7 @@ internal class AddonSource(
             val failure = result.exceptionOrNull()
             if (failure !is AddonNotFound) {
                 TrackLog.w(TAG, "${config.displayName}: stream failed for $trackId — ${failure?.message}")
-                SourceHealthGate.failed(config.id, config.displayName, failure?.message?.substringBefore(" [url="))
+                report(failure)
             } else {
                 // Its search listed the row, so "not found" here is usually its own backend failing.
                 TrackLog.d(TAG, "${config.displayName}: no stream for $trackId (HTTP 404), though its search listed it")
