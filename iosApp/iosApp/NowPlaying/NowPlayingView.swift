@@ -24,19 +24,14 @@ struct NowPlayingView: View {
     enum Panel { case cover, lyrics, queue }
 
     var body: some View {
+        presentations(lifecycle(screen))
+    }
+
+    private var screen: some View {
         ZStack {
             PlayerBackdrop(image: artwork.image, palette: artwork.palette)
             if let clip = model.canvas, clip.fullScreen {
-                // Spotify's tall clips run behind the whole screen, darkened under the controls.
-                CanvasVideo(clip: clip, playing: model.now?.isPlaying ?? false, ready: $canvasReady)
-                    .ignoresSafeArea()
-                    .opacity(canvasReady ? 1 : 0)
-                    .overlay {
-                        LinearGradient(colors: [.black.opacity(0.25), .clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
-                            .ignoresSafeArea()
-                            .opacity(canvasReady ? 1 : 0)
-                    }
-                    .animation(.easeInOut(duration: 0.4), value: canvasReady)
+                FullScreenCanvas(clip: clip, playing: model.now?.isPlaying ?? false, ready: $canvasReady)
             }
             if let now = model.now {
                 VStack(spacing: 0) {
@@ -61,6 +56,11 @@ struct NowPlayingView: View {
                 .foregroundStyle(.white)
             }
         }
+    }
+
+    // Split from the body so the compiler type-checks each part on its own.
+    private func lifecycle<V: View>(_ content: V) -> some View {
+        content
         .preferredColorScheme(.dark)
         .onAppear {
             // The simulator tour reads this to know the native screen came up.
@@ -74,6 +74,10 @@ struct NowPlayingView: View {
         .onDisappear { model.stop() }
         .onChange(of: model.now?.artworkUrl) { artwork.load($0) }
         .onChange(of: model.canvas?.url) { _ in canvasReady = false }
+    }
+
+    private func presentations<V: View>(_ content: V) -> some View {
+        content
         .fullScreenCover(isPresented: $pipelineOpen) {
             AudioPipelineSheet { pipelineOpen = false }
                 .ignoresSafeArea()
@@ -136,7 +140,7 @@ struct NowPlayingView: View {
                         if let clip = model.canvas, !clip.fullScreen {
                             CanvasVideo(clip: clip, playing: now.isPlaying, ready: $canvasReady)
                                 .opacity(canvasReady ? 1 : 0)
-                                .animation(.easeInOut(duration: 0.4), value: canvasReady)
+                                .animation(Animation.easeInOut(duration: 0.4), value: canvasReady)
                         }
                     }
                     .clipped()
@@ -352,6 +356,26 @@ struct NowPlayingView: View {
     static func time(_ ms: Double) -> String {
         let total = Int(max(ms, 0) / 1000)
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+// MARK: - Canvas
+
+/// Spotify's tall clips run behind the whole screen, darkened under the controls.
+private struct FullScreenCanvas: View {
+    let clip: CanvasClip
+    let playing: Bool
+    @Binding var ready: Bool
+
+    var body: some View {
+        CanvasVideo(clip: clip, playing: playing, ready: $ready)
+            .ignoresSafeArea()
+            .overlay {
+                LinearGradient(colors: [.black.opacity(0.25), .clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
+            .opacity(ready ? 1 : 0)
+            .animation(Animation.easeInOut(duration: 0.4), value: ready)
     }
 }
 

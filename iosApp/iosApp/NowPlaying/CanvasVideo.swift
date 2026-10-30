@@ -1,4 +1,5 @@
 import AVFoundation
+import BitChordKit
 import SwiftUI
 import UIKit
 
@@ -14,13 +15,13 @@ struct CanvasVideo: UIViewRepresentable {
     func makeUIView(context: Context) -> CanvasPlayerView {
         let view = CanvasPlayerView()
         view.onReady = { ready = $0 }
-        view.load(clip)
+        view.show(clip)
         return view
     }
 
     func updateUIView(_ view: CanvasPlayerView, context: Context) {
         view.onReady = { ready = $0 }
-        if view.clipUrl != clip.url { view.load(clip) }
+        if view.clipUrl != clip.url { view.show(clip) }
         view.setPlaying(playing)
     }
 
@@ -51,7 +52,7 @@ final class CanvasPlayerView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func load(_ clip: CanvasClip) {
+    func show(_ clip: CanvasClip) {
         clipUrl = clip.url
         triedFallback = false
         start(clip.url, fallback: clip.fallbackUrl)
