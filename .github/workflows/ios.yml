@@ -32,7 +32,7 @@ on:
         # One fixed pre-release, replaced each time: the newest IPA at a link that never changes,
         # releases/download/ios-latest/BitChord-unsigned.ipa. Never marked Latest, which stays
         # the Android app's.
-        description: 'Publish the IPA to the ios-latest pre-release'
+        description: 'Publish the IPA to the branch pre-release (ios-latest for ios-port)'
         type: boolean
         default: true
       tests:
@@ -252,16 +252,19 @@ jobs:
                  --notes "Unsigned IPA for sideloading (AltStore, SideStore, Sideloadly)."
           gh release upload "$GITHUB_REF_NAME" build/BitChord-unsigned.ipa --clobber
 
-      - name: Publish to the ios-latest pre-release
+      - name: Publish to the branch's latest pre-release
         if: github.event_name == 'workflow_dispatch' && inputs.app && inputs.release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # ios-port is ios-latest; any other branch gets its own (ios-swiftui-latest), so a trial
+          # branch never replaces the IPA the main line published.
+          if [ "$GITHUB_REF_NAME" = "ios-port" ]; then TAG=ios-latest; else TAG="${GITHUB_REF_NAME//\//-}-latest"; fi
           # Recreated rather than updated, so its tag points at the commit just built.
-          gh release delete ios-latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create ios-latest build/BitChord-unsigned.ipa \
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" build/BitChord-unsigned.ipa \
             --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "BitChord iOS (latest build)" \
+            --title "BitChord iOS (latest ${GITHUB_REF_NAME} build)" \
             --notes "Unsigned IPA built from ${GITHUB_REF_NAME} at ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC')), run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Sign it with your own certificate (AltStore, SideStore, Sideloadly, a signing service) to install."
 
       # iosKit finds the analyzer by dlopen and dlsym, so a framework left out of the app, or one

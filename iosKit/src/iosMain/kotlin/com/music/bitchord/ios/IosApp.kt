@@ -68,6 +68,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.music.bitchord.ui.theme.StatusBarIcons
 import com.music.bitchord.data.model.ShelfItem
@@ -118,6 +119,11 @@ internal fun IosApp() {
     val darkTheme = rememberDarkTheme()
     MaterialTheme(colorScheme = if (darkTheme) DarkColors else LightColors, typography = BitChordTypography) {
         val navigator = remember { IosNavigator() }
+        // The SwiftUI player opens pages through it.
+        DisposableEffect(navigator) {
+            NativePlayer.navigator = navigator
+            onDispose { if (NativePlayer.navigator === navigator) NativePlayer.navigator = null }
+        }
         val search = remember { IosSearch() }
         val feeds = remember { IosFeeds() }
         var playerOpen by remember { mutableStateOf(false) }
@@ -222,7 +228,8 @@ internal fun IosApp() {
                         onPlayPause = IosPlayer::togglePlayPause,
                         onNext = IosPlayer::next,
                         onPrevious = IosPlayer::previous,
-                        onExpand = { playerOpen = true },
+                        // The SwiftUI player on this branch; Compose's only if Swift never said how.
+                        onExpand = { if (!NativePlayer.present()) playerOpen = true },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(8.dp))
