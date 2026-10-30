@@ -338,6 +338,7 @@ internal class AddonClient(rawBaseUrl: String) {
                 // a transient outage as a configuration error sends people to
                 // re-paste a URL that was always correct.
                 code >= 500 -> throw AddonUnavailable("HTTP $code")
+                AddonRefused.isRefusal(code) -> throw AddonRefused(code)
                 code != 429 -> throw AddonException("HTTP $code")
                 attempt >= MAX_RETRIES -> throw AddonUnavailable(tr("This addon is rate limiting BitChord"))
                 else -> retryAfterMs(response.headers["Retry-After"], attempt)
@@ -529,7 +530,18 @@ internal val addonHttp by lazy {
  * [SourceHealth.Rejected][com.music.bitchord.ios.sources.SourceHealth.Rejected],
  * with a line fit to show a user.
  */
-internal class AddonException(message: String) : Exception(message)
+internal open class AddonException(message: String) : Exception(message)
+
+/**
+ * A 401, 402, 403 or 410: the addon's host refusing everyone, not this one request. A Vercel
+ * deployment switched off answers 402 `DEPLOYMENT_DISABLED` to every call, for as long as its owner
+ * leaves it so; asking again on the next track only costs that track its upgrade.
+ */
+internal class AddonRefused(code: Int) : AddonException("HTTP $code") {
+    companion object {
+        fun isRefusal(code: Int) = code == 401 || code == 402 || code == 403 || code == 410
+    }
+}
 
 /**
  * The addon is momentarily not answering — down, overloaded, rate limiting.

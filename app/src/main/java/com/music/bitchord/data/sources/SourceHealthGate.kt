@@ -43,6 +43,24 @@ internal object SourceHealthGate {
         }
     }
 
+    /**
+     * [configId] refused outright (see `AddonRefused`): it rests at once, without the second
+     * strike a timeout needs. Any thread.
+     */
+    fun refused(configId: String, name: String, why: String?) {
+        val now = MonotonicClock.nowMs()
+        val rested = synchronized(lock) {
+            val record = records.getOrPut(configId) { Record() }
+            if (record.restingUntil > now) return@synchronized false
+            record.strikes = 0
+            record.restingUntil = now + REST_MS
+            true
+        }
+        if (rested) {
+            TrackLog.w(TAG, "$name refused BitChord${why?.let { " ($it)" } ?: ""}; skipped for ${REST_MS / 60_000} min")
+        }
+    }
+
     /** [configId] answered. Any thread. */
     fun answered(configId: String) {
         synchronized(lock) { records.remove(configId) }
