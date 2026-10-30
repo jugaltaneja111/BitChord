@@ -673,23 +673,22 @@ private suspend fun runTour(
     if (artist != null) navigator.open(IosPage.Artist(artist, "Daft Punk"))
     step("artist $artist")
     delay(TOUR_STEP_MS)
-    setPlayerOpen(true)
+    // The SwiftUI player on this branch, on each of its panels.
+    NativePlayer.tour("cover")
     step("player")
     delay(TOUR_STEP_MS)
+    NativePlayer.tour("lyrics")
+    step("lyrics ${IosLyrics.source.value?.label} ${IosLyrics.lyrics.value?.size} lines, checked=${IosLyrics.checked.value}")
+    delay(TOUR_STEP_MS)
+    NativePlayer.tour("queue")
+    step("queue")
+    delay(TOUR_STEP_MS)
+    NativePlayer.tour(null)
+    delay(1_000)
     IosPlayer.song.value?.let { IosMenus.song = SongMenuRequest(it) }
     step("menu")
     delay(TOUR_STEP_MS)
     IosMenus.song = null
-    setPlayerOpen(false)
-    // The player reopens on the screen it was last left on, so this opens it on the lyrics.
-    IosPlayerSettings.setLastPlayerScreen(LastPlayerScreen.LYRICS)
-    delay(500)
-    setPlayerOpen(true)
-    step("lyrics ${IosLyrics.source.value?.label} ${IosLyrics.lyrics.value?.size} lines, checked=${IosLyrics.checked.value}")
-    delay(TOUR_STEP_MS)
-    println("tour: lyrics after wait ${IosLyrics.source.value?.label} ${IosLyrics.lyrics.value?.size} lines")
-    setPlayerOpen(false)
-    IosPlayerSettings.setLastPlayerScreen(LastPlayerScreen.MAIN)
     IosOverlays.login = true
     step("login")
     delay(TOUR_STEP_MS)

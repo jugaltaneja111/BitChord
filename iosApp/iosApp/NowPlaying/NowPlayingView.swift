@@ -38,12 +38,19 @@ struct NowPlayingView: View {
                     volume.padding(.top, 18)
                     bottomBar.padding(.top, 14).padding(.bottom, 6)
                 }
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 26)
                 .foregroundStyle(.white)
             }
         }
         .preferredColorScheme(.dark)
-        .onAppear { model.start() }
+        .onAppear {
+            model.start()
+            if let name = NativePlayerPresenter.requestedPanel { panel = Self.panel(named: name) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NativePlayerPresenter.panelRequested)) { note in
+            if let name = note.object as? String { panel = Self.panel(named: name) }
+        }
         .onDisappear { model.stop() }
         .onChange(of: model.now?.artworkUrl) { artwork.load($0) }
         .fullScreenCover(isPresented: $pipelineOpen) {
@@ -77,19 +84,22 @@ struct NowPlayingView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 8)
             ZStack(alignment: .bottom) {
-                Group {
-                    if let image = artwork.image {
-                        Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        Rectangle().fill(.white.opacity(0.08))
-                            .overlay(Image(systemName: "music.note").font(.system(size: 60)).foregroundStyle(.white.opacity(0.3)))
+                // The square first and the cover inside it: a 16:9 video thumbnail filled on its own
+                // asks for its full width, and the whole screen widened to give it that.
+                Color.white.opacity(0.08)
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay {
+                        if let image = artwork.image {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "music.note").font(.system(size: 60)).foregroundStyle(.white.opacity(0.3))
+                        }
                     }
-                }
-                .aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
-                .scaleEffect(now.isPlaying ? 1 : 0.84)
-                .animation(.spring(response: 0.45, dampingFraction: 0.75), value: now.isPlaying)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
+                    .scaleEffect(now.isPlaying ? 1 : 0.84)
+                    .animation(.spring(response: 0.45, dampingFraction: 0.75), value: now.isPlaying)
                 if let line = now.qualityLine {
                     Text(line)
                         .font(.caption2.weight(.medium))
@@ -127,6 +137,7 @@ struct NowPlayingView: View {
             if let image = artwork.image {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
                     .frame(width: 48, height: 48)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -239,6 +250,10 @@ struct NowPlayingView: View {
     }
 
     private func seek(_ ms: Int64) { player.seekTo(positionMs: ms) }
+
+    private static func panel(named name: String) -> Panel {
+        name == "lyrics" ? .lyrics : name == "queue" ? .queue : .cover
+    }
 
     static func time(_ ms: Double) -> String {
         let total = Int(max(ms, 0) / 1000)
@@ -369,6 +384,7 @@ private struct QueueRowView: View {
                 Color.white.opacity(0.08)
             }
             .frame(width: 44, height: 44)
+            .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title).font(.body.weight(current ? .semibold : .regular)).lineLimit(1)

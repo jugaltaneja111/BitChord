@@ -6,9 +6,20 @@ import SwiftUI
 final class NativePlayerPresenter: ObservableObject {
     @Published var shown = false
 
+    /// Posted with a panel's name ("cover", "lyrics", "queue") for the open screen to show.
+    static let panelRequested = Notification.Name("BitChordNativePlayerPanel")
+    /// The last one asked for, for a screen that opens after it was posted.
+    static var requestedPanel: String?
+
     init() {
         NativePlayer.shared.setPresenter { [weak self] show in
             DispatchQueue.main.async { self?.shown = show.boolValue }
+        }
+        NativePlayer.shared.setPanelHandler { name in
+            DispatchQueue.main.async {
+                Self.requestedPanel = name
+                NotificationCenter.default.post(name: Self.panelRequested, object: name)
+            }
         }
     }
 }

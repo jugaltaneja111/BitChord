@@ -309,7 +309,7 @@ jobs:
             xcrun simctl launch --console-pty "$UDID" com.music.bitchord > build/smoke/autoplay.log 2>&1 &
           console=$!
           # Each screenshot waits for the app to say it reached the page, then lets it draw.
-          for page in home explore category album artist player menu lyrics login settings search; do
+          for page in home explore category album artist player lyrics queue menu login settings search; do
             for _ in $(seq 1 40); do
               grep -q "tour: $page" build/smoke/autoplay.log && break
               sleep 1
@@ -326,6 +326,15 @@ jobs:
           grep -q 'tour: search' build/smoke/autoplay.log
           # And it is still alive: a crash, even after the music started, fails the run.
           if ls build/smoke/BitChord*.ips >/dev/null 2>&1; then echo "The app crashed"; exit 1; fi
+
+      # Beside the IPA on the branch's pre-release too, where they can be fetched without signing in.
+      - name: Publish the smoke screenshots
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.smoke && inputs.release && inputs.runner != 'macos-15-intel'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_REF_NAME" = "ios-port" ]; then TAG=ios-latest; else TAG="${GITHUB_REF_NAME//\//-}-latest"; fi
+          gh release upload "$TAG" build/smoke/*.png build/smoke/autoplay.log --clobber || true
 
       - name: Upload the smoke run
         if: always() && (github.event_name != 'workflow_dispatch' || (inputs.smoke && inputs.runner != 'macos-15-intel'))

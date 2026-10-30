@@ -50,6 +50,23 @@ object NativePlayer {
         presenter = present
     }
 
+    private var panelHandler: ((String) -> Unit)? = null
+
+    /** How Swift switches the open screen between "cover", "lyrics" and "queue". */
+    fun setPanelHandler(show: (String) -> Unit) {
+        panelHandler = show
+    }
+
+    /** The simulator tour: the screen open on [panel], or closed with null. */
+    internal fun tour(panel: String?) {
+        if (panel == null) {
+            presenter?.invoke(false)
+        } else {
+            presenter?.invoke(true)
+            panelHandler?.invoke(panel)
+        }
+    }
+
     /** Opens the screen; false when Swift hasn't said how, so the Compose player opens instead. */
     internal fun present(): Boolean {
         val show = presenter ?: return false
