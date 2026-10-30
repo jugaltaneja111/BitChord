@@ -313,7 +313,8 @@ internal fun IosApp() {
             }
             IosReplay.share?.let { ReplayShareSheet(it, onDismiss = { IosReplay.share = null }) }
             // Above the pages and the player: a menu can be opened from either.
-            IosMenuHost(navigator, onLeavePlayer = { playerOpen = false })
+            // While the native player is up its own menus draw over it; these would sit behind it.
+            if (!NativePlayer.menusHosted) IosMenuHost(navigator, onLeavePlayer = { playerOpen = false })
             IosToast.Host(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -685,12 +686,14 @@ private suspend fun runTour(
     NativePlayer.tour("queue")
     step("queue")
     delay(TOUR_STEP_MS)
-    NativePlayer.tour(null)
-    delay(1_000)
-    IosPlayer.song.value?.let { IosMenus.song = SongMenuRequest(it) }
+    // The menu opened from the native screen, drawn over it.
+    NativePlayer.tour("menu")
     step("menu")
     delay(TOUR_STEP_MS)
     IosMenus.song = null
+    delay(1_000)
+    NativePlayer.tour(null)
+    delay(1_000)
     IosOverlays.login = true
     step("login")
     delay(TOUR_STEP_MS)

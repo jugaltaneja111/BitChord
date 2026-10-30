@@ -12,6 +12,12 @@ struct NowPlayingView: View {
     @State private var panel: Panel = .cover
     @State private var scrubbing: Double?
     @State private var pipelineOpen = false
+    @State private var menuOpen = false
+    @State private var timingOpen = false
+    @State private var providersOpen = false
+    /// How far the cover follows a sideways drag, damped: a skip hint, not a position.
+    @State private var swipe: CGFloat = 0
+    @State private var canvasReady = false
 
     private let player = NativePlayer.shared
 
@@ -20,13 +26,25 @@ struct NowPlayingView: View {
     var body: some View {
         ZStack {
             PlayerBackdrop(image: artwork.image, palette: artwork.palette)
+            if let clip = model.canvas, clip.fullScreen {
+                // Spotify's tall clips run behind the whole screen, darkened under the controls.
+                CanvasVideo(clip: clip, playing: model.now?.isPlaying ?? false, ready: $canvasReady)
+                    .ignoresSafeArea()
+                    .opacity(canvasReady ? 1 : 0)
+                    .overlay {
+                        LinearGradient(colors: [.black.opacity(0.25), .clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
+                            .ignoresSafeArea()
+                            .opacity(canvasReady ? 1 : 0)
+                    }
+                    .animation(.easeInOut(duration: 0.4), value: canvasReady)
+            }
             if let now = model.now {
                 VStack(spacing: 0) {
                     header(now)
                     Group {
                         switch panel {
                         case .cover: cover(now)
-                        case .lyrics: LyricsPanel(model: model, onSeek: seek)
+                        case .lyrics: LyricsPanel(model: model, onSeek: seek, onTiming: { timingOpen = true }, onProviders: { providersOpen = true })
                         case .queue: QueuePanel(model: model, now: now)
                         }
                     }
@@ -48,17 +66,33 @@ struct NowPlayingView: View {
             // The simulator tour reads this to know the native screen came up.
             print("native player: shown")
             model.start()
-            if let name = NativePlayerPresenter.requestedPanel { panel = Self.panel(named: name) }
+            if let name = NativePlayerPresenter.requestedPanel { show(name) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NativePlayerPresenter.panelRequested)) { note in
-            if let name = note.object as? String { panel = Self.panel(named: name) }
+            if let name = note.object as? String { show(name) }
         }
         .onDisappear { model.stop() }
         .onChange(of: model.now?.artworkUrl) { artwork.load($0) }
+        .onChange(of: model.canvas?.url) { _ in canvasReady = false }
         .fullScreenCover(isPresented: $pipelineOpen) {
             AudioPipelineSheet { pipelineOpen = false }
                 .ignoresSafeArea()
                 .clearBackground()
+        }
+        // The Compose song menu over the screen, which stays up under it; the menu slides itself in.
+        .fullScreenCover(isPresented: $menuOpen, onDismiss: {
+            if player.takeLyricsTimingRequest() { timingOpen = true }
+        }) {
+            MenuSheet { withoutAnimation { menuOpen = false } }
+                .ignoresSafeArea()
+                .clearBackground()
+        }
+        .sheet(isPresented: $timingOpen) {
+            LyricsTimingSheet(offsetMs: Int(model.lyrics?.offsetMs ?? 0))
+                .preferredColorScheme(.dark)
+        }
+        .sheet(isPresented: $providersOpen) {
+            LyricsProvidersSheet().preferredColorScheme(.dark)
         }
     }
 
@@ -97,11 +131,21 @@ struct NowPlayingView: View {
                             Image(systemName: "music.note").font(.system(size: 60)).foregroundStyle(.white.opacity(0.3))
                         }
                     }
+                    .overlay {
+                        // A square clip plays in the cover's place, over the still until its first frame.
+                        if let clip = model.canvas, !clip.fullScreen {
+                            CanvasVideo(clip: clip, playing: now.isPlaying, ready: $canvasReady)
+                                .opacity(canvasReady ? 1 : 0)
+                                .animation(.easeInOut(duration: 0.4), value: canvasReady)
+                        }
+                    }
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
                     .scaleEffect(now.isPlaying ? 1 : 0.84)
                     .animation(.spring(response: 0.45, dampingFraction: 0.75), value: now.isPlaying)
+                    // A tall clip behind the screen is the cover now; the square only keeps its place.
+                    .opacity(model.canvas?.fullScreen == true && canvasReady ? 0 : 1)
                 if let line = now.qualityLine {
                     Text(line)
                         .font(.caption2.weight(.medium))
@@ -112,10 +156,37 @@ struct NowPlayingView: View {
                         .opacity(now.isPlaying ? 1 : 0)
                 }
             }
+            .offset(x: swipe)
             Spacer(minLength: 20)
             fullTitle(now)
         }
+        .contentShape(Rectangle())
+        // Sideways skips, as on the phone; with the sheet's own pull-down left to work alongside it.
+        .simultaneousGesture(skipSwipe)
     }
+
+    private var skipSwipe: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { drag in
+                guard abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                swipe = drag.translation.width * 0.35
+            }
+            .onEnded { drag in
+                let dx = drag.translation.width
+                if abs(dx) > abs(drag.translation.height) {
+                    if dx <= -Self.swipeThreshold {
+                        PlayerHaptics.tap()
+                        player.next()
+                    } else if dx >= Self.swipeThreshold {
+                        PlayerHaptics.tap()
+                        player.previous()
+                    }
+                }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { swipe = 0 }
+            }
+    }
+
+    private static let swipeThreshold: CGFloat = 72
 
     private func fullTitle(_ now: NowPlayingSnapshot) -> some View {
         HStack(alignment: .center, spacing: 14) {
@@ -157,7 +228,10 @@ struct NowPlayingView: View {
                 PlayerHaptics.tap()
                 player.toggleLike()
             }
-            CircleButton(systemName: "ellipsis") { player.openMenu() }
+            CircleButton(systemName: "ellipsis") {
+                player.openMenu()
+                withoutAnimation { menuOpen = true }
+            }
         }
     }
 
@@ -253,6 +327,24 @@ struct NowPlayingView: View {
 
     private func seek(_ ms: Int64) { player.seekTo(positionMs: ms) }
 
+    private func withoutAnimation(_ change: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction, change)
+    }
+
+    /// The simulator tour's asks: a panel by name, or "menu" for the song menu over the cover.
+    private func show(_ name: String) {
+        NativePlayerPresenter.requestedPanel = nil
+        if name == "menu" {
+            panel = .cover
+            player.openMenu()
+            withoutAnimation { menuOpen = true }
+        } else {
+            panel = Self.panel(named: name)
+        }
+    }
+
     private static func panel(named name: String) -> Panel {
         name == "lyrics" ? .lyrics : name == "queue" ? .queue : .cover
     }
@@ -268,28 +360,92 @@ struct NowPlayingView: View {
 private struct LyricsPanel: View {
     @ObservedObject var model: PlayerModel
     let onSeek: (Int64) -> Void
+    let onTiming: () -> Void
+    let onProviders: () -> Void
+    private let player = NativePlayer.shared
 
     var body: some View {
-        if model.lyrics.isEmpty {
-            Text("No lyrics for this song")
-                .font(.headline)
-                .foregroundStyle(.white.opacity(0.5))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !model.lyricsSynced {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(Array(model.lyrics.enumerated()), id: \.offset) { _, row in
-                        Text(row.text).font(.title2.weight(.bold))
+        VStack(spacing: 6) {
+            if let view = model.lyrics, !view.rows.isEmpty { controls(view) }
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let view = model.lyrics, !view.rows.isEmpty {
+            let offset = Int64(view.offsetMs)
+            if !view.synced {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(view.rows.enumerated()), id: \.offset) { _, row in
+                            LyricLineView(row: row, active: true)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 24)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 24)
+            } else {
+                TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                    SyncedLyrics(rows: view.rows, positionMs: model.lyricsPositionMs) { onSeek(max($0 + offset, 0)) }
+                }
             }
+        } else if model.lyrics?.loading ?? true {
+            ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-                SyncedLyrics(rows: model.lyrics, positionMs: model.positionMs, onSeek: onSeek)
+            VStack(spacing: 12) {
+                Text("No lyrics for this song").font(.headline).foregroundStyle(.white.opacity(0.5))
+                Button("Try another provider", action: onProviders)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The provider, then translate, romanise and timing: what the Compose panel's lyric controls hold.
+    private func controls(_ view: LyricsView) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Button(action: onProviders) {
+                    HStack(spacing: 4) {
+                        Text(view.sourceName ?? "Lyrics").lineLimit(1)
+                        Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                if view.working { ProgressView().tint(.white).scaleEffect(0.7) }
+                ToggleChip(systemName: "character.bubble", on: view.mode == 1) { player.toggleTranslation() }
+                ToggleChip(systemName: "textformat.abc", on: view.mode == 2) { player.toggleRomanization() }
+                if view.synced { ToggleChip(systemName: "timer", on: view.offsetMs != 0, action: onTiming) }
+            }
+            if let note = view.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .padding(.top, 4)
+    }
+}
+
+/// One lyric, with its translation or romanisation in small type under it when one is on.
+private struct LyricLineView: View {
+    let row: LyricRow
+    let active: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.text.isEmpty ? "♪" : row.text).font(.title2.weight(.bold))
+            if let sub = row.subText {
+                Text(sub).font(.body.weight(.medium)).foregroundStyle(.white.opacity(0.75))
+            }
+        }
+        .foregroundStyle(.white.opacity(active ? 1 : 0.35))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -308,10 +464,7 @@ private struct SyncedLyrics: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                        Text(row.text.isEmpty ? "♪" : row.text)
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(.white.opacity(index == active ? 1 : 0.35))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        LyricLineView(row: row, active: index == active)
                             .contentShape(Rectangle())
                             .onTapGesture { onSeek(row.timeMs) }
                             .id(index)

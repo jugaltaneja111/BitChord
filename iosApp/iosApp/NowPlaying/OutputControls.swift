@@ -40,3 +40,16 @@ struct AudioPipelineSheet: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
+
+/// The Compose song menu, and the playlist pickers it leads to, drawn over the native player.
+struct MenuSheet: UIViewControllerRepresentable {
+    let onDismiss: () -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = NativePlayer.shared.menuViewController(onDismiss: onDismiss)
+        controller.view.backgroundColor = .clear
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+}

@@ -1,24 +1,45 @@
 package com.music.bitchord.ios
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeUIViewController
+import com.music.bitchord.data.IosAppLanguage
 import com.music.bitchord.data.LikeState
 import com.music.bitchord.data.NerdStats
+import com.music.bitchord.data.LocaleTags
 import com.music.bitchord.data.YtMusicRepository
+import com.music.bitchord.data.canvas.CanvasArtwork
+import com.music.bitchord.data.canvas.CanvasSource
+import com.music.bitchord.data.lyrics.LyricLine
+import com.music.bitchord.data.lyrics.LyricsSource
+import com.music.bitchord.data.lyrics.LyricsTranslation
+import com.music.bitchord.data.lyrics.translationLanguageName
 import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.artworkAt
+import com.music.bitchord.data.primaryLanguage
+import com.music.bitchord.ios.canvas.IosCanvas
 import com.music.bitchord.ios.party.IosListenTogether
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import com.music.bitchord.ui.LyricsProviderState
+import com.music.bitchord.ui.player.MAX_LYRICS_OFFSET_MS
+import com.music.bitchord.ui.player.MIN_LYRICS_OFFSET_MS
 import platform.UIKit.UIViewController
 
 /**
@@ -104,18 +125,193 @@ object NativePlayer {
     }
 
     /** The lyrics as lines with their start and end, and whether they are timed at all. */
-    fun observeLyrics(onChange: (List<LyricRow>, Boolean) -> Unit): PlayerSubscription = PlayerSubscription(
-        scope.launch {
-            IosLyrics.lyrics.collect { lines ->
-                val shown = lines.orEmpty().filterNot { it.isGap && it.timeMs == 0L }
-                val synced = shown.any { it.timeMs > 0 }
-                val rows = shown.mapIndexed { i, line ->
-                    LyricRow(line.timeMs, line.text, shown.getOrNull(i + 1)?.timeMs ?: Long.MAX_VALUE)
+    /**
+     * The lyrics as the panel draws them: the original lines, each with the translation or the
+     * romanisation under it when one of those is on, as the Compose panel's sub-lines are.
+     */
+    fun observeLyrics(onChange: (LyricsView) -> Unit): PlayerSubscription {
+        // A new track starts in its own words.
+        val reset = scope.launch {
+            IosPlayer.song.map { it?.videoId }.distinctUntilChanged().collect { resetLyricsMode() }
+        }
+        val lines = combine(IosLyrics.lyrics, IosLyrics.checked, IosLyrics.source) { lines, checked, source -> Triple(lines, checked, source) }
+        val extra = combine(lyricsMode, subLines, lyricsNote, IosSettings.lyricsOffsetMs.flow) { mode, sub, note, offset ->
+            LyricsExtra(mode, sub, note, offset)
+        }
+        val job = scope.launch {
+            combine(lines, extra) { (all, checked, source), x ->
+                val original = all.orEmpty()
+                val under = x.sub?.takeIf { it.forLines == original }?.lines
+                val rows = original.withIndex()
+                    .filterNot { (_, line) -> line.isGap && line.timeMs == 0L }
+                    .let { shown ->
+                        shown.mapIndexed { i, (index, line) ->
+                            val sub = under?.getOrNull(index)?.text?.takeIf { it.isNotBlank() && it != line.text }
+                            LyricRow(line.timeMs, line.text, shown.getOrNull(i + 1)?.value?.timeMs ?: Long.MAX_VALUE, sub)
+                        }
+                    }
+                LyricsView(
+                    rows = rows,
+                    synced = rows.any { it.timeMs > 0 },
+                    loading = !checked && original.isEmpty(),
+                    sourceName = source?.label,
+                    mode = x.mode,
+                    working = x.mode != LyricsModes.ORIGINAL && under == null,
+                    note = x.note,
+                    offsetMs = x.offset,
+                )
+            }.distinctUntilChanged().collect(onChange)
+        }
+        return PlayerSubscription(reset, job)
+    }
+
+    private class LyricsExtra(val mode: Int, val sub: SubLines?, val note: String?, val offset: Int)
+
+    /** A translation or romanisation, and the lines it was made from. */
+    private class SubLines(val forLines: List<LyricLine>, val lines: List<LyricLine>)
+
+    private val lyricsMode = MutableStateFlow(LyricsModes.ORIGINAL)
+    private val subLines = MutableStateFlow<SubLines?>(null)
+    private val lyricsNote = MutableStateFlow<String?>(null)
+    private var subJob: Job? = null
+
+    private fun resetLyricsMode() {
+        subJob?.cancel()
+        lyricsMode.value = LyricsModes.ORIGINAL
+        subLines.value = null
+        lyricsNote.value = null
+    }
+
+    fun toggleTranslation() = toggleSubLines(LyricsModes.TRANSLATED)
+    fun toggleRomanization() = toggleSubLines(LyricsModes.ROMANIZED)
+
+    /** Turns [mode] on, fetching it, or off when it is the one showing. */
+    private fun toggleSubLines(mode: Int) {
+        val wasOn = lyricsMode.value == mode
+        resetLyricsMode()
+        if (wasOn) return
+        val song = IosPlayer.song.value ?: return
+        val lines = IosLyrics.lyrics.value?.takeIf { it.isNotEmpty() } ?: return
+        lyricsMode.value = mode
+        subJob = scope.launch {
+            val target = translationTarget()
+            val made: List<LyricLine>? = if (mode == LyricsModes.TRANSLATED) {
+                when (val result = LyricsTranslation.translate(song.videoId, lines, target)) {
+                    is LyricsTranslation.Result.Translated -> result.lines
+                    is LyricsTranslation.Result.SameLanguage -> {
+                        lyricsNote.value = tr("Lyrics are already in {0}", translationLanguageName(target, deviceLanguageTag()))
+                        null
+                    }
+                    LyricsTranslation.Result.Unavailable -> {
+                        lyricsNote.value = tr("Translation isn’t available right now")
+                        null
+                    }
                 }
-                onChange(rows, synced)
+            } else {
+                when (val result = LyricsTranslation.romanize(song.videoId, lines, target)) {
+                    is LyricsTranslation.RomanizationResult.Romanized -> result.lines
+                    LyricsTranslation.RomanizationResult.AlreadyRomanized -> {
+                        lyricsNote.value = tr("Lyrics are already in Latin script")
+                        null
+                    }
+                    LyricsTranslation.RomanizationResult.Unavailable -> {
+                        lyricsNote.value = tr("Romanization isn’t available right now")
+                        null
+                    }
+                }
+            }
+            if (made == null) lyricsMode.value = LyricsModes.ORIGINAL else subLines.value = SubLines(lines, made)
+        }
+    }
+
+    /**
+     * The language to translate into: Settings' choice, else the app's, reduced to its base
+     * language except Chinese, whose script matters (PlayerLyrics' rule).
+     */
+    private fun translationTarget(): String = IosSettings.translationLanguage.flow.value.ifBlank {
+        val app = IosAppLanguage.tag() ?: deviceLanguageTag()
+        if (LocaleTags.isChineseTag(app)) LocaleTags.translationWireTarget(app) else primaryLanguage(app).ifBlank { "en" }
+    }
+
+    /** The lyrics providers in the listener's order, each with how its lookup for this track went. */
+    fun observeLyricsProviders(onChange: (List<LyricsProviderRow>) -> Unit): PlayerSubscription = PlayerSubscription(
+        scope.launch {
+            combine(IosLyrics.providerStates, IosLyrics.source, IosSettings.lyricsSourceOrder.flow) { states, current, order ->
+                LyricsSource.ordered(order).map { source ->
+                    val state = states[source] ?: LyricsProviderState.NOT_FETCHED
+                    LyricsProviderRow(
+                        key = source.name,
+                        name = source.label,
+                        detail = source.detail,
+                        state = when (state) {
+                            LyricsProviderState.NOT_FETCHED -> 0
+                            LyricsProviderState.FETCHING -> 1
+                            LyricsProviderState.FOUND -> 2
+                            LyricsProviderState.NOT_FOUND -> 3
+                        },
+                        selected = source == current,
+                    )
+                }
+            }.distinctUntilChanged().collect(onChange)
+        },
+    )
+
+    fun selectLyricsProvider(key: String) {
+        LyricsSource.entries.firstOrNull { it.name == key }?.let(IosLyrics::select)
+    }
+
+    /** Shifts every synced line against the clock; positive shows them later. */
+    fun setLyricsOffset(ms: Int) {
+        IosSettings.lyricsOffsetMs.set(ms.coerceIn(MIN_LYRICS_OFFSET_MS, MAX_LYRICS_OFFSET_MS))
+    }
+
+    /**
+     * The track's Canvas, the looping clip in place of its cover, found as the Compose player finds
+     * it ([com.music.bitchord.ui.player.rememberCanvasArtwork]): only while the setting allows it
+     * here and now, anything cached at once, the album name given a moment to land, and a clip kept
+     * when a second look comes back empty.
+     */
+    fun observeCanvas(onChange: (CanvasClip?) -> Unit): PlayerSubscription = PlayerSubscription(
+        scope.launch {
+            val allowed = combine(
+                IosSettings.animatedCanvas.flow,
+                IosSettings.canvasOverCellular.flow,
+                IosNetwork.metered,
+                IosSettings.prioritizeSpotifyCanvas.flow,
+            ) { on, overCellular, metered, spotifyFirst -> (on && (metered != true || overCellular)) to spotifyFirst }
+            val song = combine(IosPlayer.song, links) { _, _ -> playerSong() }
+                .map { it?.let { s -> CanvasKey(s, s.title, s.artist, s.videoId, s.albumName) } }
+                .distinctUntilChanged()
+            var shown: CanvasArtwork? = null
+            var shownFor: Pair<String, String>? = null
+            combine(song, allowed) { key, allow -> key to allow }.collectLatest { (key, allow) ->
+                val track = key?.song
+                if (track == null || !allow.first) {
+                    shown = null
+                    onChange(null)
+                    return@collectLatest
+                }
+                if (shownFor != track.title to track.artist) shown = null
+                shownFor = track.title to track.artist
+                shown = IosCanvas.cached(track) ?: shown?.takeIf { it.matches(track.title, track.artist, track.albumName) }
+                onChange(shown?.let(::clipOf))
+                if (shown == null && track.albumName == null) delay(ALBUM_SETTLE_MS)
+                shown = IosCanvas.canvasFor(track) ?: shown
+                onChange(shown?.let(::clipOf))
             }
         },
     )
+
+    private class CanvasKey(val song: Song, val title: String, val artist: String, val videoId: String, val album: String?) {
+        override fun equals(other: Any?) =
+            other is CanvasKey && title == other.title && artist == other.artist && videoId == other.videoId && album == other.album
+        override fun hashCode() = videoId.hashCode()
+    }
+
+    private fun clipOf(canvas: CanvasArtwork) =
+        CanvasClip(canvas.url, canvas.fallbackUrl, fullScreen = canvas.source == CanvasSource.SPOTIFY)
+
+    private const val ALBUM_SETTLE_MS = 700L
 
     fun observeQueue(onChange: (List<QueueRow>, Int) -> Unit): PlayerSubscription = PlayerSubscription(
         scope.launch {
@@ -159,9 +355,44 @@ object NativePlayer {
         }
     }
 
+    /**
+     * Whether the menus are drawn over the native screen by [menuViewController] rather than by the
+     * app beneath it, which would put them behind the screen.
+     */
+    internal var menusHosted by mutableStateOf(false)
+
+    /**
+     * The track's menu, for [menuViewController] to draw over the screen, which stays up under it as
+     * the Compose player does; only what leads to a page closes it.
+     */
     fun openMenu() {
         val song = playerSong() ?: return
-        leaveTo { IosMenus.song = SongMenuRequest(song, fromPlayer = true) }
+        menusHosted = true
+        IosMenus.song = SongMenuRequest(song, fromPlayer = true)
+    }
+
+    /**
+     * The song menu, and the playlist pickers it leads to, in a see-through controller for Swift to
+     * present over the screen. [onDismiss] once none of them is open.
+     */
+    @OptIn(ExperimentalComposeUiApi::class)
+    fun menuViewController(onDismiss: () -> Unit): UIViewController = ComposeUIViewController(configure = { opaque = false }) {
+        DisposableEffect(Unit) { onDispose { menusHosted = false } }
+        val open = IosMenus.song != null || IosMenus.browse != null || IosMenus.addToPlaylist != null || IosMenus.newPlaylist != null
+        LaunchedEffect(open) { if (!open) onDismiss() }
+        navigator?.let { nav ->
+            IosMenuHost(nav, onLeavePlayer = {
+                onDismiss()
+                presenter?.invoke(false)
+            })
+        }
+    }
+
+    /** Whether the menu asked for the lyrics timing sheet, which the screen draws itself. Asking clears it. */
+    fun takeLyricsTimingRequest(): Boolean {
+        val asked = IosMenus.lyricsOffset
+        IosMenus.lyricsOffset = false
+        return asked
     }
 
     fun openAlbum() {
@@ -343,7 +574,32 @@ data class NowPlayingSnapshot(
 )
 
 /** A lyric line from [timeMs] until the next one starts at [endMs]. */
-data class LyricRow(val timeMs: Long, val text: String, val endMs: Long)
+data class LyricRow(val timeMs: Long, val text: String, val endMs: Long, val subText: String? = null)
+
+/** 0 the original words, 1 with their translation under them, 2 with their romanisation. */
+object LyricsModes {
+    const val ORIGINAL = 0
+    const val TRANSLATED = 1
+    const val ROMANIZED = 2
+}
+
+/** Everything the lyrics panel shows. [working] while the chosen sub-lines are being fetched. */
+data class LyricsView(
+    val rows: List<LyricRow>,
+    val synced: Boolean,
+    val loading: Boolean,
+    val sourceName: String?,
+    val mode: Int,
+    val working: Boolean,
+    val note: String?,
+    val offsetMs: Int,
+)
+
+/** A lyrics provider; [state] 0 not asked, 1 asking, 2 has this track, 3 doesn't. */
+data class LyricsProviderRow(val key: String, val name: String, val detail: String, val state: Int, val selected: Boolean)
+
+/** A Canvas clip. [fullScreen] for Spotify's tall ones, drawn behind the whole screen. */
+data class CanvasClip(val url: String, val fallbackUrl: String?, val fullScreen: Boolean)
 
 data class QueueRow(val videoId: String, val title: String, val artist: String, val artworkUrl: String?)
 
