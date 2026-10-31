@@ -93,6 +93,12 @@ internal object IosPlayer {
      * the track starts on instead of a swap seconds into it.
      */
     private const val PREPARE_SUBSTITUTE_WAIT_MS = 25_000L
+    /**
+     * How long Direct Source Stream lets a track asked for now wait on the sources before it
+     * starts on YouTube instead: the phone's DirectSourceGate.LOOKUP_TIMEOUT_MS. A lookup that
+     * runs past it goes on, and becomes the track's upgrade.
+     */
+    private const val DIRECT_LOOKUP_WAIT_MS = 15_000L
     /** What readying ahead leaves free before the blend or the end, so the track is in hand by then. */
     private const val PREPARE_SPARE_MS = 5_000L
     /** No upgrade with less than this left: the swap would cost more than it gives. */
@@ -1455,11 +1461,15 @@ internal object IosPlayer {
             null
         }
         if (lookup != null) {
-            // A track asked for now goes to whichever answers first, as on the phone: YouTube's
-            // URL usually, while the sources' lossless copy follows as a swap a few seconds in.
-            // Only a track readied ahead, which nobody is waiting on, holds out for the sources.
-            val holdOut = substituteWaitMs > SUBSTITUTE_WAIT_MS
-            val substitute = kotlinx.coroutines.withTimeoutOrNull(substituteWaitMs) {
+            // With Direct Source Stream off, a track asked for now goes to whichever answers first:
+            // YouTube's URL usually, while the sources' lossless copy follows as a swap a few
+            // seconds in. With it on (the phone's v1.9 default), and for a track readied ahead,
+            // which nobody is waiting on, it holds out for the sources and starts on their copy.
+            // A party keeps every phone on one timeline, so it never waits.
+            val direct = IosSettings.directSourceStream.flow.value && !inParty
+            val holdOut = direct || substituteWaitMs > SUBSTITUTE_WAIT_MS
+            val waitMs = if (direct) maxOf(substituteWaitMs, DIRECT_LOOKUP_WAIT_MS) else substituteWaitMs
+            val substitute = kotlinx.coroutines.withTimeoutOrNull(waitMs) {
                 if (holdOut) {
                     lookup.await()
                 } else {

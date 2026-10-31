@@ -250,6 +250,13 @@ internal object IosSettings {
      */
     val youtubeOpus = BoolPref("${PREFIX}youtube_opus", false)
     val skipSilence = BoolPref("${PREFIX}skip_silence", false)
+
+    /**
+     * Direct Source Stream, the phone's v1.9 setting: a track waits for a source ranked above
+     * YouTube and plays from it from its first note, instead of starting on YouTube and having the
+     * source's copy swapped in a few seconds later. YouTube only when no source answers in time.
+     */
+    val directSourceStream = BoolPref("${PREFIX}direct_source_stream", true)
     /** Automix; the phone's key, which still calls it smart fade. */
     val automix = BoolPref("${PREFIX}smart_fade_enabled", false)
 
@@ -541,6 +548,8 @@ internal fun SettingsPage(
                 Toggle(tr("Autoplay"), tr("Keep playing similar songs when the queue ends"), IosSettings.autoplay)
                 Divider()
                 Toggle(tr("Prefer music-only version"), tr("For music videos, show the video details while finding and loading the catalogue audio version"), IosSettings.preferMusicOnly)
+                Divider()
+                Toggle(tr("Direct Source Stream"), tr("Play from your highest-ranked source from the first note, instead of switching from YouTube mid-song"), IosSettings.directSourceStream)
                 Divider()
                 Toggle(tr("Loudness normalization"), tr("Levels every track to the same loudness"), IosSettings.loudnessNormalization)
                 Divider()

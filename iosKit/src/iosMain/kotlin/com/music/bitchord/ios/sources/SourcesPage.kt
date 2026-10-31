@@ -294,7 +294,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                     ),
                 )
             }
-            Footer(tr("A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds."))
+            Footer(tr("A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 5 seconds."))
         }
         item {
             Header(tr("Immersive audio"))
