@@ -13,15 +13,12 @@ import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioEngineConfigurationChangeNotification
 import platform.AVFAudio.AVAudioFormat
 import platform.AVFAudio.AVAudioPlayerNode
-import platform.AVFAudio.AVAudioSessionInterruptionNotification
-import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
-import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
 import platform.Foundation.NSError
 import platform.Foundation.NSNotificationCenter
-import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSRecursiveLock
+import platform.UIKit.UIApplicationDidBecomeActiveNotification
 
 /**
  * The one AVAudioEngine every [IosFfmpegPlayer] plays through, each on its own player node into
@@ -49,6 +46,22 @@ internal object FfmpegAudioEngine {
     private val listeners = LinkedHashSet<() -> Unit>()
     private var observing = false
 
+    /**
+     * Set while another app holds the audio (a phone or FaceTime call, an alarm, Siri): nothing
+     * restarts the engine until [endInterruption]. Without it, the engine stopping for the call was
+     * taken for a route change and restarted, and the music played on into the call.
+     */
+    @kotlin.concurrent.Volatile
+    var interrupted = false
+        private set
+
+    /** A start iOS refused (the app in the background, or interrupted), to be retried. */
+    @kotlin.concurrent.Volatile
+    private var startRefused = false
+
+    /** What [ensureRunning] answers when iOS won't let the engine start yet: wait, don't fail. */
+    const val REFUSED = "audio start refused for now"
+
     private fun engine(): AVAudioEngine = current ?: AVAudioEngine().also { engine ->
         current = engine
         generation++
@@ -56,7 +69,7 @@ internal object FfmpegAudioEngine {
         engine.mainMixerNode
         NSNotificationCenter.defaultCenter.addObserverForName(
             AVAudioEngineConfigurationChangeNotification, engine, NSOperationQueue.mainQueue,
-        ) { _ -> if (engine === current) recover("configuration change") }
+        ) { _ -> if (engine === current && !interrupted) recover("configuration change") }
         observeSession()
     }
 
@@ -64,9 +77,12 @@ internal object FfmpegAudioEngine {
         if (observing) return
         observing = true
         val center = NSNotificationCenter.defaultCenter
-        center.addObserverForName(AVAudioSessionInterruptionNotification, null, NSOperationQueue.mainQueue) { note ->
-            val type = (note?.userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)?.unsignedLongValue
-            if (type == AVAudioSessionInterruptionTypeEnded) recover("interruption ended")
+        // Interruptions themselves are IosInterruptions'; it calls begin/endInterruption.
+        center.addObserverForName(UIApplicationDidBecomeActiveNotification, null, NSOperationQueue.mainQueue) { _ ->
+            if (startRefused && !interrupted) {
+                startRefused = false
+                recover("app active, retrying a refused start")
+            }
         }
         center.addObserverForName(AVAudioSessionMediaServicesWereResetNotification, null, NSOperationQueue.mainQueue) { _ ->
             lock.lock()
@@ -78,6 +94,21 @@ internal object FfmpegAudioEngine {
             }
             recover("media services reset")
         }
+    }
+
+    /** Main thread: another app took the audio. The engine stays down until [endInterruption]. */
+    fun beginInterruption() {
+        interrupted = true
+        TrackLog.d(TAG, "engine: interrupted")
+        locked { current?.takeIf { it.running }?.pause() }
+    }
+
+    /** Main thread: the audio is ours again; whatever was queued is scheduled afresh. */
+    fun endInterruption() {
+        if (!interrupted) return
+        interrupted = false
+        startRefused = false
+        recover("interruption ended")
     }
 
     /** Main thread: the engine stopped (or died) behind our back; players rebuild what they had queued. */
@@ -99,10 +130,17 @@ internal object FfmpegAudioEngine {
     /** The players that want sound now; when none do, the engine pauses so the hardware can rest. */
     private val wanting = HashSet<Any>()
 
-    /** [player] wants sound ([wants]) or doesn't any more. Any thread. */
+    /**
+     * [player] wants sound ([wants]) or doesn't any more. Any thread. A player that wants sound
+     * starts the engine straight away, before it has anything to play: while the next track opens,
+     * the engine plays silence, and iOS goes on treating the app as playing. A stopped engine
+     * between two tracks let iOS suspend the app in the background, and then refused to start
+     * the next one at all.
+     */
     fun want(player: Any, wants: Boolean) = locked {
         if (wants) {
             wanting += player
+            ensureRunning()
         } else if (wanting.remove(player) && wanting.isEmpty()) {
             current?.takeIf { it.running }?.pause()
         }
@@ -110,15 +148,35 @@ internal object FfmpegAudioEngine {
 
     /** Starts the engine if it isn't running; the error when it can't be. */
     fun ensureRunning(): String? = locked {
+        if (interrupted) {
+            startRefused = true
+            return@locked REFUSED
+        }
         val engine = engine()
         if (engine.running) return@locked null
         engine.prepare()
         memScoped {
             val error = alloc<ObjCObjectVar<NSError?>>()
-            if (engine.startAndReturnError(error.ptr)) null
-            else (error.value?.localizedDescription ?: "audio engine failed to start").also { TrackLog.w(TAG, "engine: $it") }
+            if (engine.startAndReturnError(error.ptr)) return@memScoped null
+            val code = error.value?.code ?: 0L
+            val message = error.value?.localizedDescription ?: "audio engine failed to start"
+            TrackLog.w(TAG, "engine: $message (code $code)")
+            if (code in REFUSALS) {
+                // Not the stream's fault: iOS won't let the app start audio just now.
+                startRefused = true
+                REFUSED
+            } else {
+                message
+            }
         }
     }
+
+    /**
+     * AVAudioSession's answers that mean "not now" rather than "can't": 'what' (unspecified, what
+     * a backgrounded app gets), '!pla' (cannot start playing), '!int' (cannot interrupt others)
+     * and '!pri' (insufficient priority).
+     */
+    private val REFUSALS = setOf(0x77686174L, 0x21706c61L, 0x21696e74L, 0x21707269L)
 
     /**
      * Attaches [node] (to the current engine) and connects it to the main mixer in [format],

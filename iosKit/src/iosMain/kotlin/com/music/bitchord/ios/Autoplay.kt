@@ -20,8 +20,21 @@ internal fun startAutoplayIfAsked() {
     }
     IosPlayer.playQueue(listOf(Song(videoId = videoId, title = "Autoplay", artist = "", thumbnailUrl = null)), 0)
     MainScope().launch {
-        repeat(AUTOPLAY_REPORTS) {
+        repeat(AUTOPLAY_REPORTS) { report ->
             delay(2_000)
+            // A pretend phone call part-way through: the player must pause for it, keep the engine
+            // down through it, and pick up again once it ends.
+            when (report) {
+                INTERRUPT_AT -> {
+                    IosInterruptions.simulate(began = true)
+                    println("interruption check: began, playing=${IosPlayer.isPlaying.value}")
+                }
+                INTERRUPT_AT + 2 -> {
+                    println("interruption check: during, playing=${IosPlayer.isPlaying.value}")
+                    IosInterruptions.simulate(began = false, shouldResume = true)
+                }
+                INTERRUPT_AT + 4 -> println("interruption check: after, playing=${IosPlayer.isPlaying.value}")
+            }
             println(
                 "autoplay: playing=${IosPlayer.isPlaying.value} loading=${IosPlayer.isLoading.value} " +
                     "positionMs=${IosPlayer.position.positionMs} durationMs=${IosPlayer.durationMs.value} " +
@@ -32,6 +45,7 @@ internal fun startAutoplayIfAsked() {
 }
 
 private const val AUTOPLAY_REPORTS = 40
+private const val INTERRUPT_AT = 12
 
 /** The search CI asks the app to submit at launch, or null. */
 internal fun autoSearchQuery(): String? =

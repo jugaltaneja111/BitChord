@@ -434,6 +434,7 @@ internal class IosAudioEngine(
         // Playback, so the music keeps going with the screen locked or the silent switch on.
         AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryPlayback, error = null)
         IosSound.start()
+        IosInterruptions.start()
         scope.launch {
             IosSound.gainVersion.collect { refreshGains() }
         }

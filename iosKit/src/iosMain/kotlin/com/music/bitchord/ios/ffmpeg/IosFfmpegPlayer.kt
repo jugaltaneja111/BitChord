@@ -427,6 +427,12 @@ internal class IosFfmpegPlayer(
         private fun startNode() {
             if (nodeReleased || locked(cond) { cancelled }) return
             val error = FfmpegAudioEngine.ensureRunning()
+            if (error === FfmpegAudioEngine.REFUSED) {
+                // Held, not failed: the engine's retry (the call over, the app back) schedules
+                // what is queued again and starts it.
+                TrackLog.d(TAG, "node waits: the audio can't start yet ${counters()}")
+                return
+            }
             if (error != null) {
                 fail(error)
                 return

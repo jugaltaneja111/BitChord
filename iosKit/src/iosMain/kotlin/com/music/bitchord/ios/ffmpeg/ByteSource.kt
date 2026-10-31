@@ -28,10 +28,14 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.TimeSource
 import platform.Foundation.NSCondition
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
@@ -490,14 +494,33 @@ internal class RemoteSource(
         return at - start
     }
 
-    private suspend fun fetchSegments(segments: List<DashSegment>) {
+    /**
+     * Fetches the segments [SEGMENTS_IN_FLIGHT] at a time and writes them in order, so the bytes
+     * stay one stream. One at a time, a 40-segment add-on FLAC took most of a minute, longer than
+     * the readying ahead allows, and the queue stalled between tracks.
+     */
+    private suspend fun fetchSegments(segments: List<DashSegment>) = coroutineScope {
         locked { segmented = true }
-        var offset = 0L
-        for (segment in segments) {
+        val started = TimeSource.Monotonic.markNow()
+        suspend fun fetch(segment: DashSegment): ByteArray {
             val response = withRetries { get(segment.url, segment.rangeStart, segment.rangeEnd) }
             val code = response.status.value
             if (code != 200 && code != 206) error("segment HTTP $code")
-            val bytes = response.readRawBytes()
+            return response.readRawBytes()
+        }
+        val inFlight = ArrayDeque<Deferred<ByteArray>>()
+        var nextToStart = 0
+        fun topUp() {
+            while (inFlight.size < SEGMENTS_IN_FLIGHT && nextToStart < segments.size) {
+                val segment = segments[nextToStart++]
+                inFlight.addLast(async { fetch(segment) })
+            }
+        }
+        var offset = 0L
+        topUp()
+        while (inFlight.isNotEmpty()) {
+            val bytes = inFlight.removeFirst().await()
+            topUp()
             write(offset, bytes)
             val start = offset
             offset += bytes.size
@@ -511,6 +534,7 @@ internal class RemoteSource(
             complete = true
             lock.broadcast()
         }
+        TrackLog.d(TAG, "DASH: ${segments.size} segments in ${started.elapsedNow().inWholeMilliseconds}ms")
     }
 
     private suspend fun resolveManifest(): DashPlan {
@@ -627,6 +651,7 @@ internal class RemoteSource(
         /** A read this far past the fetch's edge moves the fetch rather than waiting for it. */
         const val JUMP_BYTES = 2 * CHUNK_BYTES
         const val RETRIES = 2
+        const val SEGMENTS_IN_FLIGHT = 4
         const val THROTTLED_RETRIES = 5
         const val MAX_RETRY_WAIT_MS = 8_000L
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

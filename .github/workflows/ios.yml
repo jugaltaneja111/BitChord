@@ -321,8 +321,20 @@ jobs:
           grep -E 'autoplay: playing=true .*positionMs=[1-9][0-9]{3,}' build/smoke/autoplay.log
           # The tour reached its last page.
           grep -q 'tour: search' build/smoke/autoplay.log
+          # A pretend call (Autoplay.kt): paused through it, playing again after it.
+          if grep -q 'interruption check: began, playing=true' build/smoke/autoplay.log; then
+            grep -q 'interruption check: during, playing=false' build/smoke/autoplay.log
+            grep -q 'interruption check: after, playing=true' build/smoke/autoplay.log
+          fi
           # And it is still alive: a crash, even after the music started, fails the run.
           if ls build/smoke/BitChord*.ips >/dev/null 2>&1; then echo "The app crashed"; exit 1; fi
+
+      # Beside the IPA on ios-latest too, where they can be fetched without signing in.
+      - name: Publish the smoke screenshots
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.smoke && inputs.release && inputs.runner != 'macos-15-intel'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ios-latest build/smoke/*.png build/smoke/autoplay.log --clobber || true
 
       - name: Upload the smoke run
         if: always() && (github.event_name != 'workflow_dispatch' || (inputs.smoke && inputs.runner != 'macos-15-intel'))

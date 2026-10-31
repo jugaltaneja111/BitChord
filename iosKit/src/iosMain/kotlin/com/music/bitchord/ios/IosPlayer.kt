@@ -100,10 +100,10 @@ internal object IosPlayer {
     private const val LOW_KBPS = 64
 
     /** How long before a track ends the next one is fetched into the waiting player. */
-    private const val PREPARE_AHEAD_MS = 30_000L
+    private const val PREPARE_AHEAD_MS = 60_000L
     private const val TRANSITION_POLL_MS = 250L
     /** Automix readies the next song earlier, so it can be cued before its blend comes round. */
-    private const val AUTOMIX_PREPARE_AHEAD_MS = 45_000L
+    private const val AUTOMIX_PREPARE_AHEAD_MS = 75_000L
     /** Automix's fade for a pair it has no analysis for, with the slider at 0 (the phone's 6 s). */
     private const val AUTOMIX_FALLBACK_SECONDS = 6.0
 
@@ -507,6 +507,7 @@ internal object IosPlayer {
         val play = !engine.isPlaying.value
         // A guest under a host's lock plays or pauses only this phone.
         if (partySync.onLockedTransport(play)) return
+        if (play) IosInterruptions.reclaim("play pressed")
         if (!play) {
             engine.pause()
         } else if (!partySync.shouldDeferPlay()) {
@@ -541,6 +542,18 @@ internal object IosPlayer {
                 engine.pause()
             }
         }
+    }
+
+    /** A call, an alarm or the headphones coming out ([why], for the log): a pause, as the button's. */
+    fun pauseFor(why: String) {
+        TrackLog.d(TAG, "pause: $why")
+        setPlaying(false)
+    }
+
+    /** The interruption is over and iOS says to carry on. */
+    fun resumeFor(why: String) {
+        TrackLog.d(TAG, "resume: $why")
+        setPlaying(true)
     }
 
     /** The sleep timer running out: a pause, as the play button's. */
