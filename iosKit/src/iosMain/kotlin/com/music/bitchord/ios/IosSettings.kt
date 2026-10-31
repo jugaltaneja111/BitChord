@@ -257,6 +257,9 @@ internal object IosSettings {
      * source's copy swapped in a few seconds later. YouTube only when no source answers in time.
      */
     val directSourceStream = BoolPref("${PREFIX}direct_source_stream", true)
+
+    /** The output / Listen Together pill under the player's controls; v1.9 lets it be hidden. */
+    val showListenTogetherButton = BoolPref("${PREFIX}show_listen_together_button", true)
     /** Automix; the phone's key, which still calls it smart fade. */
     val automix = BoolPref("${PREFIX}smart_fade_enabled", false)
 
@@ -588,6 +591,8 @@ internal fun SettingsPage(
                 Toggle(tr("Reduce animation"), tr("Freezes the main player's gradient instead of drifting"), IosSettings.reduceAnimation)
                 Divider()
                 Toggle(tr("Reduce dynamic blur"), tr("Swaps frosted glass for solid fills across the app"), IosSettings.reduceDynamicBlur)
+                Divider()
+                Toggle(tr("Listen Together button"), tr("Shows the output and Listen Together pill under the player's controls; in a party it always shows"), IosSettings.showListenTogetherButton)
                 Divider()
                 Toggle(tr("Full-screen cover art"), tr("Runs the cover to the edges of the player instead of a square sleeve"), IosSettings.fullBleedArtwork)
                 Divider()

@@ -129,6 +129,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val reduceAnimation = IosSettings.reduceAnimation.flow
     override val reduceDynamicBlur = IosSettings.reduceDynamicBlur.flow
     override val showNerdStats = IosSettings.showNerdStats.flow
+    override val showListenTogetherButton = IosSettings.showListenTogetherButton.flow
     override val smartAnalysis = kotlinx.coroutines.flow.combine(
         IosAutomixAnalysis.states, IosPlayer.queue, IosPlayer.index,
     ) { _, queue, index ->

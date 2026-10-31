@@ -353,6 +353,16 @@ private val LINE_FALLOFF_ALPHA = floatArrayOf(1f, 0.8f, 0.7f, 0.58f, 0.46f)
 private val LINE_FALLOFF_BLUR = arrayOf(0.dp, 1.dp, 1.dp, 1.7.dp, 2.4.dp)
 
 /**
+ * The same falloff for a phone, where the sung line is read from the top and
+ * the whole stack lies below it. [LINE_FALLOFF_ALPHA] was set on a centred
+ * column with only a few rows either side; down a tall phone column it reads as
+ * one flat brightness, so this keeps going for a row longer and steeper. Its
+ * last entry is still a floor, not zero — the bottom of the screen stays
+ * readable at a glance.
+ */
+private val LINE_FALLOFF_ALPHA_PHONE = floatArrayOf(1f, 0.74f, 0.6f, 0.48f, 0.4f, 0.34f)
+
+/**
  * The shape of the page the lyrics are going to fill.
  *
  * One entry per line of the song, and one number per row that line wraps to.
@@ -2040,11 +2050,12 @@ internal fun LyricsPanel(
             // rows around it stay readable so you can follow back over what was
             // just sung as well as ahead, and everything past that recedes to
             // the same floor rather than fading to nothing.
-            val step = distance.coerceAtMost(LINE_FALLOFF_ALPHA.lastIndex)
+            val falloff = LINE_FALLOFF_ALPHA_PHONE
+            val step = distance.coerceAtMost(falloff.lastIndex)
             val blur by animateDpAsState(
                 targetValue = when {
                     !isSynced || reduceDynamicBlur || !lyricsBlur || browsing || isActive -> 0.dp
-                    else -> LINE_FALLOFF_BLUR[step]
+                    else -> LINE_FALLOFF_BLUR[step.coerceAtMost(LINE_FALLOFF_BLUR.lastIndex)]
                 },
                 animationSpec = tween(LYRIC_SETTLE_MS, easing = LYRIC_EASING),
                 label = "lyricBlur",
@@ -2056,7 +2067,7 @@ internal fun LyricsPanel(
                     // Reading by hand is not following along: the stack flattens
                     // to one brightness so no row is being pointed at.
                     browsing -> BROWSING_ALPHA
-                    else -> LINE_FALLOFF_ALPHA[step]
+                    else -> falloff[step]
                 },
                 animationSpec = tween(LYRIC_SETTLE_MS, easing = LYRIC_EASING),
                 label = "lyricAlpha",

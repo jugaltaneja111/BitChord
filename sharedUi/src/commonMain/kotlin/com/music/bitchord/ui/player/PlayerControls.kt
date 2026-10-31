@@ -894,6 +894,10 @@ private fun OutputPartyPill(
     onOpenMembers: () -> Unit,
 ) {
     val badge = rememberPartyBadge()
+    val shown by PlayerSettings.showListenTogetherButton.collectAsStateWithLifecycle()
+    // Hidden only outside a party: once in one, this is the way to who's in it.
+    // The output picker stays a tap away on the caption beneath the controls.
+    if (!shown && !badge.inParty) return
     Pill {
         PillSegment(
             icon = Icons.Rounded.Headphones,
