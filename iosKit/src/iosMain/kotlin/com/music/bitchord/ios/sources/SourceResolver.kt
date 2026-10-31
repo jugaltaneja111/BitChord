@@ -589,7 +589,10 @@ internal object SourceResolver {
         target: TrackMatcher.Target,
         wantsLossless: Boolean,
     ): List<Song> {
-        val sameLength = matches.filter { TrackMatcher.withinSeconds(it, target, SAME_RECORDING_SEC) }
+        // The listener's tolerance already decided which runtimes are the same recording; a fixed
+        // three seconds here quietly undid a setting of five.
+        val sameLengthSec = maxOf(SAME_RECORDING_SEC, SourcePrefs.lengthSlackSeconds.value)
+        val sameLength = matches.filter { TrackMatcher.withinSeconds(it, target, sameLengthSec) }
         val eligible = sameLength.ifEmpty { matches }
         if (SourcePrefs.atmosWanted) {
             val immersiveFirst = eligible.sortedByDescending { it.sourceQuality == StreamChecks.DOLBY }
@@ -597,8 +600,16 @@ internal object SourceResolver {
         }
         if (!wantsLossless) return eligible
         // Stable, so the confidence order [TrackMatcher.ranked] produced
-        // survives inside each tier.
-        return eligible.sortedByDescending { it.sourceQuality == StreamChecks.LOSSLESS }
+        // survives inside each tier. Hi-res ahead of CD quality, as the phone ranks them: with one
+        // tier for the two, a 24-bit remaster and a 16-bit album cut of the same song came down to
+        // whichever the catalogue listed first.
+        return eligible.sortedByDescending {
+            when {
+                it.sourceQuality != StreamChecks.LOSSLESS -> 0
+                it.sourceHiRes -> 2
+                else -> 1
+            }
+        }
     }
 
     /**

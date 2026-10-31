@@ -23,6 +23,8 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.HighQuality
@@ -101,6 +103,8 @@ internal data class SongMenuRequest(
     val fromPlaylistId: String? = null,
     val onRemoved: (() -> Unit)? = null,
     val fromPlayer: Boolean = false,
+    /** Opened on the History page: offers "Remove from history" for a row that carries its token. */
+    val fromHistory: Boolean = false,
 )
 
 /** An album, playlist or artist card's menu. [fromPage] leaves off what the page's own header has. */
@@ -387,6 +391,21 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                     }
                 }
             }
+            val historyToken = song.feedbackToken
+            if (request.fromHistory && historyToken != null) {
+                MenuRow(Icons.Rounded.History, tr("Remove from history"), colors) {
+                    leave {
+                        scope.launch {
+                            YtMusicRepository.removeFromHistory(historyToken)
+                                .onSuccess {
+                                    IosPlayerHost.showMessage(tr("Removed from history"))
+                                    request.onRemoved?.invoke()
+                                }
+                                .onFailure { IosPlayerHost.showMessage(tr("Could not remove it from your history")) }
+                        }
+                    }
+                }
+            }
             val current = menu
             val token = if (current?.inLibrary == true) current.removeFromLibraryToken else current?.addToLibraryToken
             if (!menuLoaded || token != null) {
@@ -482,6 +501,11 @@ private fun SleepTimerPicker(colors: MenuColors, onBack: () -> Unit) {
     val chosen by IosSleepTimer.minutes.collectAsState()
     val afterTrack by IosSleepTimer.afterTrack.collectAsState()
     val countdown = sleepTimerCountdown()
+    var custom by remember { mutableStateOf(false) }
+    if (custom) {
+        CustomSleepTimer(colors, onBack = { custom = false }, onStarted = onBack)
+        return
+    }
     Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Back"), tint = colors.text)
@@ -514,11 +538,79 @@ private fun SleepTimerPicker(colors: MenuColors, onBack: () -> Unit) {
             onBack()
         }
     }
+    val customRunning = chosen?.takeIf { it !in IosSleepTimer.PRESETS }
+    Row(Modifier.fillMaxWidth().clickable { custom = true }.padding(horizontal = 22.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("Custom"), style = MaterialTheme.typography.bodyLarge, color = colors.text, modifier = Modifier.weight(1f))
+        if (customRunning != null) {
+            Text(sleepLength(customRunning), style = MaterialTheme.typography.bodyMedium, color = colors.secondary)
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Rounded.Check, contentDescription = tr("Running"), tint = colors.accent, modifier = Modifier.size(22.dp))
+        }
+    }
     if (chosen != null || afterTrack) {
         MenuRow(Icons.Rounded.Close, tr("Turn off timer"), colors) {
             IosSleepTimer.cancel()
             onBack()
         }
+    }
+}
+
+/**
+ * The phone's custom sleep timer page: any length from 5 minutes to 12 hours in 5-minute steps,
+ * a large readout over a slider with − and + for one step, then Start.
+ */
+@Composable
+private fun CustomSleepTimer(colors: MenuColors, onBack: () -> Unit, onStarted: () -> Unit) {
+    val running by IosSleepTimer.minutes.collectAsState()
+    var minutes by remember { mutableStateOf(running?.coerceIn(IosSleepTimer.STEP_MINUTES, IosSleepTimer.MAX_MINUTES) ?: 90) }
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Back"), tint = colors.text)
+        }
+        Text(tr("Custom"), style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.weight(1f))
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = colors.divider)
+    Text(
+        sleepLength(minutes),
+        style = MaterialTheme.typography.displaySmall,
+        color = colors.text,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp),
+    )
+    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.IconButton(
+            onClick = { minutes = (minutes - IosSleepTimer.STEP_MINUTES).coerceAtLeast(IosSleepTimer.STEP_MINUTES) },
+            enabled = minutes > IosSleepTimer.STEP_MINUTES,
+        ) { Icon(Icons.Rounded.Remove, contentDescription = tr("Shorter"), tint = colors.text) }
+        androidx.compose.material3.Slider(
+            value = IosSleepTimer.fractionOf(minutes),
+            onValueChange = { minutes = IosSleepTimer.minutesAt(it) },
+            colors = androidx.compose.material3.SliderDefaults.colors(
+                thumbColor = colors.text,
+                activeTrackColor = colors.accent,
+                inactiveTrackColor = colors.divider,
+            ),
+            modifier = Modifier.weight(1f),
+        )
+        androidx.compose.material3.IconButton(
+            onClick = { minutes = (minutes + IosSleepTimer.STEP_MINUTES).coerceAtMost(IosSleepTimer.MAX_MINUTES) },
+            enabled = minutes < IosSleepTimer.MAX_MINUTES,
+        ) { Icon(Icons.Rounded.Add, contentDescription = tr("Longer"), tint = colors.text) }
+    }
+    MenuRow(Icons.Rounded.Bedtime, tr("Start sleep timer"), colors) {
+        IosSleepTimer.start(minutes)
+        onStarted()
+    }
+}
+
+/** "1 h 30 min", "45 min": a sleep timer length. */
+private fun sleepLength(minutes: Int): String {
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h == 0 -> tr("{0} min", m)
+        m == 0 -> tr("{0} h", h)
+        else -> tr("{0} h {1} min", h, m)
     }
 }
 

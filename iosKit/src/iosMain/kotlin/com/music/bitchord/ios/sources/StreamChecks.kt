@@ -157,7 +157,7 @@ internal object SourcePrefs {
     val atmosWanted: Boolean get() = DeviceCodecs.playsDolbyAtmos && _dolbyAtmos.value
 
     private const val KEY_LENGTH_SLACK = "bitchord.sources.upgrade_length_slack_seconds"
-    const val DEFAULT_LENGTH_SLACK_SECONDS = 3
+    const val DEFAULT_LENGTH_SLACK_SECONDS = 5
     const val MIN_LENGTH_SLACK_SECONDS = 0
     const val MAX_LENGTH_SLACK_SECONDS = 10
 

@@ -697,8 +697,27 @@ object InnertubeParser {
             // art where a catalogue track has square album cover art.
             isVideo = rowType == "video" || thumbnails.isNotSquare(),
             isExplicit = renderer.hasExplicitBadge(),
+            // The "Remove from history" token from the row's menu, on a history row.
+            feedbackToken = extractFeedbackToken(renderer),
         )
     }
+
+    /**
+     * The "Remove from history" feedback token on a history row's menu, or
+     * null. The same plain menu items also carry other feedback actions —
+     * "Don't recommend this", for one — so only the item wearing the DELETE
+     * icon is taken; sending a stranger's token would quietly do something
+     * else to the account.
+     */
+    private fun extractFeedbackToken(renderer: JsonObject): String? =
+        renderer.o("menu")
+            ?.o("menuRenderer")
+            ?.a("items")
+            ?.firstNotNullOfOrNull { item ->
+                val service = item.o("menuServiceItemRenderer") ?: return@firstNotNullOfOrNull null
+                if (service.o("icon")?.s("iconType") != "DELETE") return@firstNotNullOfOrNull null
+                service.o("serviceEndpoint")?.o("feedbackEndpoint")?.s("feedbackToken")
+            }
 
     /**
      * The promoted result at the top of an unfiltered search is a
@@ -779,6 +798,12 @@ object InnertubeParser {
         val browseId = endpoint.s("browseId") ?: return null
         val pageType = endpoint.o("browseEndpointContextSupportedConfigs")
             .o("browseEndpointContextMusicConfig").s("pageType").orEmpty()
+        // An upload YouTube never matched to the catalogue, billed as an
+        // "Episode" and opening an `MPED…` page. Signed out it is often what a
+        // big song's own title promotes — "tum hi ho", "o maahi" — while the
+        // real track sits in the rows below, so it doesn't get the top slot.
+        // Read off the page type rather than the word, which is translated.
+        if ("NON_MUSIC_AUDIO_TRACK" in pageType) return null
         val title = renderer.o("title").runs()
         if (title.isBlank()) return null
         val subtitle = renderer.o("subtitle").runs()

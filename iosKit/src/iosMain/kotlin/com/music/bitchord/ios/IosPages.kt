@@ -781,7 +781,14 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
                                 index,
                             )
                         },
-                        onLongPress = { IosMenus.song = SongMenuRequest(song) },
+                        onLongPress = {
+                            IosMenus.song = SongMenuRequest(
+                                song,
+                                fromHistory = true,
+                                // The row goes at once; the next visit reads the account afresh.
+                                onRemoved = { state = UiState.Success(songs.filterIndexed { i, _ -> i != index }) },
+                            )
+                        },
                         onSwipeToQueue = { IosPlayer.swipe(song) },
                         isCurrent = isCurrent,
                         isPlaying = isCurrent && isPlaying,

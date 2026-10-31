@@ -135,6 +135,12 @@ data class Song(
     val playbackSourceType: PlaybackSourceType? = null,
     /** Browse id for an album, playlist, or other source page. */
     val playbackSourceId: String? = null,
+    /**
+     * Feedback token extracted from the watch-queue row's menu — used to remove
+     * this entry from the account's listening history on YouTube Music. Null on
+     * non-history rows (e.g. search results, library).
+     */
+    val feedbackToken: String? = null,
 ) {
     /** Legacy derived property: true if and only if [queueTier] is [QueueTier.AUTOPLAY]. */
     val fromAutoplay: Boolean get() = queueTier == QueueTier.AUTOPLAY

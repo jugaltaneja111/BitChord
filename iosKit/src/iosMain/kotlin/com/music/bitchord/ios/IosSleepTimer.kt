@@ -18,6 +18,22 @@ import kotlin.time.TimeSource
 internal object IosSleepTimer {
     val PRESETS = listOf(15, 30, 45, 60)
 
+    /** The custom picker moves in steps this size, from one step up to [MAX_MINUTES]. */
+    const val STEP_MINUTES = 5
+
+    /** Longest custom duration: twelve hours, as the phone's. */
+    const val MAX_MINUTES = 720
+
+    /** The custom duration a slider at [fraction] (0..1) of its travel stands for. */
+    fun minutesAt(fraction: Float): Int {
+        val raw = STEP_MINUTES + fraction.coerceIn(0f, 1f) * (MAX_MINUTES - STEP_MINUTES)
+        return kotlin.math.round(raw / STEP_MINUTES).toInt() * STEP_MINUTES
+    }
+
+    /** Where [minutes] sits along the custom slider, the inverse of [minutesAt]. */
+    fun fractionOf(minutes: Int): Float =
+        (minutes - STEP_MINUTES).toFloat() / (MAX_MINUTES - STEP_MINUTES)
+
     private val clock = TimeSource.Monotonic
     private val _deadline = MutableStateFlow<TimeSource.Monotonic.ValueTimeMark?>(null)
     private val _minutes = MutableStateFlow<Int?>(null)

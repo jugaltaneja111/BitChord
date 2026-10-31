@@ -68,6 +68,21 @@ object LocaleTags {
         }
     }
 
+    /**
+     * The `gl` a search is ranked for, or null to send none.
+     *
+     * Not [ytGl]: that is a guess from the language alone, so every listener
+     * not reading Chinese was ranked as if in the US — "sahiba" and "ishq" put
+     * a different song first than music.youtube.com did for the same person.
+     * With no `gl` YouTube takes the region from the connection, which is
+     * where the browser's own `GL` comes from. The Chinese tags keep theirs:
+     * there the script is what picks the catalogue.
+     */
+    fun ytSearchGl(appTag: String): String? = when (normalizeAppTag(appTag)) {
+        ZH_HANT, ZH_HANS -> ytGl(appTag)
+        else -> null
+    }
+
     fun acceptLanguage(appTag: String): String {
         return when (normalizeAppTag(appTag)) {
             ZH_HANT -> "zh-TW,zh-Hant;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6"

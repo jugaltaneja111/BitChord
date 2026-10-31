@@ -149,6 +149,11 @@ object YtMusicRepository {
      */
     suspend fun history(): Result<List<Song>> = call("history") { fetchHistory() }
 
+    /** Removes a track from the account's listening history via its feedback token. */
+    suspend fun removeFromHistory(token: String): Result<Unit> = call("removeFromHistory") {
+        Innertube.sendFeedback(token)
+    }
+
     /** Account listening history for the Recents feed. */
     suspend fun recents(): Result<List<Song>> = call("recents") {
         if (Innertube.cookie != null) {

@@ -78,6 +78,10 @@ object Innertube {
             com.music.bitchord.data.systemRegion(),
         )
 
+    /** [currentRegion] for search, where null lets YouTube place us — see [LocaleTags.ytSearchGl]. */
+    private val searchRegion: String?
+        get() = com.music.bitchord.data.LocaleTags.ytSearchGl(currentLocaleTag)
+
     private val acceptLanguageHeader: String
         get() = com.music.bitchord.data.LocaleTags.acceptLanguage(currentLocaleTag)
 
@@ -610,12 +614,12 @@ object Innertube {
 
     suspend fun search(query: String, params: String? = null, anonymous: Boolean = true): JsonObject =
         if (anonymous) {
-            postMusicAnonymous("search") {
+            postMusicAnonymous("search", region = searchRegion) {
                 put("query", query)
                 params?.let { put("params", it) }
             }
         } else {
-            postMusic("search") {
+            postMusic("search", region = searchRegion) {
                 put("query", query)
                 params?.let { put("params", it) }
             }
@@ -625,6 +629,7 @@ object Innertube {
     suspend fun searchContinuation(token: String): JsonObject = postMusic(
         endpoint = "search",
         query = mapOf("ctoken" to token, "continuation" to token, "type" to "next"),
+        region = searchRegion,
     ) {
         put("continuation", token)
     }
@@ -639,7 +644,7 @@ object Innertube {
      * it affordable per keystroke where a search is not.
      */
     suspend fun searchSuggestions(input: String): JsonObject =
-        postMusic("music/get_search_suggestions") {
+        postMusic("music/get_search_suggestions", region = searchRegion) {
             put("input", input)
         }
 
@@ -655,7 +660,7 @@ object Innertube {
      * land as anonymous lookups that don't touch the user's account history.
      */
     suspend fun searchTypeahead(query: String): JsonObject =
-        postMusicAnonymous("search") {
+        postMusicAnonymous("search", region = searchRegion) {
             put("query", query)
         }
 
@@ -1096,6 +1101,8 @@ object Innertube {
     private suspend fun postMusic(
         endpoint: String,
         query: Map<String, String> = emptyMap(),
+        /** The context's `gl`; null sends none. */
+        region: String? = currentRegion,
         bodyExtras: JsonObjectBuilder.() -> Unit,
     ): JsonObject {
         // This is the common authenticated request path: Home, Library,
@@ -1137,7 +1144,7 @@ object Innertube {
                                 put("clientName", "WEB_REMIX")
                                 put("clientVersion", clientVersion)
                                 put("hl", currentLanguage)
-                                put("gl", currentRegion)
+                                region?.let { put("gl", it) }
                                 visitorData?.let { put("visitorData", it) }
                             }
                             putJsonObject("user") {
@@ -1173,6 +1180,8 @@ object Innertube {
      */
     private suspend fun postMusicAnonymous(
         endpoint: String,
+        /** The context's `gl`; null sends none. */
+        region: String? = currentRegion,
         bodyExtras: JsonObjectBuilder.() -> Unit,
     ): JsonObject {
         val clientVersion = webRemixVersion
@@ -1196,7 +1205,7 @@ object Innertube {
                                 put("clientName", "WEB_REMIX")
                                 put("clientVersion", clientVersion)
                                 put("hl", currentLanguage)
-                                put("gl", currentRegion)
+                                region?.let { put("gl", it) }
                                 visitorData?.let { put("visitorData", it) }
                             }
                             putJsonObject("user") {
