@@ -758,8 +758,20 @@ object YtMusicRepository {
 
     /** The page [SongPage.continuation] points at. */
     suspend fun moreSongs(token: String): Result<SongPage> = call("browse:more") {
-        pageOf(Innertube.browseContinuation(token))
+        pageOf(Innertube.browseContinuation(token), kotlinx.atomicfu.locks.synchronized(showLock) { showByToken[token] })
     }
+
+    /**
+     * The podcast each continuation token pages through — see
+     * [InnertubeParser.podcastShow].
+     *
+     * Kept here rather than handed back with the token, because a token goes
+     * on to places that know nothing about podcasts — the detail page's
+     * fill-in, the playback service's own paging — and each of them only ever
+     * calls [moreSongs] with it.
+     */
+    private val showByToken = HashMap<String, String>()
+    private val showLock = kotlinx.atomicfu.locks.SynchronizedObject()
 
     /**
      * Whether [browseId] is a playlist the account made — see
@@ -775,22 +787,26 @@ object YtMusicRepository {
         InnertubeParser.parsePlaylistOwned(Innertube.browse(browseId))
     }
 
-    private fun pageOf(response: JsonObject): SongPage {
+    /** [show] is the podcast a continuation [response] pages through, if any — see [showByToken]. */
+    private fun pageOf(response: JsonObject, show: String? = null): SongPage {
         val library = InnertubeParser.parseLibraryState(response)
         val header = InnertubeParser.parseBrowseHeader(response)
         // A playlist page is scoped to its own shelf so its "Suggested
         // tracks" never read as songs the user added — see
-        // parsePlaylistShelf. Anything else (album, library, history) has no
-        // such shelf, and falls back to the layout-agnostic walk.
+        // parsePlaylistShelf. Anything else (album, library, history,
+        // podcast) has no such shelf, and falls back to the layout-agnostic walk.
         InnertubeParser.parsePlaylistShelf(response)?.let { shelf ->
             return SongPage(shelf.songs, shelf.continuation, shelf.suggested, library, header = header)
         }
+        val podcast = InnertubeParser.podcastShow(response) ?: show
+        val continuation = InnertubeParser.continuationToken(response)
+        if (podcast != null && continuation != null) kotlinx.atomicfu.locks.synchronized(showLock) { showByToken[continuation] = podcast }
         return SongPage(
             // One response can name the same track twice — an album page that
             // also carries a "you might also like" shelf, say. Collecting into a
             // map used to take care of that; paging by hand means saying so.
-            songs = InnertubeParser.collectSongsDeep(response).distinctBy { it.videoId },
-            continuation = InnertubeParser.continuationToken(response),
+            songs = InnertubeParser.collectSongsDeep(response, podcast).distinctBy { it.videoId },
+            continuation = continuation,
             library = library,
             header = header,
             description = InnertubeParser.parseDescription(response),
@@ -832,12 +848,14 @@ object YtMusicRepository {
             albumPlaylistOf(response, albumRows)?.let { response = it }
         }
         var page = 1
+        // Named by the first page alone; see [InnertubeParser.podcastShow].
+        val show = InnertubeParser.podcastShow(response)
         while (true) {
             // Same shelf-scoping as pageOf: a playlist (Liked Music and the
             // Library Songs auto-playlist included) is read from its own
             // shelf so a trailing "Suggested tracks" shelf never joins in.
             val shelf = InnertubeParser.parsePlaylistShelf(response)
-            (shelf?.songs ?: InnertubeParser.collectSongsDeep(response)).forEach { out[it.videoId] = it }
+            (shelf?.songs ?: InnertubeParser.collectSongsDeep(response, show)).forEach { out[it.videoId] = it }
             val token = shelf?.continuation ?: InnertubeParser.continuationToken(response)
             if (token == null || page++ >= MAX_PAGES) break
             response = runCatching { Innertube.browseContinuation(token) }.getOrNull() ?: break

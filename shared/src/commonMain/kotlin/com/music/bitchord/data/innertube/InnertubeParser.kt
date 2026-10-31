@@ -502,8 +502,12 @@ object InnertubeParser {
      * Walks the whole response collecting any `musicResponsiveListItemRenderer`
      * that carries a videoId. Layout-agnostic, so it survives the differences
      * between playlist, album, library and history pages.
+     *
+     * A podcast page's episodes are a different renderer altogether — see
+     * [parseMultiRowListItem] — and are credited to [show], since they don't
+     * name it themselves; see [podcastShow].
      */
-    fun collectSongsDeep(root: JsonElement): List<Song> {
+    fun collectSongsDeep(root: JsonElement, show: String? = null): List<Song> {
         val out = LinkedHashMap<String, Song>()
         // A release's own rows are credited by its header, not one by one.
         val pageCredit = pageCredit(root)
@@ -514,6 +518,10 @@ object InnertubeParser {
                         parseResponsiveListItem(renderer as? JsonObject, pageCredit)
                             ?.let { out[it.videoId] = it }
                     }
+                    node["musicMultiRowListItemRenderer"]?.let { renderer ->
+                        parseMultiRowListItem(renderer as? JsonObject, show)
+                            ?.let { out[it.videoId] = it }
+                    }
                     node.values.forEach(::walk)
                 }
                 is JsonArray -> node.forEach(::walk)
@@ -522,6 +530,20 @@ object InnertubeParser {
         }
         walk(root)
         return out.values.toList()
+    }
+
+    /**
+     * The show a podcast page lists episodes for, off its own header — or null
+     * on a page that lists no episodes.
+     *
+     * A show names itself once, at the top of its first response. Its episode
+     * rows never repeat it, and a continuation has no header at all, so
+     * whoever pages through a show has to carry this from the first page to
+     * [collectSongsDeep] on every page after.
+     */
+    fun podcastShow(root: JsonElement): String? {
+        if (collectRenderers(root, "musicMultiRowListItemRenderer").isEmpty()) return null
+        return parseBrowseHeader(root)?.title
     }
 
     /** A playlist page's own tracks, the ones YouTube suggests adding, and the token for the rest. */
@@ -695,6 +717,11 @@ object InnertubeParser {
             },
         )
         val creditedArtists = artistNamesFromRuns(subtitleRuns)
+        // A podcast episode is billed to its show — "Episode • Sep 1 • Huberman
+        // Lab" — and the show links to a podcast page, not an artist, so
+        // neither credit reader above finds it and the date stood in instead.
+        val episode = rowType == "episode" || renderer.isPodcastEpisode()
+        val show = if (episode) showNameFromRuns(subtitleRuns) else null
 
         val thumbnails = renderer.o("thumbnail").o("musicThumbnailRenderer")
             .o("thumbnail").a("thumbnails")
@@ -708,6 +735,7 @@ object InnertubeParser {
             // credit at all, so retain the linked and page-level fallbacks.
             artist = creditedArtists
                 ?: credits.artistName?.takeIf { it.isNotBlank() }
+                ?: show
                 ?: artist
                 ?: fallback.artistName
                 ?: "Unknown artist",
@@ -723,8 +751,10 @@ object InnertubeParser {
             setVideoId = renderer.o("playlistItemData").s("playlistSetVideoId"),
             // The row type word is the clean signal when present ("All" tab);
             // otherwise a music-video upload gives itself away with widescreen
-            // art where a catalogue track has square album cover art.
-            isVideo = rowType == "video" || thumbnails.isNotSquare(),
+            // art where a catalogue track has square album cover art. Not an
+            // episode, whose art is a widescreen still too: it is listened to,
+            // and a "video" is dropped from the All tab's results.
+            isVideo = !episode && (rowType == "video" || thumbnails.isNotSquare()),
             isExplicit = renderer.hasExplicitBadge(),
             // The "Remove from history" token from the row's menu, on a history row.
             feedbackToken = extractFeedbackToken(renderer),
@@ -747,6 +777,78 @@ object InnertubeParser {
                 if (service.o("icon")?.s("iconType") != "DELETE") return@firstNotNullOfOrNull null
                 service.o("serviceEndpoint")?.o("feedbackEndpoint")?.s("feedbackToken")
             }
+
+    /**
+     * One podcast episode, as a show page lists them
+     * (`musicMultiRowListItemRenderer`) — the only rows on it, so before this
+     * was read a show opened onto nothing to list and nothing to play.
+     *
+     * Nothing about it is shaped like a track row: the id is on the row's own
+     * tap, title and subtitle are plain fields rather than flex columns, and
+     * the runtime is in its progress bar as "2 hr 43 min". The show is named
+     * only where the row appears away from its own page (`secondTitle`, as on
+     * Explore's "Popular episodes"); on the show page, [show] stands in.
+     *
+     * Never a video, though the art is a widescreen still: an episode is
+     * listened to, and it is played from YouTube's audio like any track.
+     */
+    private fun parseMultiRowListItem(renderer: JsonObject?, show: String?): Song? {
+        if (renderer == null) return null
+        val videoId = renderer.o("onTap").o("watchEndpoint").s("videoId")
+            ?: renderer.o("overlay")
+                .o("musicItemThumbnailOverlayRenderer").o("content")
+                .o("musicPlayButtonRenderer").o("playNavigationEndpoint")
+                .o("watchEndpoint").s("videoId")
+            ?: return null
+        val title = renderer.o("title").runs()
+        if (title.isBlank()) return null
+        return Song(
+            videoId = videoId,
+            title = title,
+            artist = renderer.o("secondTitle").runs().takeIf { it.isNotBlank() }
+                ?: show
+                ?: "Unknown artist",
+            thumbnailUrl = renderer.o("thumbnail").o("musicThumbnailRenderer")
+                .o("thumbnail").a("thumbnails").best(),
+            durationText = episodeRuntime(
+                renderer.o("playbackProgress").o("musicPlaybackProgressRenderer")
+                    .o("durationText").runs(),
+            ),
+            isExplicit = renderer.hasExplicitBadge(),
+        )
+    }
+
+    /**
+     * "2 hr 43 min" as the "2:43:00" every other row states its runtime in,
+     * which is what [com.music.bitchord.data.model.durationMillis] reads.
+     * Null for anything it can't read, such as another language's units.
+     */
+    private fun episodeRuntime(text: String): String? {
+        var seconds = 0L
+        RUNTIME_PART.findAll(text).forEach { part ->
+            val count = part.groupValues[1].toLong()
+            seconds += when (part.groupValues[2].lowercase().first()) {
+                'h' -> count * 3_600
+                'm' -> count * 60
+                else -> count
+            }
+        }
+        if (seconds == 0L) return null
+        val hours = seconds / 3_600
+        val minutes = seconds % 3_600 / 60
+        val secs = seconds % 60
+        fun two(n: Long) = n.toString().padStart(2, '0')
+        return if (hours > 0) "$hours:${two(minutes)}:${two(secs)}" else "$minutes:${two(secs)}"
+    }
+
+    /** The show an episode row's subtitle links to, by the page type that link opens. */
+    private fun showNameFromRuns(runs: List<JsonElement>): String? =
+        runs.firstOrNull { run ->
+            run.o("navigationEndpoint").o("browseEndpoint")
+                .o("browseEndpointContextSupportedConfigs")
+                .o("browseEndpointContextMusicConfig").s("pageType")
+                .orEmpty().contains("PODCAST_SHOW")
+        }?.s("text")?.trim()?.takeIf { it.isNotBlank() }
 
     /**
      * The promoted result at the top of an unfiltered search is a
@@ -1496,6 +1598,8 @@ object InnertubeParser {
         }
 
     private val DURATION = Regex("""\d+:\d{2}""")
+    /** One unit of an episode's runtime — "2 hr", "43 min", "10 sec". */
+    private val RUNTIME_PART = Regex("""(\d+)\s*(hours?|hr|min|sec)""", RegexOption.IGNORE_CASE)
     private val YEAR = Regex("""\d{4}""")
     /**
      * A counted quantity rather than a name — "12.4M plays", "13 songs",
@@ -1551,6 +1655,22 @@ private fun JsonElement?.findString(key: String): String? = when (this) {
     is JsonArray -> firstNotNullOfOrNull { it.findString(key) }
     else -> null
 }
+
+/** Whether [key] appears as an object key anywhere in the subtree. */
+private fun JsonElement?.hasKey(key: String): Boolean = when (this) {
+    is JsonObject -> containsKey(key) || values.any { it.hasKey(key) }
+    is JsonArray -> any { it.hasKey(key) }
+    else -> false
+}
+
+/** Whether a row plays a podcast episode, by the type its play action states. */
+private fun JsonObject.isPodcastEpisode(): Boolean =
+    findString("musicVideoType") == "MUSIC_VIDEO_TYPE_PODCAST_EPISODE"
+
+/** Whether a track row is one of the signed-in user's own uploads. */
+private fun JsonObject.isPrivateUpload(): Boolean =
+    hasKey("musicDeletePrivatelyOwnedEntityCommand") ||
+        findString("musicVideoType")?.contains("PRIVATELY_OWNED", ignoreCase = true) == true
 
 private fun JsonElement?.runs(): String =
     this.a("runs")?.joinToString("") { it.s("text").orEmpty() }.orEmpty()
