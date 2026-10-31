@@ -141,6 +141,21 @@ fun HomeScreen(
     leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
+    /**
+     * The "Top Picks for You" row above Recents. Null while it has not been
+     * built yet, empty when there is nothing to pick from. The row is only
+     * drawn by a caller that can act on it, i.e. passes [onTopPickClick].
+     */
+    topPicks: List<com.music.bitchord.data.model.TopPick>? = null,
+    topPicksLoading: Boolean = false,
+    /** The signed-in account's name, for the personal station's "Name's Station". */
+    listenerName: String? = null,
+    onTopPickClick: ((com.music.bitchord.data.model.TopPick, String) -> Unit)? = null,
+    onTopPickLongPress: ((com.music.bitchord.data.model.TopPick) -> Unit)? = null,
+    /** A Find Your Mood tile, and its name. The shelf is only drawn when this is set. */
+    onMoodClick: ((com.music.bitchord.data.model.TopPickMood, String) -> Unit)? = null,
+    /** Find Your Mood's Show all: every mood and activity. */
+    onMoodsShowAll: () -> Unit = {},
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
 
@@ -172,6 +187,19 @@ fun HomeScreen(
                     SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
                 }
             }
+            if (onTopPickClick != null) {
+                when {
+                    !topPicks.isNullOrEmpty() -> item(key = "top-picks") {
+                        TopPicksShelf(
+                            picks = topPicks,
+                            listenerName = listenerName,
+                            onClick = onTopPickClick,
+                            onLongPress = onTopPickLongPress,
+                        )
+                    }
+                    topPicks == null && topPicksLoading -> topPicksSkeleton()
+                }
+            }
             when (state) {
                 is UiState.Loading -> {
                     if (recentlyPlayedLoading) {
@@ -201,6 +229,8 @@ fun HomeScreen(
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         firstIsHero = leadHero && !recentlyPlayedLoading,
+                        onMoodClick = onMoodClick,
+                        onMoodsShowAll = onMoodsShowAll,
                         recentsViewType = recentsViewType,
                         onRecentsViewTypeToggle = {
                             AppUi.host.setHomeRecentsViewType(
@@ -251,8 +281,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
     firstIsHero: Boolean = true,
     recentsViewType: LibraryViewType,
     onRecentsViewTypeToggle: () -> Unit,
+    onMoodClick: ((com.music.bitchord.data.model.TopPickMood, String) -> Unit)? = null,
+    onMoodsShowAll: () -> Unit = {},
 ) {
     shelves.forEachIndexed { index, shelf ->
+        // Find Your Mood follows the lead shelf, as on Apple Music's Home.
+        if (index == 1 && onMoodClick != null) {
+            item(key = "find-your-mood") { FindYourMoodShelf(onMoodClick, onMoodsShowAll) }
+        }
         item(key = shelf.title + index) {
             val openItem: (ShelfItem) -> Unit = { item -> onItemClick(item, shelf.title) }
             if (index == 0 && shelf.title.equals(RECENTS_TITLE, ignoreCase = true)) {

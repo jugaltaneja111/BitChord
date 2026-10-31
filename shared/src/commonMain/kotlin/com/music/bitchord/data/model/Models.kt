@@ -613,6 +613,10 @@ data class ArtistPage(
     val monthlyListenerCount: String? = null,
     /** The header's subscribe button, when the page carries one. */
     val subscription: SubscriptionState? = null,
+    /** The header's Mix button: the artist's radio, them and the artists around them. */
+    val radio: WatchTarget? = null,
+    /** The header's Shuffle button: the artist's own catalogue, shuffled. */
+    val shuffle: WatchTarget? = null,
 )
 
 /**

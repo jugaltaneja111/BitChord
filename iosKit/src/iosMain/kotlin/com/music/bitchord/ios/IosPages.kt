@@ -132,6 +132,7 @@ internal fun IosPageHost(
             is IosPage.LibraryShelf -> LibraryShelfPage(page, navigator, contentPadding, topInset)
             is IosPage.Replay -> ReplayPage(page, navigator, contentPadding, topInset)
             IosPage.History -> HistoryPage(contentPadding, underBack)
+            IosPage.Moods -> MoodsPage(navigator, contentPadding, underBack)
             IosPage.Downloads -> DownloadsPage(contentPadding, underBack)
             IosPage.LocalMusic -> LocalMusicPage(navigator, contentPadding, underBack)
             IosPage.WebDavMusic -> LocalMusicPage(navigator, contentPadding, underBack, webdav = true)
@@ -798,6 +799,24 @@ private fun HistoryPage(contentPadding: PaddingValues, topPadding: Dp) {
                 }
             }
         }
+    }
+}
+
+/** Find Your Mood's Show all: every mood and activity as a grid, Apple's seven first. */
+@Composable
+private fun MoodsPage(navigator: IosNavigator, contentPadding: PaddingValues, topPadding: Dp) {
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            tr("Find Your Mood"),
+            style = MaterialTheme.typography.displayLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = topPadding, bottom = 8.dp),
+        )
+        com.music.bitchord.ui.screens.MoodGridPage(
+            gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+            onClick = { mood, title -> IosTopPicks.playMood(mood, title, navigator) },
+            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp),
+        )
     }
 }
 

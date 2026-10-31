@@ -605,6 +605,15 @@ object Innertube {
         put("isAudioOnly", true)
     }
 
+    /** A watch queue: a mix, a playlist radio, or an artist's Mix/Shuffle with its seed and params. */
+    suspend fun nextPlaylist(playlistId: String, videoId: String? = null, params: String? = null): JsonObject =
+        postMusic("next") {
+            videoId?.let { put("videoId", it) }
+            put("playlistId", playlistId)
+            params?.let { put("params", it) }
+            put("isAudioOnly", true)
+        }
+
     /** Timed caption transcript used as a last-resort lyrics source. */
     suspend fun transcript(videoId: String): JsonObject = postMusic("get_transcript") {
         // get_transcript expects a tiny protobuf: field 1, length, video id.

@@ -102,7 +102,7 @@ private fun SkeletonLine(fraction: Float, height: Dp, modifier: Modifier = Modif
  * come back without a subtitle, and guessing wrong shifts everything under it.
  */
 @Composable
-private fun SectionHeaderSkeleton(index: Int = 0) {
+internal fun SectionHeaderSkeleton(index: Int = 0) {
     Column(Modifier.padding(horizontal = PAGE_GUTTER, vertical = 10.dp)) {
         SkeletonLine(fraction = TitleWidths[index % TitleWidths.size] * 0.7f, height = 18.dp)
     }

@@ -21,6 +21,7 @@ import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.model.WatchTarget
 import com.music.bitchord.data.model.SongMenu
 import com.music.bitchord.data.model.UserPlaylist
 import com.music.bitchord.data.sources.TrackMatcher
@@ -148,6 +149,48 @@ object YtMusicRepository {
      * whereas this is the page you open when twenty is not enough.
      */
     suspend fun history(): Result<List<Song>> = call("history") { fetchHistory() }
+
+    /**
+     * The account's listening history for Top Picks, kept for a few minutes so the row and
+     * Recents built together cost one request.
+     */
+    suspend fun recentHistory(): Result<List<Song>> = call("history:recent") {
+        if (Innertube.cookie == null) return@call emptyList()
+        val memo = historyMemo
+        val now = com.music.bitchord.data.systemNanoTime() / 1_000_000
+        if (memo != null && memo.cookie == Innertube.cookie && now - memo.at < HISTORY_MEMO_MS) {
+            memo.songs
+        } else {
+            fetchHistory().also { historyMemo = HistoryMemo(Innertube.cookie, now, it) }
+        }
+    }
+
+    private class HistoryMemo(val cookie: String?, val at: Long, val songs: List<Song>)
+    private var historyMemo: HistoryMemo? = null
+    private const val HISTORY_MEMO_MS = 5 * 60_000L
+
+    /** An artist's page as Top Picks reads it: releases, related artists, and the Mix and Shuffle queues. */
+    suspend fun artistLanding(browseId: String): Result<ArtistPage> = call("artistLanding:$browseId") {
+        InnertubeParser.parseArtistPage(Innertube.browse(browseId))
+    }
+
+    /** The queue behind a station card. */
+    suspend fun watchQueue(target: WatchTarget): Result<List<Song>> = call("watch:${target.playlistId}") {
+        InnertubeParser.parseWatchQueue(
+            Innertube.nextPlaylist(target.playlistId, target.videoId, target.params),
+        ).filterNot { it.isVideo }
+    }
+
+    /** The cards of the Mixed for you page: My Supermix, Discover Mix, New Release Mix, … */
+    suspend fun mixedForYou(): Result<List<ShelfItem>> = call("mixedForYou") {
+        if (Innertube.cookie == null) return@call emptyList()
+        InnertubeParser.parseTwoRowItemsDeep(Innertube.browse("FEmusic_mixed_for_you"))
+    }
+
+    /** A playlist played as a queue, for a mood station. */
+    suspend fun playlistAsAudio(playlistId: String): Result<List<Song>> = call("watchAudio:$playlistId") {
+        InnertubeParser.parseWatchQueue(Innertube.nextPlaylist(playlistId))
+    }
 
     /** Removes a track from the account's listening history via its feedback token. */
     suspend fun removeFromHistory(token: String): Result<Unit> = call("removeFromHistory") {

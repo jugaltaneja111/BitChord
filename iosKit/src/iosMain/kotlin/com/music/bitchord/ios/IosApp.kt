@@ -330,6 +330,9 @@ private fun HomePage(
     val loadingMore by feeds.homeLoadingMore.collectAsState()
     val signedIn by IosAccount.signedIn.collectAsState()
     val recentsLoading by feeds.recentsLoading.collectAsState()
+    val topPicks by IosTopPicks.picks.collectAsState()
+    val topPicksLoading by IosTopPicks.loading.collectAsState()
+    val account by IosAccount.account.collectAsState()
     HomeScreen(
         state = state,
         listState = rememberLazyListState(),
@@ -348,6 +351,12 @@ private fun HomePage(
         recentlyPlayedLoading = recentsLoading,
         currentSong = song,
         isPlaying = isPlaying,
+        topPicks = topPicks,
+        topPicksLoading = topPicksLoading,
+        listenerName = account?.name?.substringBefore(' '),
+        onTopPickClick = { pick, label -> IosTopPicks.open(pick, label, navigator) },
+        onMoodClick = { mood, title -> IosTopPicks.playMood(mood, title, navigator) },
+        onMoodsShowAll = { navigator.open(IosPage.Moods) },
     )
 }
 

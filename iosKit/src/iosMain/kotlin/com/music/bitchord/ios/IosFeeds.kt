@@ -88,6 +88,8 @@ internal class IosFeeds {
                     if (current != generation) return@onSuccess
                     continuation = feed.continuation
                     publish(feed.shelves)
+                    // Top Picks reads the Mixed for you shelf off the feed when it is there.
+                    IosTopPicks.refresh(feed.shelves)
                     if (_home.value is UiState.Loading) _home.value = UiState.Error(tr("Home is empty right now"))
                 }
                 .onFailure {

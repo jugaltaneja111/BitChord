@@ -26,6 +26,8 @@ internal sealed interface IosPage {
     /** Replay, scrolled to the chart [landing] names. */
     data class Replay(val landing: ReplayStoryPage = ReplayStoryPage.INTRO) : IosPage
     data object History : IosPage
+    /** Find Your Mood's Show all: every mood and activity. */
+    data object Moods : IosPage
     /** The tracks kept on the phone. */
     data object Downloads : IosPage
     /** The listener's own audio files, from BitChord's folder in Files and the folder picked in Settings. */

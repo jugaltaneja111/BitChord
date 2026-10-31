@@ -945,3 +945,6 @@ fun PillTextField(
         )
     }
 }
+
+/** The least time between two frames of a looping card animation: a calm rate that leaves the scroll its frames. */
+const val MOTION_FRAME_GAP_MS = 25L

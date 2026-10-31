@@ -32,6 +32,12 @@ interface AppUiHost {
     /** Video ids of the tracks already downloaded, for the mark on their rows. */
     @Composable
     fun downloadedIds(): Set<String>
+
+    /** A release's Apple Music motion cover, for a Top Picks card; null where there is none. */
+    suspend fun releaseMotion(album: String, artist: String): com.music.bitchord.data.canvas.CanvasArtwork? = null
+
+    /** An artist's own Apple Music clip, for the Top Picks cards that show their face. */
+    suspend fun artistMotion(browseId: String, artistName: String): com.music.bitchord.data.canvas.CanvasArtwork? = null
 }
 
 object AppUi {

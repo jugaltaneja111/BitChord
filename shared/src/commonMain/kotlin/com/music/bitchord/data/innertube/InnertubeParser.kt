@@ -6,6 +6,8 @@ import com.music.bitchord.data.model.AccountChannel
 import com.music.bitchord.data.model.ArtistNameIndex
 import com.music.bitchord.data.model.ArtistPage
 import com.music.bitchord.data.model.ArtistRef
+import com.music.bitchord.data.model.WatchTarget
+import io.ktor.http.decodeURLQueryComponent
 import com.music.bitchord.data.model.completeArtistCredits
 import com.music.bitchord.data.model.BrowseItem
 import com.music.bitchord.data.model.BrowseType
@@ -377,9 +379,36 @@ object InnertubeParser {
             subscriberCountText = subscriberCount(header),
             monthlyListenerCount = monthlyListeners(header),
             subscription = subscription(header),
+            radio = headerWatchTarget(header, "startRadioButton"),
+            shuffle = headerWatchTarget(header, "playButton"),
         )
     }
 
+    /**
+     * The queue behind one of the artist header's buttons — `startRadioButton`
+     * is Mix (an `RDEM…` radio), `playButton` is Shuffle (`RDAO…`). Both are a
+     * `watchEndpoint` carrying a seed track and params; the params arrive
+     * percent-encoded and are decoded here, since `next` wants them as base64.
+     */
+    private fun headerWatchTarget(header: JsonElement?, button: String): WatchTarget? {
+        val endpoint = header.o("musicImmersiveHeaderRenderer").o(button)
+            .o("buttonRenderer").o("navigationEndpoint").o("watchEndpoint")
+            ?: return null
+        val playlistId = endpoint.s("playlistId") ?: return null
+        return WatchTarget(
+            playlistId = playlistId,
+            videoId = endpoint.s("videoId"),
+            params = endpoint.s("params")?.let { runCatching { it.decodeURLQueryComponent() }.getOrDefault(it) },
+        )
+    }
+
+    /**
+     * Every card on a page of two-row items, wherever it sits — a carousel on
+     * Home, a grid on a "More" page such as Mixed for you. Used where the
+     * caller wants the cards and not the shelves they came in.
+     */
+    fun parseTwoRowItemsDeep(root: JsonElement): List<ShelfItem> =
+        collectRenderers(root, "musicTwoRowItemRenderer").mapNotNull(::parseTwoRowItem)
     /**
      * The header's subscribe button, as state rather than as a label — see
      * [SubscriptionState].
