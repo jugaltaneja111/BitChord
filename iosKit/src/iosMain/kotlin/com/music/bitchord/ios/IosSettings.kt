@@ -727,6 +727,10 @@ internal fun SettingsPage(
                     IosPlayerHost.showMessage(tr("Playback log copied"))
                 }
                 Divider()
+                // Phase 0 of the music-video design: H.264 coverage and 1080p stalls, on this phone.
+                val videoCheck by IosMusicVideoCheck.progress.collectAsState()
+                ActionRow(tr("Music video check"), value = videoCheck ?: tr("Run")) { IosMusicVideoCheck.run() }
+                Divider()
                 Toggle(
                     tr("Smart audio alignment"),
                     tr("Analyze audio waveforms to match the exact corresponding playback moment"),

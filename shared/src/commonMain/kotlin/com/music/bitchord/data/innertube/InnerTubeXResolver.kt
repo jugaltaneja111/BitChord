@@ -34,6 +34,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
 
 /** YouTube stream extraction through InnerTubeX's live-benchmarked client catalog and cipher tiers. */
@@ -252,6 +256,129 @@ object InnerTubeXResolver {
         return extracted
     }
 
+    /** A music video's picture: a video-only stream, and the identity its fetch has to wear. */
+    class VideoStream(
+        val videoId: String,
+        val url: String,
+        val width: Int,
+        val height: Int,
+        val mimeType: String,
+        /** The RFC 6381 codec string, e.g. `avc1.640028`; what iOS checks it can decode. */
+        val codecs: String,
+        val headers: Map<String, String>,
+        /** Every height this video is offered at, largest first: what a quality picker lists. */
+        val heights: List<Int>,
+        /** InnerTubeX's catalog id for the client that minted [url]; what a refusal skips. */
+        val profileId: String,
+        /** Clients asked and passed over because their stream was in a codec not wanted. */
+        val codecRejected: List<String> = emptyList(),
+    ) {
+        val aspect: Float get() = if (height > 0) width.toFloat() / height else 0f
+    }
+
+    /**
+     * The picture for [videoId], at most [maxHeight] tall, for a player that shows it over
+     * its own audio (as upstream's MusicVideoEngine and the web videoDeck do). The audio
+     * this resolves alongside is ignored.
+     *
+     * InnerTubeX can't be asked for a codec, and ranks VP9 the same as H.264; AVPlayer
+     * plays only H.264 progressive video. With [requireCodecPrefix] set, a stream in any
+     * other codec passes that client over for this call only and asks the next, up to
+     * [budget] asks. Nothing is remembered here, and the shared exclusions audio uses are
+     * read but never written: a picture's trouble must not cost the song its client.
+     *
+     * @param skipClients profiles refused for this picture already (the caller remembers them).
+     * @return null when no client gave a video-only stream in a wanted codec.
+     */
+    suspend fun extractVideo(
+        videoId: String,
+        maxHeight: Int,
+        skipClients: Set<String> = emptySet(),
+        ageRestricted: Boolean = false,
+        requireCodecPrefix: String? = null,
+        budget: Int = VIDEO_CLIENT_BUDGET,
+    ): VideoStream? {
+        val skip = skipClients.toMutableSet()
+        val rejected = ArrayList<String>()
+        repeat(budget) {
+            val stream = extractVideoOnce(videoId, maxHeight, skip, ageRestricted) ?: return null
+            if (requireCodecPrefix == null || stream.codecs.startsWith(requireCodecPrefix)) {
+                return if (rejected.isEmpty()) stream else VideoStream(
+                    stream.videoId, stream.url, stream.width, stream.height, stream.mimeType, stream.codecs,
+                    stream.headers, stream.heights, stream.profileId, rejected.toList(),
+                )
+            }
+            TrackLog.d(TAG, "video: ${stream.profileId} offered ${stream.codecs.ifBlank { "?" }}, not $requireCodecPrefix; asking another client", about = videoId)
+            rejected += "${stream.profileId}:${stream.codecs}"
+            skip += stream.profileId
+        }
+        return null
+    }
+
+    private suspend fun extractVideoOnce(
+        videoId: String,
+        maxHeight: Int,
+        skipClients: Set<String>,
+        ageRestricted: Boolean,
+    ): VideoStream? {
+        innerTube.cookie = Innertube.cookie
+        innerTube.visitorData = Innertube.ensureVisitorData()
+        innerTube.locale = YouTubeLocale(gl = Innertube.currentRegion, hl = Innertube.currentLanguage)
+        val stream = extractor.extract(
+            videoId = videoId,
+            hints = ContentHints(
+                isAgeRestricted = true.takeIf { ageRestricted },
+                wantVideo = true,
+                maxVideoHeight = maxHeight,
+            ).withStreamCapabilities(allowHls = false, allowSabr = false, allowBoundedRange = true),
+            excludedClients = excludedFor(videoId) + skipClients,
+            audioQuality = AudioQuality.LOW,
+            clientPlaybackNonce = generateClientPlaybackNonce(),
+        ) ?: return null
+        // A live broadcast's video-only URL is a window that ends in seconds; no picture beats a frozen one.
+        val url = stream.videoUrl?.takeUnless(::isLiveUrl) ?: return null
+        val width = stream.videoWidth ?: 0
+        val height = stream.videoHeight ?: 0
+        val mime = stream.videoMimeType.orEmpty()
+        val codecs = stream.videoCodecs.orEmpty()
+        TrackLog.d(
+            TAG,
+            "video: ${width}x$height $mime $codecs via ${stream.profileId}" + if (ageRestricted) " (age-restricted)" else "",
+            about = videoId,
+        )
+        return VideoStream(
+            videoId = videoId,
+            url = url,
+            width = width,
+            height = height,
+            mimeType = mime,
+            codecs = codecs,
+            headers = stream.headers,
+            heights = (stream.availableVideoHeights.orEmpty() + height).filter { it > 0 }.distinct().sortedDescending(),
+            profileId = stream.profileId,
+        )
+    }
+
+    /** A live window's URL (`live=1` or `source=yt_live_broadcast`), as upstream's StreamResolver.isLiveUrl. */
+    private fun isLiveUrl(url: String): Boolean {
+        val query = url.substringAfter('?', "").split('&')
+        return "live=1" in query || "source=yt_live_broadcast" in query
+    }
+
+    /**
+     * A picture's URL was refused mid-playback: the same signal [onRefused] acts on for
+     * audio, minus the exclusion. The picture keeps its own, so a video-only refusal
+     * doesn't bench a client the audio is fine on.
+     */
+    fun onVideoRefused() {
+        scope.launch { runCatching { cipherService.refreshAfterStreamRejection() } }
+    }
+
+    private val _sessionGeneration = MutableStateFlow(0)
+
+    /** Bumped on every sign-in and sign-out, so "no picture here" verdicts kept elsewhere can tell they are stale. */
+    val sessionGeneration: StateFlow<Int> = _sessionGeneration.asStateFlow()
+
     /** Headers the media fetch for [url] must carry, when InnerTubeX minted it. */
     fun headersFor(url: String): Map<String, String>? = synchronized(lock) { minted[url]?.headers }
 
@@ -281,6 +408,7 @@ object InnerTubeXResolver {
         }
         // A new cookie or visitor means a new player config and PoToken binding.
         if (prefs != null) warm(0)
+        _sessionGeneration.update { it + 1 }
     }
 
     private fun excludedFor(videoId: String): Set<String> {
@@ -295,6 +423,8 @@ object InnerTubeXResolver {
     private const val PLAYER_CONFIG_URL =
         "https://raw.githubusercontent.com/ZemerTeam/zemer-cipher/master/library/src/main/assets/player_configs.json"
     private const val LOW_KBPS = 64
+    /** Clients a picture may ask before giving up: upstream's MAX_REFUSED_CLIENTS. */
+    const val VIDEO_CLIENT_BUDGET = 3
     private const val EXCLUDE_MS = 10 * 60 * 1000L
     private const val MAX_REMEMBERED = 64
     /** Off the cold-start path; the first tap on a track is rarely sooner. */
