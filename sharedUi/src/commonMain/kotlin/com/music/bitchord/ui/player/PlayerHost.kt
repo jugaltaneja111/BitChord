@@ -1,7 +1,10 @@
 package com.music.bitchord.ui.player
 
 import kotlin.concurrent.Volatile
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntSize
@@ -41,6 +44,50 @@ interface PlayerHost {
     /** The looping clip over the cover, decoded however this platform decodes video. */
     @Composable
     fun CanvasVideo(spec: CanvasVideoSpec, modifier: Modifier)
+
+    /**
+     * Whether this platform shows a music video's picture over the playing
+     * audio. False keeps every video surface out of the player altogether.
+     */
+    val musicVideoSupported: Boolean get() = false
+
+    /**
+     * The playing music video's picture, fitted into these bounds ([fit]) or
+     * cropped to fill them. Draws nothing until a frame of [videoId] has
+     * landed, reported through [onRenderedChanged], so the caller keeps its
+     * still artwork under it until then. Of several on screen at once, the one
+     * with the highest [priority] gets the picture (Now Playing 1, mini player 0).
+     */
+    @Composable
+    fun MusicVideo(
+        videoId: String,
+        fit: Boolean,
+        onRenderedChanged: (Boolean) -> Unit,
+        modifier: Modifier,
+        priority: Int,
+    ) = Unit
+
+    /** The playing music video's width over its height. */
+    val musicVideoAspect: StateFlow<Float> get() = DefaultVideoAspect
+
+    /** The heights the playing music video offers, and which one is held. */
+    val musicVideoQuality: StateFlow<MusicVideoQualityUi> get() = NoVideoQuality
+
+    /** Holds the picture at [height] from now on, or lets it choose with null. Remembered. */
+    fun setMusicVideoQuality(height: Int?) = Unit
+
+    /**
+     * Whether the playing video has a picture to show: loading it, showing it,
+     * or none (no stream this platform can play, a still cover, a failure, or an
+     * output the picture can't keep up with). None makes the player a song player.
+     */
+    val musicVideoState: StateFlow<MusicVideoState> get() = NoVideoState
+
+    /**
+     * Whether the picture has Fullscreen and Exit buttons. A phone turns its screen for
+     * them; a tablet goes full screen when its window is wider than tall, and has none.
+     */
+    val musicVideoFullscreenButton: Boolean get() = true
 
     /**
      * Artwork for [song], resolving covers that live inside a remote file
@@ -124,6 +171,57 @@ interface PlayerHost {
 }
 
 private val NoCast = MutableStateFlow(CastUi())
+
+private val DefaultVideoAspect = MutableStateFlow(16f / 9f)
+
+private val NoVideoQuality = MutableStateFlow(MusicVideoQualityUi())
+
+private val NoVideoState = MutableStateFlow(MusicVideoState.None)
+
+/** See [PlayerHost.musicVideoState]. */
+enum class MusicVideoState { Loading, Showing, None }
+
+/** What the video quality box draws — the web player's VideoQuality, by the same rules. */
+data class MusicVideoQualityUi(
+    /** Every height the loaded video offers, largest first. */
+    val heights: List<Int> = emptyList(),
+    /** The listener's pick, or null for Auto. */
+    val held: Int? = null,
+    /** The height actually on screen. */
+    val activeHeight: Int? = null,
+)
+
+/** How a height is named on screen: the marketing name where there is one, the height otherwise. */
+internal fun videoQualityLabel(height: Int): String = when {
+    height >= 4320 -> "8K"
+    height >= 2160 -> "4K"
+    height >= 1440 -> "2K"
+    height >= 1080 -> "FullHD"
+    height >= 720 -> "HD"
+    else -> "${height}p"
+}
+
+/** Whether [song]'s picture can be shown here: a music video, on a platform that plays one, with a picture. */
+@Composable
+internal fun showsMusicVideo(song: Song): Boolean {
+    if (!song.isVideo || !PlayerPlatform.host.musicVideoSupported) return false
+    val state by PlayerPlatform.host.musicVideoState.collectAsState()
+    return state != MusicVideoState.None
+}
+
+/** A track's artwork box: [base] square, or a music video's 16:9 at the same height. */
+internal fun Modifier.trackArtSize(base: androidx.compose.ui.unit.Dp, isVideo: Boolean): Modifier =
+    size(width = if (isVideo) base * (16f / 9f) else base, height = base)
+
+/** @see PlayerHost.MusicVideo */
+@Composable
+internal fun MusicVideoSurface(
+    videoId: String,
+    modifier: Modifier = Modifier,
+    fit: Boolean = true,
+    priority: Int = 1,
+    onRenderedChanged: (Boolean) -> Unit = {},
+) = PlayerPlatform.host.MusicVideo(videoId, fit, onRenderedChanged, modifier, priority)
 
 private val NoWatch = MutableStateFlow(WatchOutputUi())
 

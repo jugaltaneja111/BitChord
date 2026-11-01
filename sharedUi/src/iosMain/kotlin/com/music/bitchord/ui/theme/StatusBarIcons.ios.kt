@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import platform.Foundation.NSNumber
+import platform.Foundation.numberWithBool
 import platform.Foundation.numberWithLong
 import platform.Foundation.setValue
 import platform.UIKit.UIApplication
@@ -50,8 +51,36 @@ private fun applyStatusBarStyle() {
     UIApplication.sharedApplication.setValue(NSNumber.numberWithLong(style), forKey = "statusBarStyle")
 }
 
+/** Screens asking for the status bar to be away (a full-screen music video, the player's own setting). */
+private class HideRequest(var hidden: Boolean)
+
+private val hideRequests = mutableListOf<HideRequest>()
+
+// Hidden while any screen on screen asks; back when the last one leaves. Set through
+// key-value coding on the application, as the style is, since the plist leaves the bar to it.
 @Composable
-actual fun HideStatusBar(hidden: Boolean) = Unit
+actual fun HideStatusBar(hidden: Boolean) {
+    val request = remember { HideRequest(hidden) }
+    DisposableEffect(request) {
+        hideRequests += request
+        applyStatusBarHidden()
+        onDispose {
+            hideRequests -= request
+            applyStatusBarHidden()
+        }
+    }
+    SideEffect {
+        if (request.hidden != hidden) {
+            request.hidden = hidden
+            applyStatusBarHidden()
+        }
+    }
+}
+
+private fun applyStatusBarHidden() {
+    val hidden = hideRequests.any { it.hidden }
+    UIApplication.sharedApplication.setValue(NSNumber.numberWithBool(hidden), forKey = "statusBarHidden")
+}
 
 // The safe area's top inset, which does not change while the bar is shown.
 @Composable

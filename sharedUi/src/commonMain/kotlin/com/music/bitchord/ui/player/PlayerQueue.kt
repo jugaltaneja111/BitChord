@@ -772,8 +772,9 @@ private fun InlineQueueRow(
         AsyncImage(
             model = rememberRemoteArtworkUrl(song),
             contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             modifier = Modifier
-                .size(44.dp)
+                .trackArtSize(44.dp, song.isVideo)
                 .clip(RoundedCornerShape(6.dp))
                 .thumbnailBorder(RoundedCornerShape(6.dp))
                 .background(Color.White.copy(alpha = 0.08f)),

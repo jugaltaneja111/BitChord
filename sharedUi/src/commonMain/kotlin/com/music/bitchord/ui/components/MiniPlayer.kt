@@ -11,6 +11,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
+import com.music.bitchord.ui.player.trackArtSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -412,16 +414,32 @@ fun MiniPlayer(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AsyncImage(
-                model = rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
-                contentDescription = null,
+            // A music video's slot is its own 16:9, with the live picture over the
+            // still while the full player isn't showing it (it claims at priority 0).
+            val video = com.music.bitchord.ui.player.showsMusicVideo(song)
+            Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .trackArtSize(40.dp, video)
                     .playerDockArt(dock, ART_CORNER)
                     .clip(RoundedCornerShape(ART_CORNER))
                     .thumbnailBorder(RoundedCornerShape(ART_CORNER))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
-            )
+            ) {
+                AsyncImage(
+                    model = rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (video) {
+                    com.music.bitchord.ui.player.MusicVideoSurface(
+                        videoId = song.videoId,
+                        fit = false,
+                        priority = 0,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 ExplicitSongTitle(

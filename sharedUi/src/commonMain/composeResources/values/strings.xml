@@ -273,4 +273,6 @@
     <string name="top_pick_new_from">New from %1$s</string>
     <string name="top_pick_your_station">Your Station</string>
     <string name="top_picks_for_you">Top Picks for You</string>
+    <string name="video_quality">Video quality</string>
+    <string name="video_quality_auto">Auto</string>
 </resources>
