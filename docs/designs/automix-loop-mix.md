@@ -1,6 +1,6 @@
 # Design: Automix loop mix and Mix View on iOS (v1.9 B6)
 
-Status: Draft, Overview & Goals only.
+Status: Approved, pending implementation (Phase 1 first). Not yet reviewed (egm-review).
 Branch: `ios-port`. Upstream reference: kushagrasinghx/bitchord at `b690dc14`
 (`refs/upstream/main`), mainly `cd6da981` (loop mix on the phone), `0d442854`
 (Mix View popup), `42650b7b` (tempo ease and late handoff fix), `9a212595` and
