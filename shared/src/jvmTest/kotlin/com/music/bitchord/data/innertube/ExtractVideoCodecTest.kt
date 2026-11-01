@@ -53,4 +53,11 @@ class ExtractVideoCodecTest {
         assertEquals("B", got?.profileId)
         assertEquals(listOf(setOf("A")), asked)
     }
+
+    @Test
+    fun hlsManifestIsTakenWhateverItsCodecField() : Unit = runBlocking {
+        val hls = VideoStream("v", "https://example/m3u8", 0, 0, "application/x-mpegURL", "", emptyMap(), emptyList(), "IOS", isHls = true)
+        val got = InnerTubeXResolver.pickByCodec(emptySet(), "avc1", 3) { hls }
+        assertEquals(true, got?.isHls)
+    }
 }

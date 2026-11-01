@@ -7,6 +7,8 @@ import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.innertube.InnerTubeXResolver
 import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
+import com.metrolist.innertubex.extraction.StreamResolveException
+import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,8 +27,11 @@ import platform.AVFoundation.AVURLAsset
 import platform.AVFoundation.muted
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
+import platform.AVFoundation.presentationSize
+import platform.AVFoundation.setPreferredMaximumResolution
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.timeControlStatus
+import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSURL
 import platform.UIKit.UIPasteboard
 import kotlin.time.TimeSource
@@ -86,17 +91,19 @@ internal object IosMusicVideoCheck {
                     probes += probe(id, title)
                 }
                 val avc = probes.filter { it.stream != null }
-                report.appendLine("H.264 within ${InnerTubeXResolver.VIDEO_CLIENT_BUDGET} clients: ${avc.size}/${probes.size}")
+                val hls = avc.count { it.stream?.isHls == true }
+                report.appendLine("picture within ${InnerTubeXResolver.VIDEO_CLIENT_BUDGET} clients: ${avc.size}/${probes.size} (direct H.264 ${avc.size - hls}, HLS $hls)")
                 probes.forEach { report.appendLine("  ${it.id}  ${it.result}  — ${it.title.take(40)}") }
 
-                report.appendLine("1080p playback (30 s each, stalls over 1 s):")
-                val toPlay = avc.filter { (it.stream?.height ?: 0) >= 720 }.take(3)
+                report.appendLine("playback (30 s each, stalls over 1 s):")
+                val toPlay = (avc.filter { it.stream?.isHls == true }.take(2) + avc.filter { (it.stream?.height ?: 0) >= 720 }).distinct().take(4)
                 toPlay.forEachIndexed { index, probe ->
                     _progress.value = tr("Playing {0}/{1}", index + 1, toPlay.size)
                     report.appendLine("  ${probe.id}  ${playFor(probe.stream!!)}")
                 }
                 val go = probes.size >= 20 && avc.size >= 18
                 report.appendLine(if (go) "verdict: GO (at least 18 of 20)" else "verdict: CHECK (${avc.size} of ${probes.size})")
+                report.appendLine("build: HLS fallback")
                 _progress.value = tr("Done: {0}/{1} H.264", avc.size, probes.size)
             } catch (e: CancellationException) {
                 throw e
@@ -124,17 +131,23 @@ internal object IosMusicVideoCheck {
 
     private suspend fun probe(id: String, title: String): Probe = try {
         val stream = withTimeoutOrNull(45_000L) {
-            InnerTubeXResolver.extractVideo(id, maxHeight = 1080, requireCodecPrefix = "avc1")
+            InnerTubeXResolver.extractVideo(id, maxHeight = 1080, requireCodecPrefix = "avc1", allowHls = true)
         }
-        val result = if (stream == null) {
-            "NO avc1 (or timed out)"
-        } else {
-            val passed = if (stream.codecRejected.isEmpty()) "" else " after passing over ${stream.codecRejected.joinToString()}"
-            "avc1 ${stream.width}x${stream.height} ${stream.codecs} via ${stream.profileId}$passed"
+        val result = when {
+            stream == null -> "NO avc1 (or timed out)"
+            stream.isHls -> "HLS via ${stream.profileId}"
+            else -> {
+                val passed = if (stream.codecRejected.isEmpty()) "" else " after passing over ${stream.codecRejected.joinToString()}"
+                "avc1 ${stream.width}x${stream.height} ${stream.codecs} via ${stream.profileId}$passed"
+            }
         }
         Probe(id, title, result, stream)
     } catch (e: CancellationException) {
         throw e
+    } catch (e: StreamResolveException) {
+        // Which clients were asked and what each said: what tells a blocked client from a missing picture.
+        val tried = e.diagnostics?.attempts.orEmpty().joinToString("; ") { "${it.profileId ?: it.clientName}=${it.outcome.take(40)}" }
+        Probe(id, title, "error ${e.reason}: ${e.message?.take(60)} [${tried.ifEmpty { "no attempts" }}]", null)
     } catch (e: Throwable) {
         Probe(id, title, "error ${e::class.simpleName}: ${e.message?.take(80)}", null)
     }
@@ -144,6 +157,7 @@ internal object IosMusicVideoCheck {
         val url = NSURL.URLWithString(stream.url) ?: return "bad url"
         val asset = AVURLAsset(uRL = url, options = mapOf<Any?, Any?>("AVURLAssetHTTPHeaderFieldsKey" to stream.headers))
         val item = AVPlayerItem(asset = asset)
+        if (stream.isHls) item.setPreferredMaximumResolution(CGSizeMake(1920.0, 1080.0))
         val player = AVPlayer()
         player.muted = true
         player.replaceCurrentItemWithPlayerItem(item)
@@ -177,6 +191,8 @@ internal object IosMusicVideoCheck {
             player.replaceCurrentItemWithPlayerItem(null)
         }
         val started = startedAtMs ?: return "never started in 45 s"
+        val shown = item.presentationSize.useContents { "${width.toInt()}x${height.toInt()}" }
+        if (stream.isHls) return "HLS $shown started in ${started} ms, stalls over 1 s: $stalls, longest pause ${longest} ms"
         return "${stream.height}p started in ${started} ms, stalls over 1 s: $stalls, longest pause ${longest} ms"
     }
 }

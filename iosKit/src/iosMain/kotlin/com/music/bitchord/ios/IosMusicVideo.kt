@@ -23,6 +23,7 @@ import com.music.bitchord.ui.player.MusicVideoQualityUi
 import com.music.bitchord.ui.player.MusicVideoState
 import com.music.bitchord.ui.rememberIsForeground
 import kotlinx.cinterop.readValue
+import platform.CoreGraphics.CGSizeMake
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -64,6 +65,7 @@ import platform.AVFoundation.rate
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.setMuted
+import platform.AVFoundation.setPreferredMaximumResolution
 import platform.AVFoundation.setRate
 import platform.AVFoundation.timeControlStatus
 import platform.CoreMedia.CMTimeGetSeconds
@@ -101,6 +103,12 @@ internal object IosMusicVideo {
     /** Where Auto opens: the top of YouTube's H.264 ladder, and less on a metered link. */
     private const val AUTO_HEIGHT = 1080
     private const val METERED_HEIGHT = 480
+
+    /** What an HLS picture is taken to be until its first rung says otherwise. */
+    private const val DEFAULT_ASPECT = 16f / 9f
+
+    /** The rungs offered for an HLS picture, whose own list isn't read: YouTube's ladder. */
+    private val HLS_HEIGHTS = listOf(1080, 720, 480, 360, 240)
     private const val QUALITY_DEBOUNCE_MS = 500L
 
     /** googlevideo's ways of refusing a URL. */
@@ -131,6 +139,9 @@ internal object IosMusicVideo {
 
     private var loadedId: String? = null
     private var loadedProfile: String? = null
+
+    /** The loaded picture is an HLS manifest, whose size shows only once it plays. */
+    private var loadedHls = false
     private var loadJob: Job? = null
     private var syncJob: Job? = null
     private var releaseJob: Job? = null
@@ -275,7 +286,7 @@ internal object IosMusicVideo {
         val skip = refused[videoId].orEmpty().toSet()
         if (videoId !in ageGated) {
             val plain = try {
-                InnerTubeXResolver.extractVideo(videoId, cap, skip, requireCodecPrefix = "avc1")
+                InnerTubeXResolver.extractVideo(videoId, cap, skip, requireCodecPrefix = "avc1", allowHls = true)
             } catch (e: StreamResolveException) {
                 if (e.reason !in ESCALATED_REASONS) throw e
                 null
@@ -283,7 +294,7 @@ internal object IosMusicVideo {
             if (plain != null) return plain
             TrackLog.d(TAG, "video: nothing asked plainly; asking as age-restricted", about = videoId)
         }
-        return InnerTubeXResolver.extractVideo(videoId, cap, skip, ageRestricted = true, requireCodecPrefix = "avc1")
+        return InnerTubeXResolver.extractVideo(videoId, cap, skip, ageRestricted = true, requireCodecPrefix = "avc1", allowHls = true)
             ?.also { ageGated += videoId }
     }
 
@@ -312,7 +323,8 @@ internal object IosMusicVideo {
                 return@launch
             }
             if (loadedId != videoId) return@launch
-            if (stream == null || stream.aspect < MIN_VIDEO_ASPECT) {
+            // A manifest's size is known only once a rung plays; sync() checks it then.
+            if (stream == null || (!stream.isHls && stream.aspect < MIN_VIDEO_ASPECT)) {
                 TrackLog.d(TAG, "video: no H.264 picture to show (${stream?.let { "${it.width}x${it.height}" } ?: "none"})", about = videoId)
                 noPicture += videoId
                 loadedId = null
@@ -321,10 +333,20 @@ internal object IosMusicVideo {
             }
             val url = NSURL.URLWithString(stream.url) ?: return@launch
             val asset = AVURLAsset(uRL = url, options = mapOf<Any?, Any?>("AVURLAssetHTTPHeaderFieldsKey" to stream.headers))
-            _aspect.value = stream.aspect
-            _quality.value = _quality.value.copy(heights = stream.heights.filter { it <= AUTO_HEIGHT }, activeHeight = stream.height)
+            _aspect.value = if (stream.isHls) DEFAULT_ASPECT else stream.aspect
+            val heights = if (stream.isHls) HLS_HEIGHTS else stream.heights
+            _quality.value = _quality.value.copy(
+                heights = heights.filter { it <= AUTO_HEIGHT },
+                activeHeight = if (stream.isHls) cap else stream.height,
+            )
             loadedProfile = stream.profileId
-            player.replaceCurrentItemWithPlayerItem(AVPlayerItem(asset = asset))
+            loadedHls = stream.isHls
+            val item = AVPlayerItem(asset = asset)
+            if (stream.isHls) {
+                // The manifest lists every rung: hold the player to the asked-for height.
+                item.setPreferredMaximumResolution(CGSizeMake(cap * 16.0 / 9.0, cap.toDouble()))
+            }
+            player.replaceCurrentItemWithPlayerItem(item)
             attachTop()
             seekTo(target() + seekLeadMs, exact = false)
             if (IosPlayer.isPlaying.value) player.setRate(IosPlayer.heardRate)
@@ -349,6 +371,7 @@ internal object IosMusicVideo {
         val had = loadedId != null || player.currentItem != null
         loadedId = null
         loadedProfile = null
+        loadedHls = false
         _rendered.value = false
         _quality.value = _quality.value.copy(heights = emptyList(), activeHeight = null)
         if (had) {
@@ -408,8 +431,17 @@ internal object IosMusicVideo {
             if (ready) _state.value = MusicVideoState.Showing
         }
         if (item.status != AVPlayerItemStatusReadyToPlay) return
-        item.presentationSize.useContents {
+        val portrait = item.presentationSize.useContents {
             if (width > 0 && height > 0) _aspect.value = (width / height).toFloat()
+            width > 0 && height > 0 && width / height < MIN_VIDEO_ASPECT
+        }
+        if (portrait && loadedHls) {
+            val id = loadedId
+            TrackLog.d(TAG, "video: HLS picture is portrait; showing the artwork", about = id)
+            if (id != null) noPicture += id
+            unload()
+            refresh()
+            return
         }
         val now = wallClockMs()
         val buffering = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate

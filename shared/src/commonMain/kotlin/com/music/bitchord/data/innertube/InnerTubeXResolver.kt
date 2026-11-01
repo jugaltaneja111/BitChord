@@ -11,6 +11,7 @@ import com.metrolist.innertubex.extraction.AudioQuality
 import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
 import com.metrolist.innertubex.extraction.PoTokenResult
+import com.metrolist.innertubex.extraction.StreamResolveException
 import com.metrolist.innertubex.extraction.TokenProvider
 import com.metrolist.innertubex.extraction.TokenProviderCapabilities
 
@@ -272,6 +273,12 @@ object InnerTubeXResolver {
         val profileId: String,
         /** Clients asked and passed over because their stream was in a codec not wanted. */
         val codecRejected: List<String> = emptyList(),
+        /**
+         * [url] is an HLS manifest (audio and video muxed, every rung listed) rather than a
+         * video-only file: the player picks the rung, and [width]/[height] are unknown (0)
+         * until it has.
+         */
+        val isHls: Boolean = false,
     ) {
         val aspect: Float get() = if (height > 0) width.toFloat() / height else 0f
     }
@@ -297,9 +304,21 @@ object InnerTubeXResolver {
         ageRestricted: Boolean = false,
         requireCodecPrefix: String? = null,
         budget: Int = VIDEO_CLIENT_BUDGET,
+        allowHls: Boolean = false,
     ): VideoStream? {
+        val direct = try {
+            pickByCodec(skipClients, requireCodecPrefix, budget) { skip ->
+                extractVideoOnce(videoId, maxHeight, skip, ageRestricted, allowHls = false)
+            }
+        } catch (e: StreamResolveException) {
+            // Clients answered but none had a direct picture: what an HLS manifest can still give.
+            if (!allowHls || e.reason != StreamResolveException.Reason.NO_PLAYABLE_STREAM) throw e
+            null
+        }
+        if (direct != null || !allowHls) return direct
+        TrackLog.d(TAG, "video: no direct picture; asking for HLS", about = videoId)
         return pickByCodec(skipClients, requireCodecPrefix, budget) { skip ->
-            extractVideoOnce(videoId, maxHeight, skip, ageRestricted)
+            extractVideoOnce(videoId, maxHeight, skip, ageRestricted, allowHls = true)
         }
     }
 
@@ -317,10 +336,11 @@ object InnerTubeXResolver {
         val rejected = ArrayList<String>()
         repeat(budget) {
             val stream = ask(skip.toSet()) ?: return null
-            if (requireCodecPrefix == null || stream.codecs.startsWith(requireCodecPrefix)) {
+            // A manifest lists every rung; the player itself passes over ones it can't decode.
+            if (requireCodecPrefix == null || stream.isHls || stream.codecs.startsWith(requireCodecPrefix)) {
                 return if (rejected.isEmpty()) stream else VideoStream(
                     stream.videoId, stream.url, stream.width, stream.height, stream.mimeType, stream.codecs,
-                    stream.headers, stream.heights, stream.profileId, rejected.toList(),
+                    stream.headers, stream.heights, stream.profileId, rejected.toList(), stream.isHls,
                 )
             }
             TrackLog.d(TAG, "video: ${stream.profileId} offered ${stream.codecs.ifBlank { "?" }}, not $requireCodecPrefix; asking another client", about = stream.videoId)
@@ -335,6 +355,7 @@ object InnerTubeXResolver {
         maxHeight: Int,
         skipClients: Set<String>,
         ageRestricted: Boolean,
+        allowHls: Boolean,
     ): VideoStream? {
         innerTube.cookie = Innertube.cookie
         innerTube.visitorData = Innertube.ensureVisitorData()
@@ -345,7 +366,7 @@ object InnerTubeXResolver {
                 isAgeRestricted = true.takeIf { ageRestricted },
                 wantVideo = true,
                 maxVideoHeight = maxHeight,
-            ).withStreamCapabilities(allowHls = false, allowSabr = false, allowBoundedRange = true),
+            ).withStreamCapabilities(allowHls = allowHls, allowSabr = false, allowBoundedRange = true),
             excludedClients = excludedFor(videoId) + skipClients,
             audioQuality = AudioQuality.LOW,
             clientPlaybackNonce = generateClientPlaybackNonce(),
@@ -354,7 +375,8 @@ object InnerTubeXResolver {
         val url = stream.videoUrl?.takeUnless(::isLiveUrl) ?: return null
         val width = stream.videoWidth ?: 0
         val height = stream.videoHeight ?: 0
-        val mime = stream.videoMimeType.orEmpty()
+        val hls = stream.mimeType == HLS_MIME
+        val mime = if (hls) HLS_MIME else stream.videoMimeType.orEmpty()
         val codecs = stream.videoCodecs.orEmpty()
         TrackLog.d(
             TAG,
@@ -371,6 +393,7 @@ object InnerTubeXResolver {
             headers = stream.headers,
             heights = (stream.availableVideoHeights.orEmpty() + height).filter { it > 0 }.distinct().sortedDescending(),
             profileId = stream.profileId,
+            isHls = hls,
         )
     }
 
@@ -440,6 +463,8 @@ object InnerTubeXResolver {
     private const val LOW_KBPS = 64
     /** Clients a picture may ask before giving up: upstream's MAX_REFUSED_CLIENTS. */
     const val VIDEO_CLIENT_BUDGET = 3
+
+    private const val HLS_MIME = "application/x-mpegURL"
     private const val EXCLUDE_MS = 10 * 60 * 1000L
     private const val MAX_REMEMBERED = 64
     /** Off the cold-start path; the first tap on a track is rarely sooner. */
