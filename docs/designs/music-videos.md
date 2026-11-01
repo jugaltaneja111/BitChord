@@ -1,7 +1,7 @@
 # Music videos in Now Playing (iOS)
 
 *   **Author:** jugaltaneja111 (the owner, who makes the product decisions below)
-*   **Status:** Approved, pending Phase 0 (the H.264 coverage check, which is a go/no-go gate)
+*   **Status:** Implemented on `ios-port` (phases 0-5). Phase 0's coverage check runs on the phone (Settings › Advanced › Music video check). The results are not in yet.
 *   **Date:** 2026-11-01. Revised the same day after a Goldfish review; see [the review](music-videos-review/goldfish_review_report.md).
 
 --------------------------------------------------------------------------------
@@ -751,6 +751,20 @@ These are the rules for choosing the sample. The ids are filled in when Phase 0 
 | OMV, after 2020 | 5 | The same search, taking newer uploads |
 | UGC, before 2015 | 5 | Fan uploads and lyric videos, `MUSIC_VIDEO_TYPE_UGC` |
 | UGC, after 2020 | 5 | The same, taking newer uploads |
+
+### Implementation notes (where the build differs from this plan)
+
+*   **Phase 0 runs on the phone, not in the simulator.** The owner's simulator runs stall at onboarding.
+    *   Settings › Advanced › "Music video check" picks 20 videos from 10 searches: official videos and fan uploads, old and new.
+    *   It probes each one for `avc1`, then plays up to 3 of them at 720p or higher for 30 s each, logging stalls over 1 s.
+    *   The report is copied to the clipboard.
+    *   Because the check gives no go/no-go answer before the build, the rest of the feature was built in the same IPA. A video with no H.264 stream falls back to the artwork (`None`), as §2 specifies.
+*   **Phase 6 (smoke assertions) is not built.** It would depend on the simulator, so on-device testing replaces it for now.
+*   **`IosOrientationMaskTest` is not written.** `mask(isPad, allowLandscape)` is pure and ready for it.
+*   **YouTube lyrics still fetch `next` directly** (File 3b's fallback). The song menu and `officialVersion` share the cache. To keep the menu's like state current, the menu always fetches fresh and stores what it gets, and `officialVersion` reads that stored response.
+*   **Output latency.** `heardLatencyMs` is `AVAudioSession.outputLatency` on the FFmpeg deck and 0 on the AVPlayer deck, on the assumption that AVPlayer's `currentTime` already includes output latency. The AirPods clap check in the verification plan confirms this.
+*   **Landscape is allowed while the state is `Loading` as well as `Showing`.** Otherwise turning the phone during the first 1-2 s would do nothing. If the state then turns `None`, the flag clears and the screen goes back to portrait.
+*   **Codec loop tests.** The loop is `InnerTubeXResolver.pickByCodec`, and its test (`ExtractVideoCodecTest`) is in `shared/src/jvmTest`, because commonTest has no coroutine test library.
 
 --------------------------------------------------------------------------------
 

@@ -264,3 +264,14 @@ simulator against real data.
 - Minimum iOS version (16 assumed for `ComposeUIViewController` and
   AVFoundation APIs used).
 - Would upstream accept iOS work, or does this stay a fork?
+
+
+## Music videos (v1.9 B5)
+
+The design is [docs/designs/music-videos.md](designs/music-videos.md).
+
+*   **How the picture plays.** `IosMusicVideo` owns a muted `AVPlayer` that plays the video-only H.264 stream from `InnerTubeXResolver.extractVideo(requireCodecPrefix = "avc1")`.
+*   **How it stays in sync.** It follows `IosPlayer`'s heard position through `MusicVideoSync`, a pure function with tests. It never touches the audio.
+*   **When it streams.** Only while a surface claims the picture (Now Playing at priority 1, the mini player at 0), plus 4 s after the last claim ends. It is released immediately when the app goes to the background, and hidden while the audio is on AirPlay.
+*   **Rotation.** iPhone lists landscape in `project.yml`. The Swift `AppDelegate` answers `supportedInterfaceOrientationsFor` from `IosOrientation.mask()`, which allows landscape only while Now Playing shows a video. iPad rotates freely and has no full-screen buttons.
+*   **Song/video switching.** Switching uses YouTube's segment map (`YtMusicRepository.versionTimeMap`) through `swapStream(mapPosition = …)`. When no map exists, it falls back to `IosVersionAligner`.
