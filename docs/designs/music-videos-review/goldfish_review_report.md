@@ -1,5 +1,7 @@
 # Goldfish Annotated Review Report
 
+**Status: resolved.** Auto accept was applied on 2026-11-01: 17 fixes plus 2 owner decisions (E1: live mini player; E2: picture hidden on AirPlay). Nothing was contested; only wording nits were declined. The revised spec is [`music-videos.md`](../music-videos.md).
+
 **Target:** [`docs/designs/music-videos.md`](../music-videos.md), full file.
 
 **Source:** [consolidated_review_report.md](consolidated_review_report.md). The action numbers A1–A19 follow that report.
