@@ -45,7 +45,7 @@ import platform.UIKit.UIViewMeta
  * view and needs no frame bookkeeping.
  */
 @OptIn(ExperimentalForeignApi::class)
-private class CanvasPlayerView : UIView(frame = CGRectZero.readValue()) {
+internal class CanvasPlayerView : UIView(frame = CGRectZero.readValue()) {
     companion object : UIViewMeta() {
         override fun layerClass() = AVPlayerLayer
     }

@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
+import platform.AVFAudio.outputLatency
 import platform.AVFAudio.setActive
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
@@ -103,7 +104,8 @@ internal class IosAudioEngine(
         /** Where in the track the silence now being heard began; NaN while there's sound. */
         private var quietSince = Double.NaN
         /** The rate a gap is being fast-forwarded at; 0 when none is. */
-        private var gapRate = 0f
+        var gapRate = 0f
+            private set
         /** No new gap before this point: the rewind after one lands back in its tail. */
         private var noGapBefore = 0.0
 
@@ -269,6 +271,7 @@ internal class IosAudioEngine(
                 // Not paused, so AVPlayer chose a rate of its own: back to real time.
                 if (player.rate != 0f) player.setRate(1f)
                 dsp?.muted = false
+                if (this === active) position.seeks++
                 return
             }
             player.setRate(1f)
@@ -276,6 +279,8 @@ internal class IosAudioEngine(
             val back = (soundAt - GAP_REWIND_S).coerceAtLeast(0.0)
             player.seekToTime(CMTimeMakeWithSeconds(back, 1000), kCMTimeZero.readValue(), kCMTimeZero.readValue()) { _ ->
                 dsp?.muted = false
+                // A jump of the playhead: whatever follows it (a music video) snaps, not chases.
+                if (this === active) position.seeks++
             }
         }
 
@@ -638,6 +643,7 @@ internal class IosAudioEngine(
         newKey: String? = null,
         offsetMs: Long = 0L,
         fadeMs: Long = SWAP_FADE_MS,
+        mapPosition: ((Long) -> Long)? = null,
         onDone: (Boolean) -> Unit,
     ) {
         if (isBlending || spare.holding || swapJob?.isActive == true) return onDone(false)
@@ -652,7 +658,12 @@ internal class IosAudioEngine(
         swapJob = scope.launch {
             var swapped = false
             try {
-                fun inStep() = ((active.seconds * 1000).toLong() + offsetMs).coerceAtLeast(0L)
+                // With YouTube's segment map, worked out from the live position at the moment
+                // of the swap: one fixed offset can't follow a skit in the middle of a video.
+                fun inStep(): Long {
+                    val now = (active.seconds * 1000).toLong()
+                    return (mapPosition?.invoke(now) ?: (now + offsetMs)).coerceAtLeast(0L)
+                }
                 incoming.seekExactly(inStep() + SWAP_LEAD_MS)
                 if (_isPlaying.value) incoming.play()
                 // Ready means sounding when playing; when paused, opened and not failed.
@@ -903,7 +914,32 @@ internal class IosAudioEngine(
         _isBuffering.value = _isPlaying.value && (ff.isBuffering || !ff.isReady)
         position.advancing = ff.isPlaying
         position.report(ff.positionMs)
+        // Silence skip silence dropped is a jump too, for whatever follows the playhead.
+        val skipped = ff.skippedMs
+        if (skipped != reportedSkipMs) {
+            if (skipped > reportedSkipMs && reportedSkipFor === ff) position.seeks++
+            reportedSkipMs = skipped
+            reportedSkipFor = ff
+        }
     }
+
+    private var reportedSkipMs = 0L
+    private var reportedSkipFor: IosFfmpegPlayer? = null
+
+    /** Skip silence is fast-forwarding a quiet gap on the heard deck right now (AVPlayer path). */
+    val inGap: Boolean get() = active.gapRate > 0f
+
+    /** The heard deck's speed: Automix's tempo ramp, 1 otherwise. */
+    val heardRate: Float
+        get() = if (active.ff != null) 1f else active.player.rate.takeIf { it > 0f && active.gapRate == 0f } ?: 1f
+
+    /**
+     * How far the sound coming out is behind [position], in ms. AVPlayer reports a time already
+     * aligned to the output (it is what keeps its own video in sync); the FFmpeg deck counts
+     * frames handed to its player node, so the route's output latency comes on top of that.
+     */
+    val heardLatencyMs: Long
+        get() = if (active.ff == null) 0L else (AVAudioSession.sharedInstance().outputLatency * 1000.0).toLong()
 
     private var watchedFf: IosFfmpegPlayer? = null
     private var watchStartWall = 0L

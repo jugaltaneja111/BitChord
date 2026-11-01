@@ -330,14 +330,22 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 leave { IosPlayer.upgradeQuality() }
             }
         }
-        if ((revert || upgrade) && !(canSwitch && (!alternateLoaded || alternate != null))) {
+        if ((revert || upgrade) && !canSwitch) {
             HorizontalDivider(Modifier.padding(vertical = 6.dp), thickness = 0.5.dp, color = colors.divider)
         }
-        if (canSwitch && (!alternateLoaded || alternate != null)) {
+        // Greyed out, not hidden, once looked for and not found: it says there is none.
+        if (canSwitch) {
+            val none = alternateLoaded && alternate == null
             MenuRow(
                 if (song.isVideo) Icons.Rounded.MusicNote else Icons.Rounded.Videocam,
-                if (song.isVideo) tr("Convert to audio") else tr("Convert to video"),
+                when {
+                    none && song.isVideo -> tr("No audio version found")
+                    none -> tr("No video version found for this song")
+                    song.isVideo -> tr("Convert to audio")
+                    else -> tr("Convert to video")
+                },
                 colors,
+                enabled = !none,
                 loading = !alternateLoaded,
             ) {
                 alternate ?: return@MenuRow

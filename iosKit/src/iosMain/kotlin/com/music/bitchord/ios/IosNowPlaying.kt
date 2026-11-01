@@ -90,6 +90,14 @@ internal fun IosNowPlaying(
         open()
     }
 
+    // Sideways allowed only while this player shows a music video's picture.
+    val videoState by IosMusicVideo.state.collectAsState()
+    val videoShown = playerSong.isVideo && videoState != com.music.bitchord.ui.player.MusicVideoState.None
+    androidx.compose.runtime.DisposableEffect(videoShown) {
+        IosOrientation.allowLandscape = videoShown
+        onDispose { IosOrientation.allowLandscape = false }
+    }
+
     BoxWithConstraints(
         Modifier
             .fillMaxSize()

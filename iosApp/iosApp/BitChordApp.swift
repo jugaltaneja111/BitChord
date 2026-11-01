@@ -4,8 +4,21 @@ import UIKit
 import WidgetKit
 
 /// The whole app is Compose (see iosKit); this shell only hosts it.
+/// Answers iOS's "which ways may the screen turn": portrait on iPhone, except while Now Playing
+/// shows a music video (see IosOrientation.kt); every way on iPad.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        UIInterfaceOrientationMask(rawValue: UInt(MainViewControllerKt.supportedInterfaceOrientationsMask()))
+    }
+}
+
 @main
 struct BitChordApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         // WidgetCenter is Swift-only: the Kotlin side asks through this when the song changes.
         IosWidgetKt.setWidgetReloader { WidgetCenter.shared.reloadAllTimelines() }

@@ -292,6 +292,9 @@ internal object IosSettings {
     /** For a music video, play the catalogue's audio release in its place. */
     val preferMusicOnly = BoolPref("${PREFIX}prefer_music_only", false)
 
+    /** The music video height the listener holds, or 0 for Auto (set from the quality drawer). */
+    val musicVideoHeight = IntPref("${PREFIX}music_video_height", 0)
+
     /** Spotify's `sp_dc` session cookie, as the phone keeps it; blank when not connected. */
     val spotifySpdc = SecretPref("spotify_sp_dc")
 

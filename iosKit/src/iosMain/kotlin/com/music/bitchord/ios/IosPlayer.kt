@@ -158,6 +158,11 @@ internal object IosPlayer {
     val durationMs: StateFlow<Long> = engine.durationMs
     val position get() = engine.position
 
+    /** What a music video's picture follows besides [position]: see [IosMusicVideo]. */
+    internal val inGap: Boolean get() = engine.inGap
+    internal val heardRate: Float get() = engine.heardRate
+    internal val heardLatencyMs: Long get() = engine.heardLatencyMs
+
     private val _shuffle = MutableStateFlow(false)
     val shuffle: StateFlow<Boolean> = _shuffle.asStateFlow()
 
@@ -638,7 +643,8 @@ internal object IosPlayer {
         // "After this song" lets the track end on its own: no blend runs into the next one.
         val sleepAfter = IosSleepTimer.afterTrack.value
         val automix = IosSettings.automix.flow.value && !inParty && !sleepAfter
-        if (automix) {
+        // Music videos never get a DJ mix (see automixTransition), so nothing to analyse.
+        if (automix && !song.isVideoOrigin && !next.isVideoOrigin) {
             IosAutomixAnalysis.request(song)
             IosAutomixAnalysis.request(next)
         }
@@ -665,6 +671,9 @@ internal object IosPlayer {
      * ordinary crossfade decides instead. Without analyses yet, its plan is a plain fade.
      */
     private fun automixTransition(song: Song, next: Song, nextIndex: Int, durationMs: Long): Boolean {
+        // A music video (or a song converted from one) gets a plain crossfade, as upstream:
+        // a DJ mix over a picture that keeps playing its own cut reads as a glitch.
+        if (song.isVideoOrigin || next.isVideoOrigin) return false
         val crossfade = IosSettings.crossfadeSeconds.flow.value
         val plan = planTransition(
             analysis = IosAutomixAnalysis.analysisFor(song.videoId) ?: TrackAnalysis(),
@@ -983,6 +992,8 @@ internal object IosPlayer {
     suspend fun alternateVersion(song: Song): Song? {
         otherCut[song.videoId]?.let { return it }
         if (isOwnFile(song) || IosSources.isSourceTrack(song)) return null
+        // Searched once already this session and nothing turned up: no second search.
+        if (!song.isVideo && YtMusicRepository.knownToHaveNoVideo(song.videoId)) return null
         val other = runCatching {
             if (song.isVideo) YtMusicRepository.resolveAudio(song) else YtMusicRepository.resolveVideo(song)
         }.getOrNull()
@@ -1009,7 +1020,7 @@ internal object IosPlayer {
             try {
                 val found = alternateVersion(song)
                 if (found == null) {
-                    IosPlayerHost.showMessage(if (song.isVideo) tr("No audio version found") else tr("No video version found"))
+                    IosPlayerHost.showMessage(if (song.isVideo) tr("No audio version found") else tr("No video version found for this song"))
                     return@launch
                 }
                 val target = found.copy(
@@ -1022,7 +1033,10 @@ internal object IosPlayer {
                     playbackSourceId = song.playbackSourceId,
                 )
                 TrackLog.i(TAG, "${song.videoId}: switching to ${if (target.isVideo) "the video" else "the audio"} ${target.videoId}")
-                val offsetMs = if (IosSettings.smartAlignment.flow.value) {
+                // YouTube's own segment map when it paired the two (signed in): exact, and per
+                // stretch of the song. The waveform measurement otherwise.
+                val timeMap = com.music.bitchord.data.YtMusicRepository.versionTimeMap(song.videoId, target.videoId)
+                val offsetMs = if (timeMap == null && IosSettings.smartAlignment.flow.value) {
                     _versionAligning.value = true
                     try {
                         IosVersionAligner.offsetMs(song, target) ?: 0L
@@ -1051,12 +1065,16 @@ internal object IosPlayer {
                 engine.clearPrepared()
                 upgradeJob?.cancel()
                 val done = kotlinx.coroutines.CompletableDeferred<Boolean>()
-                engine.swapStream(url, headers, loudness, duration, route, target.videoId, offsetMs, VERSION_FADE_MS) { done.complete(it) }
+                engine.swapStream(
+                    url, headers, loudness, duration, route, target.videoId, offsetMs, VERSION_FADE_MS,
+                    mapPosition = timeMap?.let { map -> { position: Long -> map.map(position) } },
+                ) { done.complete(it) }
                 val swapped = done.await()
                 if (_song.value?.videoId != song.videoId) return@launch
                 if (!swapped) {
                     TrackLog.w(TAG, "${song.videoId}: the blend didn't take; switching straight over")
-                    val at = (engine.position.positionMs + offsetMs).coerceAtLeast(0L)
+                    val now = engine.position.positionMs
+                    val at = (timeMap?.map(now) ?: (now + offsetMs)).coerceAtLeast(0L)
                     engine.load(url, headers, loudness, target.videoId, duration, at, engine.isPlaying.value, route)
                 }
                 otherCut[song.videoId] = target
@@ -1072,7 +1090,7 @@ internal object IosPlayer {
                 playedThisSession += target.videoId
                 IosListeningRecorder.switched(song.videoId, target.videoId)
                 _song.value = target
-                TrackLog.i(TAG, "${target.videoId}: switched, ${offsetMs} ms shift")
+                TrackLog.i(TAG, "${target.videoId}: switched, " + if (timeMap != null) "by YouTube's segment map" else "${offsetMs} ms shift")
             } finally {
                 _versionSwitching.value = false
                 _versionAligning.value = false

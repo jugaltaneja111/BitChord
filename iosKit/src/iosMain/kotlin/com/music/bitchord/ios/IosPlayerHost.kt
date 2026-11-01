@@ -50,6 +50,30 @@ internal object IosPlayerHost : PlayerHost {
     @Composable
     override fun CanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) = IosCanvasVideo(spec, modifier)
 
+    // Music videos: a muted AVPlayer held to the audio, see IosMusicVideo.
+    override val musicVideoSupported: Boolean get() = true
+
+    @Composable
+    override fun MusicVideo(
+        videoId: String,
+        fit: Boolean,
+        onRenderedChanged: (Boolean) -> Unit,
+        modifier: Modifier,
+        priority: Int,
+    ) = IosMusicVideoSurface(videoId, fit, onRenderedChanged, modifier, priority)
+
+    override val musicVideoAspect: StateFlow<Float> get() = IosMusicVideo.aspect
+
+    override val musicVideoQuality: StateFlow<com.music.bitchord.ui.player.MusicVideoQualityUi> get() = IosMusicVideo.quality
+
+    override fun setMusicVideoQuality(height: Int?) = IosMusicVideo.setQuality(height)
+
+    override val musicVideoState: StateFlow<com.music.bitchord.ui.player.MusicVideoState> get() = IosMusicVideo.state
+
+    // A tablet's window shape decides full screen; a phone turns its screen with the buttons.
+    override val musicVideoFullscreenButton: Boolean
+        get() = platform.UIKit.UIDevice.currentDevice.userInterfaceIdiom != platform.UIKit.UIUserInterfaceIdiomPad
+
     // No remote files (WebDAV, SMB) on iOS yet: every cover is the song's own.
     @Composable
     override fun rememberRemoteArtworkUrl(song: Song?): String? = song?.thumbnailUrl

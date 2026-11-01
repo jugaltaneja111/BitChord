@@ -52,6 +52,9 @@ fun MainViewController(): UIViewController {
 
 private var started = false
 
+/** What the Swift app delegate answers iOS with: see [IosOrientation]. */
+fun supportedInterfaceOrientationsMask(): ULong = IosOrientation.mask()
+
 /** The app's services up, without a window: a widget button can wake the app in the background. */
 internal fun ensureStarted() = start()
 
@@ -79,6 +82,8 @@ private fun start() {
     com.music.bitchord.data.innertube.Innertube.appLanguage = { com.music.bitchord.data.IosAppLanguage.tag() }
     AppUi.install(IosAppUiHost)
     PlayerPlatform.install(IosPlayerHost)
+    com.music.bitchord.ui.theme.orientationController = IosOrientation
+    IosMusicVideo.start()
     // Before the first page asks for anything, so it is asked as the listener.
     IosAccount.restore()
     IosDownloads.restore()

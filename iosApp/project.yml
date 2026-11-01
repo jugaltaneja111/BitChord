@@ -38,7 +38,12 @@ targets:
         # iPhone's light or dark, as the launch screen does.
         UIViewControllerBasedStatusBarAppearance: false
         UIStatusBarStyle: UIStatusBarStyleDefault
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Landscape is listed so a music video can go full screen; the app delegate keeps every other
+        # screen upright (IosOrientation.kt decides).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         # An iPad turns every way, and with all four (and the launch screen) it can share the screen
         # in Split View and Stage Manager; the player takes its two-column shape in landscape.
         UISupportedInterfaceOrientations~ipad:
