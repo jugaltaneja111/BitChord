@@ -33,11 +33,14 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import com.music.bitchord.data.model.VersionTimeMap
 
 /** Suspend API over Innertube. Every call returns a Result so the UI can show a real error. */
 object YtMusicRepository {
 
     private const val TAG = "BitChord"
+    private const val NEXT_CACHE_MS = 10 * 60 * 1000L
+    private const val NEXT_CACHE_SIZE = 32
     private val moodGenreShelfCache = LockedMap<String, List<HomeShelf>>()
     // Includes unchanged video fallbacks as well as successful matches. The
     // queue prefetcher asks before a track becomes current; remembering its
@@ -49,6 +52,63 @@ object YtMusicRepository {
 
     fun cachedAudioVersion(videoId: String): Song? = audioVersionCache[videoId]
     fun cachedVideoVersion(videoId: String): Song? = videoVersionCache[videoId]
+
+    /**
+     * Ids already searched with no video version found. [videoVersionCache] stores that
+     * as null, which reads the same as "never asked"; this tells the two apart, so the
+     * menu can grey its Convert row out for the rest of the session.
+     */
+    private val noVideoVersion = LockedMap<String, Boolean>()
+
+    fun knownToHaveNoVideo(videoId: String): Boolean = noVideoVersion[videoId] == true
+
+    /** YouTube's own time maps between the two versions of a track, keyed `"from>to"`. */
+    private val versionTimeMaps = LockedMap<String, VersionTimeMap>()
+
+    /** How a position in [fromId] maps onto [toId], when YouTube paired the two itself. */
+    fun versionTimeMap(fromId: String, toId: String): VersionTimeMap? = versionTimeMaps["$fromId>$toId"]
+
+    /**
+     * Recent `next` responses by id, so the song menu's fetch also answers the version
+     * pair the Convert row then asks for, without a second request. The menu always
+     * fetches fresh (its like state must be current) and stores what it got.
+     */
+    private val nextResponses = LockedMap<String, Pair<Long, JsonObject>>()
+
+    private fun rememberNext(videoId: String, response: JsonObject) {
+        if (nextResponses.size >= NEXT_CACHE_SIZE) nextResponses.clear()
+        nextResponses[videoId] = MonotonicClock.nowMs() to response
+    }
+
+    private suspend fun nextCached(videoId: String): JsonObject {
+        nextResponses[videoId]?.let { (at, response) ->
+            if (MonotonicClock.nowMs() - at < NEXT_CACHE_MS) return response
+        }
+        return Innertube.next(videoId).also { rememberNext(videoId, it) }
+    }
+
+    /**
+     * The other version of [song] as YouTube Music pairs it (port of upstream b690dc14),
+     * remembering the time map both ways. Null straight away when signed out: signed-out
+     * responses carry no pairs.
+     */
+    private suspend fun officialVersion(song: Song, wantAudio: Boolean): Song? {
+        if (Innertube.cookie == null) return null
+        val pair = try {
+            InnertubeParser.parseVersionPair(nextCached(song.videoId), song.videoId, wantAudio)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "version pair: next failed for ${song.videoId}: ${e.message}")
+            null
+        } ?: return null
+        pair.timeMap?.let { map ->
+            versionTimeMaps["${song.videoId}>${pair.song.videoId}"] = map
+            versionTimeMaps["${pair.song.videoId}>${song.videoId}"] = map.inverted()
+        }
+        Log.d(TAG, "version pair: ${song.videoId} -> ${pair.song.videoId}" + if (pair.timeMap != null) " with time map" else "")
+        return pair.song
+    }
 
     /**
      * The core personalised feed. It stays deliberately independent from the
@@ -434,6 +494,11 @@ object YtMusicRepository {
     suspend fun resolveAudio(song: Song): Song {
         if (!song.isVideo) return song
         audioVersionCache[song.videoId]?.let { return it }
+        officialVersion(song, wantAudio = true)?.let { paired ->
+            val match = paired.copy(isVideo = false)
+            audioVersionCache[song.videoId] = match
+            return match
+        }
         val target = TrackMatcher.targetOf(song)
         for (query in TrackMatcher.queries(target)) {
             val candidates = search(query, SearchFilter.SONGS)
@@ -471,6 +536,11 @@ object YtMusicRepository {
     suspend fun resolveVideo(song: Song): Song? {
         if (song.isVideo) return null
         videoVersionCache[song.videoId]?.let { return it }
+        officialVersion(song, wantAudio = false)?.let { paired ->
+            val match = paired.copy(isVideo = true)
+            videoVersionCache[song.videoId] = match
+            return match
+        }
         val target = TrackMatcher.targetOf(song)
         for (query in TrackMatcher.queries(target)) {
             val candidates = search(query, SearchFilter.VIDEOS)
@@ -486,6 +556,7 @@ object YtMusicRepository {
         }
         Log.w(TAG, "video switch: no video match for '${song.title}' by '${song.artist}'")
         videoVersionCache[song.videoId] = null
+        noVideoVersion[song.videoId] = true
         return null
     }
 
@@ -938,7 +1009,7 @@ object YtMusicRepository {
      * is the only moment the answer is looked at.
      */
     suspend fun songMenu(videoId: String): Result<SongMenu> = call("menu:$videoId") {
-        InnertubeParser.parseSongMenu(Innertube.next(videoId), videoId)
+        InnertubeParser.parseSongMenu(Innertube.next(videoId).also { rememberNext(videoId, it) }, videoId)
             ?: error("no menu for $videoId")
     }
 

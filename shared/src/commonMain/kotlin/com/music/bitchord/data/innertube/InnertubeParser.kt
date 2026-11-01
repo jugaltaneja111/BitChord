@@ -22,6 +22,8 @@ import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.SongMenu
 import com.music.bitchord.data.model.SubscriptionState
 import com.music.bitchord.data.model.UserPlaylist
+import com.music.bitchord.data.model.VersionPair
+import com.music.bitchord.data.model.VersionTimeMap
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -1278,34 +1280,100 @@ object InnertubeParser {
     fun parseWatchQueue(root: JsonElement): List<Song> {
         val out = LinkedHashMap<String, Song>()
         collectRenderers(root, "playlistPanelVideoRenderer").forEach { renderer ->
-            val videoId = renderer.s("videoId") ?: return@forEach
-            val title = renderer.o("title").runs()
-            if (title.isBlank()) return@forEach
-            // The byline packs artist, views and likes into one run list; only
-            // the leading runs before the first bullet are the credit.
-            val bylineRuns = renderer.o("longBylineText").a("runs").orEmpty()
-            val byline = bylineRuns.map { it.s("text").orEmpty() }
-            val artist = byline.takeWhile { !it.contains("•") }.joinToString("").trim()
-            // Those same runs link out to the artist and album pages, which is
-            // how a track started from the queue knows where it came from.
-            val credits = creditsOf(bylineRuns)
-            out[videoId] = Song(
-                videoId = videoId,
-                title = title,
-                artist = artist,
-                thumbnailUrl = renderer.o("thumbnail").a("thumbnails").best(),
-                durationText = renderer.o("lengthText").runs().takeIf { it.isNotBlank() },
-                artistId = credits.artistId,
-                artists = completeArtistCredits(artist.orEmpty(), credits.artists),
-                albumId = credits.albumId,
-                albumName = credits.albumName,
-                // A catalogue track is credited "Artist • Album • Year"; the
-                // matching music video is "Artist • 417M views • 2.4M likes".
-                isVideo = byline.any { it.contains("views", ignoreCase = true) },
-                isExplicit = renderer.hasExplicitBadge(),
-            )
+            val song = panelSong(renderer) ?: return@forEach
+            out[song.videoId] = song
         }
         return out.values.toList()
+    }
+
+    /** One row of a watch queue as a [Song], or null for a row with no id or title. */
+    private fun panelSong(renderer: JsonObject): Song? {
+        val videoId = renderer.s("videoId") ?: return null
+        val title = renderer.o("title").runs()
+        if (title.isBlank()) return null
+        // The byline packs artist, views and likes into one run list; only
+        // the leading runs before the first bullet are the credit.
+        val bylineRuns = renderer.o("longBylineText").a("runs").orEmpty()
+        val byline = bylineRuns.map { it.s("text").orEmpty() }
+        val artist = byline.takeWhile { !it.contains("•") }.joinToString("").trim()
+        // Those same runs link out to the artist and album pages, which is
+        // how a track started from the queue knows where it came from.
+        val credits = creditsOf(bylineRuns)
+        return Song(
+            videoId = videoId,
+            title = title,
+            artist = artist,
+            thumbnailUrl = renderer.o("thumbnail").a("thumbnails").best(),
+            durationText = renderer.o("lengthText").runs().takeIf { it.isNotBlank() },
+            artistId = credits.artistId,
+            artists = completeArtistCredits(artist.orEmpty(), credits.artists),
+            albumId = credits.albumId,
+            albumName = credits.albumName,
+            // A catalogue track is credited "Artist • Album • Year"; the
+            // matching music video is "Artist • 417M views • 2.4M likes".
+            isVideo = byline.any { it.contains("views", ignoreCase = true) },
+            isExplicit = renderer.hasExplicitBadge(),
+        )
+    }
+
+    private fun JsonObject.musicVideoType(): String? =
+        o("navigationEndpoint").o("watchEndpoint").o("watchEndpointMusicSupportedConfigs")
+            .o("watchEndpointMusicConfig").s("musicVideoType")
+
+    private const val MUSIC_VIDEO_TYPE_ATV = "MUSIC_VIDEO_TYPE_ATV"
+
+    /**
+     * The other version of [videoId] as YouTube Music itself pairs it — the
+     * song for an official video when [wantAudio], the video for a song
+     * otherwise — with the time map its Song/Video switch uses, when the
+     * response carries one. Read off a `next` response for [videoId].
+     * (Ported from upstream b690dc14.)
+     *
+     * Null when YouTube offers no pair, which is every signed-out response and
+     * any upload that is not an official video. The caller falls back to a
+     * search; nothing here guesses.
+     *
+     * The pair can come back either way round: the track asked about as the
+     * row's primary with the other version as its counterpart, or the other
+     * way, in which case the time map is read backwards.
+     */
+    fun parseVersionPair(root: JsonElement, videoId: String, wantAudio: Boolean): VersionPair? {
+        // A row whose type YouTube left out is still the other half of a pair;
+        // only a row that says it is the wrong kind is turned away.
+        fun JsonObject.fits(): Boolean = musicVideoType()?.let { (it == MUSIC_VIDEO_TYPE_ATV) == wantAudio } ?: true
+
+        collectRenderers(root, "playlistPanelVideoWrapperRenderer").forEach { wrapper ->
+            val primary = wrapper.o("primaryRenderer").o("playlistPanelVideoRenderer") ?: return@forEach
+            val counterparts = wrapper.a("counterpart").orEmpty().filterIsInstance<JsonObject>()
+            fun JsonObject.renderer(): JsonObject? = o("counterpartRenderer").o("playlistPanelVideoRenderer")
+
+            if (primary.s("videoId") == videoId) {
+                val match = counterparts.firstOrNull { it.renderer()?.fits() == true } ?: return@forEach
+                val song = panelSong(match.renderer() ?: return@forEach) ?: return@forEach
+                return VersionPair(song.copy(isVideo = !wantAudio), timeMapOf(match))
+            }
+            val asCounterpart = counterparts.firstOrNull { it.renderer().s("videoId") == videoId } ?: return@forEach
+            if (!primary.fits()) return@forEach
+            val song = panelSong(primary) ?: return@forEach
+            return VersionPair(song.copy(isVideo = !wantAudio), timeMapOf(asCounterpart)?.inverted())
+        }
+        return null
+    }
+
+    /**
+     * A counterpart's `segmentMap`: primary-side start, counterpart-side start
+     * and length of every stretch the two share. The numbers are int64s, which
+     * protobuf's JSON mapping writes as strings.
+     */
+    private fun timeMapOf(counterpart: JsonObject): VersionTimeMap? {
+        val segments = counterpart.o("segmentMap").a("segment").orEmpty().mapNotNull { segment ->
+            val from = segment.s("primaryVideoStartTimeMilliseconds")?.toLongOrNull() ?: return@mapNotNull null
+            val to = segment.s("counterpartVideoStartTimeMilliseconds")?.toLongOrNull() ?: return@mapNotNull null
+            val length = segment.s("durationMilliseconds")?.toLongOrNull()?.takeIf { it > 0 }
+                ?: return@mapNotNull null
+            VersionTimeMap.Segment(fromStartMs = from, toStartMs = to, durationMs = length)
+        }
+        return segments.takeIf { it.isNotEmpty() }?.let(::VersionTimeMap)
     }
 
     /**

@@ -298,17 +298,32 @@ object InnerTubeXResolver {
         requireCodecPrefix: String? = null,
         budget: Int = VIDEO_CLIENT_BUDGET,
     ): VideoStream? {
+        return pickByCodec(skipClients, requireCodecPrefix, budget) { skip ->
+            extractVideoOnce(videoId, maxHeight, skip, ageRestricted)
+        }
+    }
+
+    /**
+     * [extractVideo]'s codec loop, apart from the network so it can be tested: [ask] is
+     * given the clients to skip and answers with a stream or null.
+     */
+    internal suspend fun pickByCodec(
+        skipClients: Set<String>,
+        requireCodecPrefix: String?,
+        budget: Int,
+        ask: suspend (Set<String>) -> VideoStream?,
+    ): VideoStream? {
         val skip = skipClients.toMutableSet()
         val rejected = ArrayList<String>()
         repeat(budget) {
-            val stream = extractVideoOnce(videoId, maxHeight, skip, ageRestricted) ?: return null
+            val stream = ask(skip.toSet()) ?: return null
             if (requireCodecPrefix == null || stream.codecs.startsWith(requireCodecPrefix)) {
                 return if (rejected.isEmpty()) stream else VideoStream(
                     stream.videoId, stream.url, stream.width, stream.height, stream.mimeType, stream.codecs,
                     stream.headers, stream.heights, stream.profileId, rejected.toList(),
                 )
             }
-            TrackLog.d(TAG, "video: ${stream.profileId} offered ${stream.codecs.ifBlank { "?" }}, not $requireCodecPrefix; asking another client", about = videoId)
+            TrackLog.d(TAG, "video: ${stream.profileId} offered ${stream.codecs.ifBlank { "?" }}, not $requireCodecPrefix; asking another client", about = stream.videoId)
             rejected += "${stream.profileId}:${stream.codecs}"
             skip += stream.profileId
         }
