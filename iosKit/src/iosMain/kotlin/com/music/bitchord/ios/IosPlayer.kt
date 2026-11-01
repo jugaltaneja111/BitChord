@@ -27,6 +27,7 @@ import kotlinx.coroutines.Job
 import com.music.bitchord.ios.automix.IosAutomixAnalysis
 import com.music.bitchord.ios.automix.IosVersionAligner
 import com.music.bitchord.ios.automix.IosAutomixRide
+import com.music.bitchord.ios.automix.IosMixView
 import com.music.bitchord.playback.smart.CrossfadeMode
 import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.TransitionTrackInfo
@@ -675,9 +676,11 @@ internal object IosPlayer {
         // a DJ mix over a picture that keeps playing its own cut reads as a glitch.
         if (song.isVideoOrigin || next.isVideoOrigin) return false
         val crossfade = IosSettings.crossfadeSeconds.flow.value
+        val outAnalysis = IosAutomixAnalysis.analysisFor(song.videoId) ?: TrackAnalysis()
+        val inAnalysis = IosAutomixAnalysis.analysisFor(next.videoId) ?: TrackAnalysis()
         val plan = planTransition(
-            analysis = IosAutomixAnalysis.analysisFor(song.videoId) ?: TrackAnalysis(),
-            nextAnalysis = IosAutomixAnalysis.analysisFor(next.videoId) ?: TrackAnalysis(),
+            analysis = outAnalysis,
+            nextAnalysis = inAnalysis,
             currentTrack = song.transitionInfo(durationMs),
             nextTrack = next.transitionInfo(phoneLength(next)),
             currentTime = engine.position.positionMs / 1000.0,
@@ -706,6 +709,7 @@ internal object IosPlayer {
         val beatMs = (plan.beatSeconds * 1000).toLong()
         if (!plan.shouldStart) {
             rampOutgoing(plan.outgoingPlaybackRate, (plan.transitionStart * 1000).toLong(), beatMs)
+            IosMixView.prefetch(song, next, plan, engine.position.positionMs / 1000.0, plan.outgoingPlaybackRate)
             return true
         }
         val ride = IosAutomixRide(plan)
@@ -721,7 +725,20 @@ internal object IosPlayer {
         advancingFromEnd = true
         val outgoingRate = rampRate
         rampRate = 1f
+        val blendFromSeconds = engine.position.positionMs / 1000.0
         transition(nextIndex, plan.fadeMs.coerceAtLeast(1L), cueMs, plan.incomingPlaybackRate.toFloat(), ride, outgoingRate, beatMs)
+        // After the transition: starting it ends any blend before, which clears the popup.
+        IosMixView.begin(
+            out = song,
+            inn = next,
+            plan = plan,
+            outAnalysis = outAnalysis,
+            inAnalysis = inAnalysis,
+            positionSeconds = blendFromSeconds,
+            outgoingRate = outgoingRate.toDouble(),
+            outDurationMs = durationMs,
+            inDurationMs = phoneLength(next),
+        )
         advancingFromEnd = false
         return true
     }

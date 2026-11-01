@@ -592,6 +592,7 @@ internal class IosAudioEngine(
                 // Paused, the blend waits where it is.
                 if (_isPlaying.value) elapsed += FADE_STEP_MS
                 val t = (elapsed.toDouble() / fadeMs).coerceIn(0.0, 1.0)
+                com.music.bitchord.ios.automix.IosMixView.progress(t.toFloat())
                 if (ride != null) {
                     val moves = ride.at(t.toFloat())
                     active.fade = moves.incomingGain
@@ -792,6 +793,7 @@ internal class IosAudioEngine(
         fadeJob?.cancel()
         fadeJob = null
         _mixing.value = false
+        com.music.bitchord.ios.automix.IosMixView.end()
         active.dsp?.fx?.park()
         easeJob?.cancel()
         easeJob = null

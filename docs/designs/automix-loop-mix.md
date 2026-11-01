@@ -559,3 +559,22 @@ call (it cancels cleanly), and lock the phone (the lock screen follows).
 - **CPU while mixing.** Under 15% of one core.
 - **Failure.** Any missing framework, model, region or plan leaves Automix
   exactly as it is today.
+
+## Implementation notes
+
+- **Phase 1 (built).**
+  - Waveforms are not decoded with a new `FfmpegRegionDecoder`. They reuse
+    `FfmpegMonoDecoder` on the song's copy on the phone, or on the low-bitrate
+    copy Automix's analysis fetches (deleted afterwards). Each song is decoded
+    whole at 11 kHz mono, which takes about a second, and only the window's
+    three bands are kept. Above 5.5 kHz nothing is drawn, and the highs layer
+    shows 2.5–5.5 kHz.
+  - The region decoder is still planned for Phase 2, where the models need
+    44.1 kHz stereo.
+  - The fader lines are sampled from a fresh `IosAutomixRide` of the same plan,
+    because `at()` carries filter state from call to call.
+  - The view is published right after `startNext`, because starting a blend
+    ends the previous one and clears the view.
+  - The shared band split is `MixWaveformBands` (`shared/commonMain`). Its name
+    differs from the Android app's `MixWaveform` so the two don't clash in the
+    same package.

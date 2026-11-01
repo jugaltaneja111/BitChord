@@ -162,6 +162,8 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val smartFadeEnabled = IosSettings.automix.flow
     override val smartMixInProgress = IosPlayer.mixing
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
+    override val smartMixView = com.music.bitchord.ios.automix.IosMixView.view
+    override val smartMixProgress = com.music.bitchord.ios.automix.IosMixView.progress
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
     override val spotifyCanvasAutoHide = IosSettings.spotifyCanvasAutoHide.flow
     override val syncedLyrics = IosSettings.syncedLyrics.flow

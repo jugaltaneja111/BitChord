@@ -81,6 +81,13 @@ internal class IosAutomixRide(plan: TransitionPlan) {
      * Whether this is doing something a plain crossfade could not, which is what lights the
      * scrubber up: a style that filters or swaps bass, or an echo out.
      */
+    /** Where in the blend, 0..1, the low end changes hands, for the mix popup; negative when it doesn't. */
+    val bassSwapMark: Float = when {
+        style == TransitionStyle.DJ_FILTER && filterVariant == FilterTransitionVariant.BASS_HANDOFF -> filterSwapAtF
+        bassSwap -> swapAtF
+        else -> -1f
+    }
+
     val isRealMix: Boolean =
         style == TransitionStyle.DJ_BLEND || style == TransitionStyle.DJ_FILTER || echo || clash > 0.0
 
