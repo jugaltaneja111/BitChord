@@ -578,3 +578,37 @@ call (it cancels cleanly), and lock the phone (the lock screen follows).
   - The shared band split is `MixWaveformBands` (`shared/commonMain`). Its name
     differs from the Android app's `MixWaveform` so the two don't clash in the
     same package.
+- **Phase 2 (built).**
+  - The trackers did not move into `commonMain`. The JVM's `BeatTracker`,
+    `VocalTracker` and `MelSpectrogram` stay as they are, with their
+    direct-buffer memory handling for Android's small heaps. The arithmetic
+    that doesn't touch a runtime is in `shared/commonMain/.../ModelAnalysis.kt`:
+    - `BeatModel`: chunking, peak picking, tempo, grid confidence, and the grid
+      from the two logit heads;
+    - `VocalModel`: the fixed-width re-stride and the 200 Hz–4 kHz band curve;
+    - `ModelRegions`: Android's pass-2 windows, beat seaming, per-side beats,
+      level curve, mask merge, and the assembly into a `TrackAnalysis`.
+    It is tested in `ModelAnalysisTest` (12 tests). There is no `ModelRunner`
+    interface or `expect` front end: iOS calls the models directly in
+    `IosModels`.
+  - The front ends are reached through `BitChordAnalysis` (ABI 2), which now
+    compiles `mel_spectrogram.cpp`, `vocal_spectrogram.cpp` and `resampler.cpp`.
+    `bitchord_frontend_shape` is checked against the Kotlin constants.
+  - `BitChordModels` uses ONNX Runtime 1.22.0 (`onnxruntime-c` pod archive,
+    SHA-256 pinned), with the macOS slice dropped.
+  - The bridge returns every output, since Beat This! has two heads. It was run
+    on Linux against both models: a 40-click track gave 39 beat peaks, and the
+    vocal model gave its full `[1, 2, 2049, 960]` output.
+  - Sessions close when the analysis queue empties, not after 60 s idle. A use
+    count keeps a session from closing while an orphaned run still holds it.
+  - Regions use `FfmpegMonoDecoder` in a new stereo region mode: it seeks, then
+    drops samples up to the exact start. No separate `FfmpegRegionDecoder`.
+  - The vocal threshold stays at the current 0.6, with the DSP mask unscaled,
+    as this repo's Android app stores it. Upstream's 0.25 threshold and
+    `heuristicVocalOnModelScale` arrive with Phase 3's planner port, for every
+    platform at once.
+  - Stored analyses record whether the models ran (schema 2). One made while
+    the models could not load is redone once they can.
+  - The on-device check is Settings › "Automix model check". It measures ten
+    searched songs as Automix would, without storing them, and copies a report:
+    model beats, vocal curves, times, and the time with models against without.

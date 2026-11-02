@@ -1,5 +1,7 @@
 package com.music.bitchord.ios.automix
 
+import com.music.bitchord.playback.smart.BeatSide
+import com.music.bitchord.playback.smart.CurveWindow
 import com.music.bitchord.playback.smart.EnergySample
 import com.music.bitchord.playback.smart.MixCandidate
 import com.music.bitchord.playback.smart.TrackAnalysis
@@ -22,19 +24,23 @@ import platform.Foundation.create
 import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
  * Analyses kept on the phone, so a track is measured once and stays measured: the iOS side of
  * AnalysisStore (jvmSharedMain, java.io), with the same files — one per track, named by a hash of
- * its id, schema [SCHEMA_VERSION], at most [MAX_ENTRIES], curves rounded to milliseconds — in
+ * its id, schema [SCHEMA_VERSION] (2: the models' beats and curves), at most [MAX_ENTRIES], curves rounded to milliseconds — in
  * Application Support/BitChord/smart_analysis, kept out of the phone's backup: every one of them
  * can be measured again.
  *
  * [load] and [markMissing] are the main thread's; [save] runs off it and touches no shared state.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-internal class IosAnalysisStore {
+internal class IosAnalysisStore(
+    /** Whether the models can run now: an analysis made without them is then made again. */
+    private val modelsAvailable: () -> Boolean = { false },
+) {
     private val files = NSFileManager.defaultManager
 
     private val json = Json {
@@ -66,6 +72,8 @@ internal class IosAnalysisStore {
             val stored = json.decodeFromString(Stored.serializer(), text)
             // A wrong beat grid is worse than none: an older schema's numbers are re-earned.
             require(stored.version == SCHEMA_VERSION) { "schema ${stored.version}" }
+            // Measured while the models couldn't load; now that they can, it is measured with them.
+            require(stored.models || !modelsAvailable()) { "made without the models" }
             stored.toAnalysis(trackId)
         }.onFailure {
             files.removeItemAtPath(path, null)
@@ -82,9 +90,9 @@ internal class IosAnalysisStore {
      * Stores [analysis], then keeps the directory under [MAX_ENTRIES]. A result with no usable tempo
      * isn't kept: the reason is usually the bytes, not the track. Any thread.
      */
-    fun save(trackId: String, analysis: TrackAnalysis) {
+    fun save(trackId: String, analysis: TrackAnalysis, models: Boolean) {
         if (trackId.isBlank() || !analysis.isUsable) return
-        val text = json.encodeToString(Stored.serializer(), Stored.of(analysis))
+        val text = json.encodeToString(Stored.serializer(), Stored.of(analysis, models))
         // Atomically: written aside and moved into place, so a kill mid-write keeps the old entry.
         NSString.create(string = text)
             .writeToFile("$directory/${fileNameFor(trackId)}", atomically = true, encoding = NSUTF8StringEncoding, error = null)
@@ -129,6 +137,12 @@ internal class IosAnalysisStore {
         val lowEnergyCurve: List<StoredEnergy> = emptyList(),
         val vocalActivityMask: List<Double> = emptyList(),
         val vocalProbability: Double = 0.0,
+        /** Whether the beat and vocal models ran (whatever they found). */
+        val models: Boolean = false,
+        val headBeats: StoredSide? = null,
+        val tailBeats: StoredSide? = null,
+        val vocalWindows: List<StoredCurve> = emptyList(),
+        val levelWindows: List<StoredCurve> = emptyList(),
     ) {
         fun toAnalysis(trackId: String) = TrackAnalysis(
             status = TrackAnalysis.STATUS_READY,
@@ -155,10 +169,14 @@ internal class IosAnalysisStore {
             lowEnergyCurve = lowEnergyCurve.map { it.toSample() },
             vocalActivityMask = vocalActivityMask,
             vocalProbability = vocalProbability,
+            headBeats = headBeats?.toSide(),
+            tailBeats = tailBeats?.toSide(),
+            vocalWindows = vocalWindows.map { it.toWindow() },
+            levelWindows = levelWindows.map { it.toWindow() },
         )
 
         companion object {
-            fun of(analysis: TrackAnalysis) = Stored(
+            fun of(analysis: TrackAnalysis, models: Boolean) = Stored(
                 duration = analysis.duration,
                 bpm = analysis.bpm,
                 beatInterval = analysis.beatInterval,
@@ -181,6 +199,34 @@ internal class IosAnalysisStore {
                 lowEnergyCurve = analysis.lowEnergyCurve.map(StoredEnergy::of),
                 vocalActivityMask = analysis.vocalActivityMask.map(::round),
                 vocalProbability = analysis.vocalProbability,
+                models = models,
+                headBeats = analysis.headBeats?.let(StoredSide::of),
+                tailBeats = analysis.tailBeats?.let(StoredSide::of),
+                vocalWindows = analysis.vocalWindows.map(StoredCurve::of),
+                levelWindows = analysis.levelWindows.map(StoredCurve::of),
+            )
+        }
+    }
+
+    @Serializable
+    private data class StoredSide(val beats: List<Double>, val downbeats: List<Double>, val bpm: Double, val confidence: Double) {
+        fun toSide() = BeatSide(beats, downbeats, bpm, confidence)
+
+        companion object {
+            fun of(side: BeatSide) = StoredSide(side.beats.map(::round), side.downbeats.map(::round), side.bpm, side.confidence)
+        }
+    }
+
+    /** A 0..1 curve in hundredths: finer than the loop mix's checks read, and a fifth of the text. */
+    @Serializable
+    private data class StoredCurve(val start: Double, val rate: Double, val values: List<Int>) {
+        fun toWindow() = CurveWindow(start, rate, FloatArray(values.size) { values[it] / 100f })
+
+        companion object {
+            fun of(window: CurveWindow) = StoredCurve(
+                round(window.startTime),
+                window.frameRate,
+                window.values.map { (it.coerceIn(0f, 1f) * 100).roundToInt() },
             )
         }
     }
@@ -208,7 +254,7 @@ internal class IosAnalysisStore {
         const val DIRECTORY = "smart_analysis"
 
         /** AnalysisStore's: bumped whenever a stored number starts being computed differently. */
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
 
         const val MAX_ENTRIES = 2_000
 

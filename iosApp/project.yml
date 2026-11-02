@@ -110,6 +110,10 @@ targets:
       # Automix's analyzer, built below; iosKit dlopens it as it does FFmpeg (IosAnalyzerNative).
       - target: BitChordAnalysis
         embed: true
+      # Automix's beat and vocal models on ONNX Runtime, built below; dlopened too (IosModels).
+      # Their weights are in iosApp/Models (scripts/fetch-models.sh), bundled as resources.
+      - target: BitChordModels
+        embed: true
       # The Replay poster's Save button; linked explicitly, as the Kotlin framework is static.
       - sdk: Photos.framework
       # The Now Playing widget, in PlugIns.
@@ -167,6 +171,10 @@ targets:
     sources:
       - path: ../native/analyzer/audio_analysis.cpp
       - path: ../native/analyzer/tempo_analysis.cpp
+      # The models' front ends: Beat This!'s mel spectrogram, open-unmix's STFT, the resampler.
+      - path: ../native/analyzer/mel_spectrogram.cpp
+      - path: ../native/analyzer/vocal_spectrogram.cpp
+      - path: ../native/analyzer/resampler.cpp
       - path: ../native/analyzer/ios/bitchord_analysis_ios.cpp
     settings:
       base:
@@ -184,3 +192,33 @@ targets:
         GCC_OPTIMIZATION_LEVEL: "2"
         # Hidden unless marked: only the bridge's BITCHORD_EXPORT functions are exported.
         GCC_SYMBOLS_PRIVATE_EXTERN: "YES"
+  # Automix's models: the C bridge in native/models/ios over ONNX Runtime, which is Microsoft's
+  # prebuilt onnxruntime.xcframework (scripts/fetch-onnxruntime.sh) linked in statically, so the
+  # app carries one framework for it. CoreML is what ORT's CoreML provider links against; the bridge
+  # runs on the CPU provider alone.
+  BitChordModels:
+    type: framework
+    platform: iOS
+    sources:
+      - path: ../native/models/ios/bitchord_models_ios.cpp
+    dependencies:
+      - framework: ../iosKit/onnxruntime/onnxruntime.xcframework
+        embed: false
+        link: true
+      - sdk: CoreML.framework
+      - sdk: Foundation.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord.models
+        PRODUCT_NAME: BitChordModels
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: "YES"
+        DEFINES_MODULE: "NO"
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        CLANG_CXX_LIBRARY: libc++
+        HEADER_SEARCH_PATHS: $(SRCROOT)/../iosKit/onnxruntime/include
+        GCC_OPTIMIZATION_LEVEL: "2"
+        # Hidden unless marked: the bridge's bcm_ functions are all the framework exports.
+        GCC_SYMBOLS_PRIVATE_EXTERN: "YES"
+        DEAD_CODE_STRIPPING: "YES"

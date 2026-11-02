@@ -15,6 +15,9 @@ on:
       - 'iosApp/**'
       # Automix's analyzer, which the app builds as BitChordAnalysis.framework.
       - 'native/analyzer/**'
+      # Its models' bridge (BitChordModels.framework) and the scripts that fetch ORT and the weights.
+      - 'native/models/**'
+      - 'scripts/fetch-*.sh'
       - '*.gradle.kts'
       - 'gradle/**'
       - '.github/workflows/ios.yml'
@@ -77,9 +80,23 @@ jobs:
           lib="$RUNNER_TEMP/libbitchord_analysis.so"
           g++ -std=c++17 -O1 -Wall -shared -fPIC -fvisibility=hidden -Wl,--no-undefined \
             native/analyzer/audio_analysis.cpp native/analyzer/tempo_analysis.cpp \
+            native/analyzer/mel_spectrogram.cpp native/analyzer/vocal_spectrogram.cpp native/analyzer/resampler.cpp \
             native/analyzer/ios/bitchord_analysis_ios.cpp -o "$lib"
-          for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free; do
+          for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free \
+                        bitchord_frontend_shape bitchord_mel_compute bitchord_vocal_compute bitchord_resample bitchord_buffer_free; do
             nm -D --defined-only "$lib" | grep -qw "$symbol" || { echo "$symbol is not exported"; exit 1; }
+          done
+
+      # BitChordModels' bridge, compiled against ONNX Runtime's headers (the iOS library itself only
+      # links on macOS), with its exports checked as above.
+      - name: Compile the Automix models' iOS bridge
+        run: |
+          bash scripts/fetch-onnxruntime.sh
+          obj="$RUNNER_TEMP/bitchord_models.o"
+          g++ -std=c++17 -O1 -Wall -Wextra -fPIC -fvisibility=hidden -I iosKit/onnxruntime/include \
+            -c native/models/ios/bitchord_models_ios.cpp -o "$obj"
+          for symbol in bcm_abi bcm_last_error bcm_open bcm_output_count bcm_run bcm_free bcm_close; do
+            nm --defined-only "$obj" | grep -qw "$symbol" || { echo "$symbol is not exported"; exit 1; }
           done
 
       # Started by hand, the live YouTube test runs here too: on the JVM, from GitHub's network,
@@ -202,6 +219,12 @@ jobs:
       - name: Fetch FFmpeg
         run: bash scripts/fetch-ffmpeg.sh
 
+      # ONNX Runtime and Automix's two models, before the project is generated so the weights are in it.
+      - name: Fetch ONNX Runtime and the Automix models
+        run: |
+          bash scripts/fetch-onnxruntime.sh
+          bash scripts/fetch-models.sh
+
       - name: Generate the Xcode project
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
@@ -271,9 +294,21 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.app
         run: |
           lib=build/ios-device/Build/Products/Release-iphoneos/BitChord.app/Frameworks/BitChordAnalysis.framework/BitChordAnalysis
-          for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free; do
+          for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free \
+                        bitchord_frontend_shape bitchord_mel_compute bitchord_vocal_compute bitchord_resample bitchord_buffer_free; do
             nm -gU "$lib" | grep -q " _$symbol\$" || { echo "$symbol is not exported by $lib"; exit 1; }
           done
+          app=build/ios-device/Build/Products/Release-iphoneos/BitChord.app
+          models="$app/Frameworks/BitChordModels.framework/BitChordModels"
+          for symbol in bcm_abi bcm_last_error bcm_open bcm_output_count bcm_run bcm_free bcm_close; do
+            nm -gU "$models" | grep -q " _$symbol\$" || { echo "$symbol is not exported by $models"; exit 1; }
+          done
+          # ORT is linked in, not left for the loader to find.
+          if nm -u "$models" | grep -q "_OrtGetApiBase"; then echo "ONNX Runtime is not linked into $models"; exit 1; fi
+          for model in beat_this_final0_q8.onnx vocals_umxhq_int8.onnx; do
+            [ -s "$app/$model" ] || { echo "$model is not in the app"; exit 1; }
+          done
+          ls -lh "$models" build/BitChord-unsigned.ipa
 
       # After the IPA, so a smoke failure never costs the deliverable. Plays a track with no taps
       # (see iosKit's Autoplay.kt) and passes when the playhead moves.

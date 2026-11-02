@@ -734,6 +734,12 @@ internal fun SettingsPage(
                 val videoCheck by IosMusicVideoCheck.progress.collectAsState()
                 ActionRow(tr("Music video check"), value = videoCheck ?: tr("Run")) { IosMusicVideoCheck.run() }
                 Divider()
+                // Phase 2 of the loop-mix design: the beat and vocal models on this phone.
+                val modelCheck by com.music.bitchord.ios.automix.IosAutomixModelCheck.progress.collectAsState()
+                ActionRow(tr("Automix model check"), value = modelCheck ?: tr("Run")) {
+                    com.music.bitchord.ios.automix.IosAutomixModelCheck.run()
+                }
+                Divider()
                 Toggle(
                     tr("Smart audio alignment"),
                     tr("Analyze audio waveforms to match the exact corresponding playback moment"),

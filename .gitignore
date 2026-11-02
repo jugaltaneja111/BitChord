@@ -51,4 +51,7 @@ AGENTS.md
 
 # Prebuilt FFmpeg for iOS, fetched by scripts/fetch-ffmpeg.sh
 iosKit/ffmpeg/
+# ONNX Runtime and the Automix models for iOS, fetched by scripts/fetch-onnxruntime.sh and fetch-models.sh
+iosKit/onnxruntime/
+iosApp/iosApp/Models/
 .claude/worktrees/

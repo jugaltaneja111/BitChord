@@ -5,16 +5,25 @@ package com.music.bitchord.ios.automix
 import com.music.bitchord.playback.smart.EnergySample
 import com.music.bitchord.playback.smart.MixCandidate
 import com.music.bitchord.playback.smart.TrackAnalysis
+import com.music.bitchord.playback.smart.VocalModel
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CFunction
 import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.DoubleVar
 import kotlinx.cinterop.FloatVar
+import kotlinx.cinterop.LongVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.get
 import kotlinx.cinterop.invoke
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -45,13 +54,21 @@ import platform.posix.dlsym
 internal object IosAnalyzerNative {
     private const val FRAMEWORK = "BitChordAnalysis"
 
-    /** The bridge's kAbiVersion this side was written against. */
-    private const val ABI_VERSION = 1
+    /** The bridge's kAbiVersion this side was written against (2: the models' front ends). */
+    private const val ABI_VERSION = 2
+
+    /** The mel front end's shape, which Beat This! was trained on. */
+    const val MEL_BANDS = 128
+    const val MEL_RATE = 22_050.0
 
     private class Bound(
         val run: CPointer<CFunction<(CPointer<FloatVar>?, Long, Double, Double) -> CPointer<ByteVar>?>>,
         val free: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
         val sampleRate: Double,
+        val mel: CPointer<CFunction<(CPointer<FloatVar>?, Long, Double, CPointer<LongVar>?) -> CPointer<FloatVar>?>>,
+        val vocal: CPointer<CFunction<(CPointer<FloatVar>?, CPointer<FloatVar>?, Long, Double, CPointer<LongVar>?) -> CPointer<FloatVar>?>>,
+        val resample: CPointer<CFunction<(CPointer<FloatVar>?, Long, Double, Double, CPointer<LongVar>?) -> CPointer<FloatVar>?>>,
+        val bufferFree: CPointer<CFunction<(CPointer<FloatVar>?) -> Unit>>,
     )
 
     private val bound: Result<Bound> by lazy {
@@ -64,10 +81,25 @@ internal object IosAnalyzerNative {
                     ?: error("$FRAMEWORK isn't in this build (${loaderError ?: "$name missing"})")
             val abi = sym("bitchord_analysis_abi_version").reinterpret<CFunction<() -> Int>>()()
             check(abi == ABI_VERSION) { "$FRAMEWORK's bridge is version $abi, not the $ABI_VERSION this app was built for" }
+            // The front ends' shapes are the models' contract: checked, not assumed.
+            val shape = memScoped {
+                val out = allocArray<DoubleVar>(7)
+                sym("bitchord_frontend_shape").reinterpret<CFunction<(CPointer<DoubleVar>?) -> Unit>>()(out)
+                DoubleArray(7) { out[it] }
+            }
+            val expected = doubleArrayOf(
+                MEL_BANDS.toDouble(), MEL_RATE, 441.0,
+                VocalModel.BINS.toDouble(), VocalModel.SAMPLE_RATE, VocalModel.HOP.toDouble(), VocalModel.FFT_SIZE.toDouble(),
+            )
+            check(shape.contentEquals(expected)) { "$FRAMEWORK's front ends are ${shape.toList()}, not ${expected.toList()}" }
             Bound(
                 run = sym("bitchord_analysis_run").reinterpret(),
                 free = sym("bitchord_analysis_free").reinterpret(),
                 sampleRate = sym("bitchord_analysis_sample_rate").reinterpret<CFunction<() -> Double>>()(),
+                mel = sym("bitchord_mel_compute").reinterpret(),
+                vocal = sym("bitchord_vocal_compute").reinterpret(),
+                resample = sym("bitchord_resample").reinterpret(),
+                bufferFree = sym("bitchord_buffer_free").reinterpret(),
             )
         }
     }
@@ -95,14 +127,65 @@ internal object IosAnalyzerNative {
             }
         }
     }
+
+    /** A native float buffer of [length], copied out and released. */
+    private fun Bound.take(buffer: CPointer<FloatVar>?, length: Long): FloatArray? {
+        buffer ?: return null
+        try {
+            if (length <= 0 || length > Int.MAX_VALUE / 4) return null
+            val out = FloatArray(length.toInt())
+            out.usePinned { pinned ->
+                platform.posix.memcpy(pinned.addressOf(0), buffer, (length * 4).toULong())
+            }
+            return out
+        } finally {
+            bufferFree(buffer)
+        }
+    }
+
+    /**
+     * Beat This!'s log-mel input for the first [count] of [samples], mono at [MEL_RATE]: frames ×
+     * [MEL_BANDS], frame-major, with the frame count; null when the input is unusable.
+     */
+    fun melSpectrogram(samples: FloatArray, count: Int): Pair<FloatArray, Int>? {
+        val native = bound.getOrNull() ?: return null
+        if (count <= 0 || count > samples.size) return null
+        return memScoped {
+            val frames = alloc<LongVar>()
+            val buffer = samples.usePinned { native.mel(it.addressOf(0), count.toLong(), MEL_RATE, frames.ptr) }
+            native.take(buffer, frames.value * MEL_BANDS)?.let { it to frames.value.toInt() }
+        }
+    }
+
+    /** open-unmix's `[2, bins, frames]` input for [count] samples of planar stereo at 44.1 kHz, and the frames. */
+    fun vocalSpectrogram(left: FloatArray, right: FloatArray, count: Int): Pair<FloatArray, Int>? {
+        val native = bound.getOrNull() ?: return null
+        if (count <= 0 || count > left.size || count > right.size) return null
+        return memScoped {
+            val frames = alloc<LongVar>()
+            val buffer = left.usePinned { l ->
+                right.usePinned { r -> native.vocal(l.addressOf(0), r.addressOf(0), count.toLong(), VocalModel.SAMPLE_RATE, frames.ptr) }
+            }
+            native.take(buffer, frames.value * VocalModel.CHANNELS * VocalModel.BINS)?.let { it to frames.value.toInt() }
+        }
+    }
+
+    /** The first [count] of [samples] at [outputRate], windowed-sinc; null when it can't be. */
+    fun resample(samples: FloatArray, count: Int, inputRate: Double, outputRate: Double): FloatArray? {
+        val native = bound.getOrNull() ?: return null
+        if (count <= 0 || count > samples.size) return null
+        return memScoped {
+            val length = alloc<LongVar>()
+            val buffer = samples.usePinned { native.resample(it.addressOf(0), count.toLong(), inputRate, outputRate, length.ptr) }
+            native.take(buffer, length.value)
+        }
+    }
 }
 
 /**
  * The bridge's JSON as a [TrackAnalysis]: TrackFeatures.parse (jvmSharedMain) on the commonMain
- * types, field for field, then assembled as the desktop's analyser assembles it — minus the Beat This!
- * grid, which needs ONNX Runtime and so has no iOS build. The beat grid, its confidence and the vocal
- * mask are therefore always the DSP's own (autocorrelation and spectral heuristics), as on a phone
- * whose model failed to load; the policy already weighs them that way.
+ * types, field for field — the DSP pass's numbers, which the model pass
+ * ([IosAutomixAnalysis], [IosModels]) then improves where the models find something.
  */
 internal object IosTrackFeatures {
 

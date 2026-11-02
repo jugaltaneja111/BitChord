@@ -31,6 +31,11 @@ import kotlin.concurrent.Volatile
  * [FileSource], demuxer and decoder, and swresample to [rate]; the mono mix is the two channels'
  * average, as Android's `TrackAnalyzer` makes it, rather than swresample's own downmix.
  *
+ * With [stereo] and [startSeconds], a region instead, for Automix's models: the file is sought to
+ * [startSeconds], decoding resumes from the packet at or before it, and what comes out before it is
+ * dropped, so the region starts exactly there; both channels are kept, planar, and [maxSamples] is
+ * the region's length.
+ *
  * Blocking, and every FFmpeg object it makes is made, used and freed by the thread calling
  * [decode]. [cancel] may come from any thread: the file's reads then fail and the decode stops at
  * the next packet.
@@ -42,6 +47,10 @@ internal class FfmpegMonoDecoder(
     private val maxSamples: Int,
     /** The file is only a song's opening, cut off mid-packet; where it stops is its end. */
     private val partial: Boolean = false,
+    /** Both channels, planar ([Decoded.samples] the left, [Decoded.right] the right). */
+    private val stereo: Boolean = false,
+    /** Where to start, in the file's seconds. */
+    private val startSeconds: Double = 0.0,
 ) {
     class Decoded(
         /** The first [count] are the audio. */
@@ -53,6 +62,10 @@ internal class FfmpegMonoDecoder(
         /** The file's own rate, before resampling. */
         val sourceRate: Int,
         val rate: Int,
+        /** The right channel when decoded in stereo; a mono file's is its one channel again. */
+        val right: FloatArray? = null,
+        /** Where [samples] starts, in the file's seconds. */
+        val startSeconds: Double = 0.0,
     ) {
         val seconds: Double get() = count.toDouble() / rate
     }
@@ -86,7 +99,13 @@ internal class FfmpegMonoDecoder(
     private var planeCapacity = 0
 
     private var out = FloatArray(0)
+    private var outRight = FloatArray(0)
     private var count = 0
+
+    /** Output samples still to drop before [startSeconds]; -1 until the first frame says where it is. */
+    private var skip = -1L
+    private var timeBase = 0.0
+    private var startPts = 0L
     private var full = false
 
     init {
@@ -107,10 +126,19 @@ internal class FfmpegMonoDecoder(
             if (cancelled) src.cancel()
             src.failure?.let { error(it) }
             out = FloatArray(((expectedSeconds.coerceAtLeast(0.0) + 5) * rate).toInt().coerceIn(rate, maxSamples + 1))
+            if (stereo) outRight = FloatArray(out.size)
             packetSlot.value = Av.packetAlloc()
             frameSlot.value = Av.frameAlloc()
             if (packetSlot.value == null || frameSlot.value == null) error("out of memory")
             val (containerSeconds, codec, sourceRate) = openDemuxer(src)
+            if (startSeconds > 0) {
+                val target = (startSeconds / timeBase).toLong() + startPts
+                val sought = Av.seekFrame(formatSlot.value, streamIndex, target, FfmpegLayout.SEEK_FLAG_BACKWARD)
+                if (sought < 0) error("can't seek to ${startSeconds}s: ${Av.describe(sought)}")
+                Av.flushBuffers(codecSlot.value!!)
+            } else {
+                skip = 0
+            }
             while (!full) {
                 if (cancelled) error("cancelled")
                 val packet = packetSlot.value
@@ -138,7 +166,7 @@ internal class FfmpegMonoDecoder(
                 receiveFrames()
                 if (swrSlot.value != null) convert(null, 0)
             }
-            return Decoded(out, count, containerSeconds, codec, sourceRate, rate)
+            return Decoded(out, count, containerSeconds, codec, sourceRate, rate, if (stereo) outRight else null, startSeconds.coerceAtLeast(0.0))
         } finally {
             cleanup()
         }
@@ -185,6 +213,8 @@ internal class FfmpegMonoDecoder(
         val codecOpened = Av.codecOpen(codec, decoder)
         if (codecOpened < 0) error("can't open the decoder: ${Av.describe(codecOpened)}")
         val timeBase = stream.rational(FfmpegLayout.STREAM_TIME_BASE)
+        this.timeBase = timeBase
+        startPts = stream.long(FfmpegLayout.STREAM_START_TIME).takeIf { it != FfmpegLayout.NOPTS_VALUE } ?: 0L
         val formatSeconds = ctx.long(FfmpegLayout.FMT_DURATION)
             .takeIf { it > 0 && it != FfmpegLayout.NOPTS_VALUE }?.let { it.toDouble() / FfmpegLayout.TIME_BASE }
         val streamSeconds = stream.long(FfmpegLayout.STREAM_DURATION)
@@ -215,6 +245,12 @@ internal class FfmpegMonoDecoder(
         val inRate = frame.int(FfmpegLayout.FRAME_SAMPLE_RATE)
         val inChannels = frame.int(FfmpegLayout.FRAME_CH_LAYOUT + FfmpegLayout.LAYOUT_NB_CHANNELS)
         if (samples <= 0 || inRate <= 0 || inChannels <= 0) return
+        if (skip < 0) {
+            // The first frame after the seek: how far before the start it begins.
+            val pts = frame.long(FfmpegLayout.FRAME_BEST_EFFORT_TIMESTAMP).takeIf { it != FfmpegLayout.NOPTS_VALUE }
+            val at = pts?.let { (it - startPts) * timeBase } ?: startSeconds
+            skip = ((startSeconds - at).coerceAtLeast(0.0) * rate).toLong()
+        }
         val key = Triple(inFormat, inRate, inChannels)
         if (key != swrKey) {
             // A new input shape: what the old resampler holds goes out first.
@@ -270,20 +306,35 @@ internal class FfmpegMonoDecoder(
 
     private fun append(l: CPointer<FloatVar>, r: CPointer<FloatVar>, made: Int) {
         if (made <= 0) return
+        // Before the region's start: dropped.
+        val dropped = if (skip > 0) minOf(skip, made.toLong()).toInt() else 0
+        if (dropped > 0) skip -= dropped
+        val available = made - dropped
+        if (available <= 0) return
         val room = maxSamples - count
-        val take = minOf(made, room)
+        val take = minOf(available, room)
         if (take <= 0) {
             full = true
             return
         }
-        if (count + take > out.size) out = out.copyOf(maxOf(count + take, minOf(out.size * 3 / 2, maxSamples)))
-        if (swrChannels == 1) {
-            for (i in 0 until take) out[count + i] = l[i]
+        if (count + take > out.size) {
+            val size = maxOf(count + take, minOf(out.size * 3 / 2, maxSamples))
+            out = out.copyOf(size)
+            if (stereo) outRight = outRight.copyOf(size)
+        }
+        if (stereo) {
+            val right = if (swrChannels == 1) l else r
+            for (i in 0 until take) {
+                out[count + i] = l[dropped + i]
+                outRight[count + i] = right[dropped + i]
+            }
+        } else if (swrChannels == 1) {
+            for (i in 0 until take) out[count + i] = l[dropped + i]
         } else {
-            for (i in 0 until take) out[count + i] = (l[i] + r[i]) * 0.5f
+            for (i in 0 until take) out[count + i] = (l[dropped + i] + r[dropped + i]) * 0.5f
         }
         count += take
-        if (take < made) full = true
+        if (take < available) full = true
     }
 
     private fun ensurePlanes(samples: Int) {

@@ -18,10 +18,10 @@
 // signatures below are restated there and must stay in step with it, and
 // kAbiVersion is what tells a mismatch apart from a missing library.
 //
-// Only the DSP pass runs on iOS. The Beat This! beat model and the open-unmix
-// vocal model need ONNX Runtime, which the iOS build does not have, so the
-// tempo, beat grid and vocal mask are the analyzer's own autocorrelation and
-// spectral heuristics -- the Phase 1 numbers the policy already degrades on.
+// Also the two models' front ends (mel_spectrogram.cpp, vocal_spectrogram.cpp)
+// and the resampler, which Android reaches through mel_jni.cpp and
+// vocal_jni.cpp. The models themselves run in BitChordModels.framework
+// (native/models/ios), on ONNX Runtime.
 
 #include <cstdint>
 #include <cstdlib>
@@ -32,16 +32,28 @@
 
 #include "../analysis_json.h"
 #include "../audio_analysis.h"
+#include "../mel_spectrogram.h"
+#include "../resampler.h"
+#include "../vocal_spectrogram.h"
 
 #define BITCHORD_EXPORT extern "C" __attribute__((visibility("default"), used))
 
 namespace {
 
 /** Bumped whenever a signature below changes; IosAnalyzerNative refuses any other. */
-constexpr int32_t kAbiVersion = 1;
+constexpr int32_t kAbiVersion = 2;
 
 /** The rate the analyzer's window and hop constants assume (TrackFeatures.sampleRate). */
 constexpr double kSampleRate = 11025.0;
+
+/** A malloc'd copy of [values] for the caller to bitchord_buffer_free, or null. */
+float* Copy(const std::vector<float>& values) {
+  if (values.empty()) return nullptr;
+  float* out = static_cast<float*>(std::malloc(values.size() * sizeof(float)));
+  if (out == nullptr) return nullptr;
+  std::memcpy(out, values.data(), values.size() * sizeof(float));
+  return out;
+}
 
 }  // namespace
 
@@ -79,3 +91,78 @@ BITCHORD_EXPORT char* bitchord_analysis_run(
 
 /** Releases a string bitchord_analysis_run returned; null is fine. */
 BITCHORD_EXPORT void bitchord_analysis_free(char* json) { std::free(json); }
+
+/**
+ * The front ends' fixed shapes, which the models were trained on: [mels, mel
+ * rate, mel hop, vocal bins, vocal rate, vocal hop, vocal FFT]. iosKit checks
+ * them against its own constants before trusting either model's input.
+ */
+BITCHORD_EXPORT void bitchord_frontend_shape(double* out) {
+  if (out == nullptr) return;
+  out[0] = static_cast<double>(bitchord::smart::kBeatSpectrogramMels);
+  out[1] = bitchord::smart::kBeatSpectrogramSampleRate;
+  out[2] = static_cast<double>(bitchord::smart::kBeatSpectrogramHop);
+  out[3] = static_cast<double>(bitchord::smart::kVocalSpectrogramBins);
+  out[4] = bitchord::smart::kVocalSpectrogramSampleRate;
+  out[5] = static_cast<double>(bitchord::smart::kVocalSpectrogramHop);
+  out[6] = static_cast<double>(bitchord::smart::kVocalSpectrogramFft);
+}
+
+/**
+ * Beat This!'s log-mel input for [count] mono samples at [sample_rate] (which
+ * must be the front end's 22,050 Hz): frames x mels floats, frame-major, with
+ * the frame count in [frames]. Null when the input is unusable.
+ */
+BITCHORD_EXPORT float* bitchord_mel_compute(
+    const float* samples, int64_t count, double sample_rate, int64_t* frames) {
+  if (frames != nullptr) *frames = 0;
+  if (samples == nullptr || count <= 0 || frames == nullptr) return nullptr;
+  try {
+    const std::vector<float> input(samples, samples + count);
+    const auto spectrogram = bitchord::smart::ComputeBeatSpectrogram(input, sample_rate);
+    float* out = Copy(spectrogram.values);
+    if (out != nullptr) *frames = static_cast<int64_t>(spectrogram.frames);
+    return out;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+/**
+ * open-unmix's magnitude STFT for planar stereo at [sample_rate] (44,100 Hz):
+ * [2][bins][frames], bin-major as the model's tensor is laid out.
+ */
+BITCHORD_EXPORT float* bitchord_vocal_compute(
+    const float* left, const float* right, int64_t count, double sample_rate, int64_t* frames) {
+  if (frames != nullptr) *frames = 0;
+  if (left == nullptr || right == nullptr || count <= 0 || frames == nullptr) return nullptr;
+  try {
+    const std::vector<std::vector<float>> channels{
+        std::vector<float>(left, left + count), std::vector<float>(right, right + count)};
+    const auto spectrogram = bitchord::smart::ComputeVocalSpectrogram(channels, sample_rate);
+    float* out = Copy(spectrogram.values);
+    if (out != nullptr) *frames = static_cast<int64_t>(spectrogram.frames);
+    return out;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+/** Windowed-sinc conversion of [count] mono samples; the length in [out_count]. */
+BITCHORD_EXPORT float* bitchord_resample(
+    const float* samples, int64_t count, double input_rate, double output_rate, int64_t* out_count) {
+  if (out_count != nullptr) *out_count = 0;
+  if (samples == nullptr || count <= 0 || out_count == nullptr) return nullptr;
+  try {
+    const std::vector<float> input(samples, samples + count);
+    const auto output = bitchord::smart::Resample(input, input_rate, output_rate);
+    float* out = Copy(output);
+    if (out != nullptr) *out_count = static_cast<int64_t>(output.size());
+    return out;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+/** Releases a buffer one of the functions above returned; null is fine. */
+BITCHORD_EXPORT void bitchord_buffer_free(float* buffer) { std::free(buffer); }

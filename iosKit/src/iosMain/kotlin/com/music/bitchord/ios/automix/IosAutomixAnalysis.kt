@@ -15,7 +15,9 @@ import com.music.bitchord.ios.ffmpeg.Av
 import com.music.bitchord.ios.ffmpeg.FfmpegMonoDecoder
 import com.music.bitchord.ios.party.IosListenTogether
 import com.music.bitchord.ios.sources.IosSources
+import com.music.bitchord.playback.smart.ModelRegions
 import com.music.bitchord.playback.smart.TrackAnalysis
+import com.music.bitchord.playback.smart.VocalModel
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
@@ -68,9 +70,12 @@ import kotlin.math.roundToLong
  * in memory and on disk ([IosAnalysisStore], AnalysisStore's format); a failure retried after a
  * cooldown.
  *
- * What is not here, and why: Android's Beat This! and open-unmix models run on ONNX Runtime, which
- * the iOS build doesn't have. The beat grid, its confidence and the vocal mask are the DSP's own —
- * Phase 1's numbers, which the policy already treats as it treats a model that failed to load.
+ * Then Android's second pass, the models ([IosModels]): Beat This! and open-unmix over two windows
+ * at the track's opening and three up to its end, each decoded as 44.1 kHz stereo ([ModelRegions]
+ * lays them out and puts their results into the analysis). Their grid replaces the DSP's where they
+ * found one, their vocal mask stands where they ran, and the loop mix gets its per-side beats and
+ * per-window vocal and level curves. A build without the models keeps the DSP's numbers, as a phone
+ * whose model failed to load does.
  *
  * Audio, first that is already on the phone: a download, the song cache (read without marking it
  * played), a local file. Otherwise the track's YouTube copy at the lowest rung, fetched into Caches
@@ -114,7 +119,10 @@ internal object IosAutomixAnalysis {
     private const val MAX_TRACKED = 32
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val store = IosAnalysisStore()
+    private val store = IosAnalysisStore(modelsAvailable = { IosModels.loadError == null })
+
+    /** The rate the models' windows are decoded at: open-unmix's. */
+    private const val REGION_RATE = 44_100
     private val files = NSFileManager.defaultManager
     private val http by lazy { appHttpClient { install(HttpTimeout) } }
 
@@ -246,11 +254,12 @@ internal object IosAutomixAnalysis {
             publish()
             attempts[id] = (attempts[id] ?: 0) + 1
             try {
-                val analysis = measure(song)
+                val measured = measure(song)
+                val analysis = measured.analysis
                 failedAt.remove(id)
                 results[id] = analysis
                 if (analysis.isUsable) {
-                    withContext(Dispatchers.Default) { runCatching { store.save(id, analysis) } }
+                    withContext(Dispatchers.Default) { runCatching { store.save(id, analysis, measured.models) } }
                     store.markStored(id)
                 }
             } catch (e: CancellationException) {
@@ -266,10 +275,12 @@ internal object IosAutomixAnalysis {
             if (running == id) running = null
             publish()
         }
+        // Nothing left to measure: the models' sessions are let go until there is.
+        withContext(Dispatchers.Default) { IosModels.release() }
     }
 
     /** [song], measured: from the first copy on the phone, else a fetched one. */
-    private suspend fun measure(song: Song): TrackAnalysis {
+    internal suspend fun measure(song: Song): Measured {
         val id = song.videoId
         val hintSeconds = song.durationText.durationSeconds()
         val local = localCopy(song)
@@ -292,8 +303,8 @@ internal object IosAutomixAnalysis {
             ?: IosSongCache.peek(song.videoId)?.let { it to "song cache" }
             ?: song.localPath?.takeIf { files.fileExistsAtPath(it) }?.let { it to "local file" }
 
-    /** Decodes and analyses [path] on the analysis thread. */
-    private suspend fun analyse(id: String, path: String, hintSeconds: Double): TrackAnalysis {
+    /** Decodes and analyses [path] on the analysis thread, then runs the models over it. */
+    private suspend fun analyse(id: String, path: String, hintSeconds: Double): Measured {
         val decoder = FfmpegMonoDecoder(path, IosAnalyzerNative.sampleRate.toInt(), MAX_SAMPLES)
         val measured = onAnalysisThread(onCancel = decoder::cancel) {
             val started = MonotonicClock.nowMs()
@@ -307,9 +318,10 @@ internal object IosAutomixAnalysis {
             }
             val json = IosAnalyzerNative.analyze(decoded.samples, decoded.count, duration) ?: error("the analyzer declined it")
             val analysis = IosTrackFeatures.parse(json, id, duration)
-            Measured(analysis, decoded, decodedAt - started, MonotonicClock.nowMs() - decodedAt)
+            Dsp(analysis, decoded, decodedAt - started, MonotonicClock.nowMs() - decodedAt)
         }
         val analysis = measured.analysis
+        val dsp = analysis
         TrackLog.i(
             TAG,
             "automix: analysed ${measured.decoded.codec} ${measured.decoded.sourceRate} Hz, " +
@@ -320,10 +332,100 @@ internal object IosAutomixAnalysis {
                 if (analysis.isUsable) "" else "; no usable tempo",
             about = id,
         )
-        return analysis
+        val dspMs = measured.decodeMs + measured.analyseMs
+        if (!dsp.isUsable) return Measured(dsp, models = false, dspMs = dspMs, modelMs = 0, summary = "no usable tempo")
+        val modelError = IosModels.loadError
+        if (modelError != null) {
+            TrackLog.i(TAG, "automix: models not run: $modelError", about = id)
+            return Measured(dsp, models = false, dspMs = dspMs, modelMs = 0, summary = "models not run: $modelError")
+        }
+        val modelled = models(id, path, dsp)
+        return Measured(modelled.analysis, models = true, dspMs = dspMs, modelMs = modelled.ms, summary = modelled.summary)
     }
 
-    private class Measured(val analysis: TrackAnalysis, val decoded: FfmpegMonoDecoder.Decoded, val decodeMs: Long, val analyseMs: Long)
+    private class Dsp(val analysis: TrackAnalysis, val decoded: FfmpegMonoDecoder.Decoded, val decodeMs: Long, val analyseMs: Long)
+
+    /** An analysis, whether the models ran over it, and how long each pass took. */
+    internal class Measured(val analysis: TrackAnalysis, val models: Boolean, val dspMs: Long, val modelMs: Long, val summary: String)
+
+    private class Modelled(val analysis: TrackAnalysis, val ms: Long, val summary: String)
+
+    /** For the model pass: a cancel from the coroutine reaches the decode in flight. */
+    private class ModelCancel {
+        @kotlin.concurrent.Volatile
+        var cancelled = false
+
+        @kotlin.concurrent.Volatile
+        var decoder: FfmpegMonoDecoder? = null
+
+        fun cancel() {
+            cancelled = true
+            decoder?.cancel()
+        }
+    }
+
+    /**
+     * Pass 2: each model window of [path] decoded as 44.1 kHz stereo, both models run over it, and
+     * the results put into [dsp]. A window that won't decode or that a model finds nothing in is
+     * left out, as Android leaves it; with none, [dsp] stands.
+     */
+    private suspend fun models(id: String, path: String, dsp: TrackAnalysis): Modelled {
+        val cancel = ModelCancel()
+        return onAnalysisThread(onCancel = cancel::cancel) {
+            val started = MonotonicClock.nowMs()
+            val spans = ModelRegions.spans(dsp.duration, VocalModel.WINDOW_SECONDS)
+            val regions = ArrayList<ModelRegions.Region>()
+            var decodeMs = 0L
+            var beatMs = 0L
+            var vocalMs = 0L
+            for ((from, to) in spans.windows) {
+                if (cancel.cancelled) error("cancelled")
+                val decoder = FfmpegMonoDecoder(
+                    path, REGION_RATE, ((to - from) * REGION_RATE).toInt().coerceAtLeast(1),
+                    stereo = true, startSeconds = from,
+                )
+                cancel.decoder = decoder
+                val t0 = MonotonicClock.nowMs()
+                val decoded = runCatching { decoder.decode(to - from) }.getOrElse {
+                    if (cancel.cancelled) error("cancelled")
+                    TrackLog.d(TAG, "automix: window ${from.oneDecimal()}–${to.oneDecimal()}s would not decode: ${it.message}", about = id)
+                    null
+                }
+                cancel.decoder = null
+                val right = decoded?.right
+                if (decoded == null || right == null || decoded.count < REGION_RATE) continue
+                val t1 = MonotonicClock.nowMs()
+                // Beat This! reads mono at 22,050 Hz; the downmix is the channels' average, as Android's.
+                val mono = FloatArray(decoded.count) { (decoded.samples[it] + right[it]) * 0.5f }
+                val forBeats = IosAnalyzerNative.resample(mono, decoded.count, REGION_RATE.toDouble(), IosAnalyzerNative.MEL_RATE)
+                val grid = forBeats?.let { IosModels.beats(it, it.size, decoded.startSeconds) }
+                val t2 = MonotonicClock.nowMs()
+                val vocals = IosModels.vocals(decoded.samples, right, decoded.count)
+                val t3 = MonotonicClock.nowMs()
+                decodeMs += t1 - t0
+                beatMs += t2 - t1
+                vocalMs += t3 - t2
+                regions += ModelRegions.Region(
+                    start = decoded.startSeconds,
+                    seconds = decoded.seconds,
+                    grid = grid,
+                    vocalValues = vocals,
+                    levelWindow = ModelRegions.levelCurve(decoded.samples, right, decoded.count, REGION_RATE.toDouble(), decoded.startSeconds),
+                )
+            }
+            val analysis = ModelRegions.assemble(dsp, spans, regions)
+            val ms = MonotonicClock.nowMs() - started
+            val summary = "models ${regions.size}/${spans.windows.size} windows in $ms ms " +
+                "(decode $decodeMs, beats $beatMs, vocals $vocalMs); " +
+                "grid ${if (analysis.headBeats != null || analysis.tailBeats != null) "model" else "dsp"} " +
+                "${analysis.bpm.oneDecimal()} bpm (dsp ${dsp.bpm.oneDecimal()}), confidence ${analysis.beatConfidence.twoDecimals()}, " +
+                "head ${analysis.headBeats?.beats?.size ?: 0} beats, tail ${analysis.tailBeats?.beats?.size ?: 0} beats, " +
+                "${analysis.downbeats.size} downbeats, vocal windows ${analysis.vocalWindows.size}, " +
+                "sung ${(analysis.vocalWindows.sumOf { w -> w.values.count { it >= 0.6f } } * 100 / analysis.vocalWindows.sumOf { it.values.size }.coerceAtLeast(1))}%"
+            TrackLog.i(TAG, "automix: $summary", about = id)
+            Modelled(analysis, ms, summary)
+        }
+    }
 
     /**
      * Runs [block] on a thread of its own at utility QoS, so the measurement yields to playback and
