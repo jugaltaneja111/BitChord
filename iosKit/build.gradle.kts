@@ -12,15 +12,23 @@ plugins {
 
 // The version Android ships as, for the places a server tells clients apart by it: an addon host
 // that only serves BitChord 1.x refuses "v0.1.0" outright, whatever the bundle says.
+// The commit too: iOS builds aren't numbered releases, so the update check asks whether the
+// ios-latest build was made from a different commit than this one. Blank outside CI.
 val generateIosVersion = tasks.register("generateIosVersion") {
     val version = rootProject.extra["bitchordVersionName"] as String
+    val commit = providers.environmentVariable("GITHUB_SHA").orElse("").get()
     val out = layout.buildDirectory.dir("generated/version")
     inputs.property("version", version)
+    inputs.property("commit", commit)
     outputs.dir(out)
     doLast {
         val file = out.get().file("com/music/bitchord/ios/BitChordVersion.kt").asFile
         file.parentFile.mkdirs()
-        file.writeText("package com.music.bitchord.ios\n\ninternal const val BITCHORD_VERSION = \"$version\"\n")
+        file.writeText(
+            "package com.music.bitchord.ios\n\n" +
+                "internal const val BITCHORD_VERSION = \"$version\"\n" +
+                "internal const val BITCHORD_COMMIT = \"$commit\"\n",
+        )
     }
 }
 

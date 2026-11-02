@@ -742,7 +742,7 @@ internal fun SettingsPage(
             }
         }
         item {
-            val version = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
+            val version = IosUpdates.current
             Group(tr("About")) {
                 Searchable(tr("Version"), version) {
                     Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -757,7 +757,7 @@ internal fun SettingsPage(
                     tr("Software update"),
                     value = when {
                         checking -> tr("Checking…")
-                        update != null -> tr("v{0} available", update!!.version)
+                        update != null -> tr("Build {0} available", update!!.version)
                         else -> tr("Check now")
                     },
                 ) {

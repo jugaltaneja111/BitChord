@@ -38,16 +38,17 @@ import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
 
 /**
- * The phone's AppUpdateChecker: BitChord isn't in a store, so nothing tells anyone a new version
- * is out but this — the project's latest GitHub release, asked once a launch and compared with
- * the version this build was made from. Where the phone downloads and installs the APK, an iPhone
- * can't install anything itself: the notice opens the release, and the listener signs the new
- * build as they did this one.
+ * The phone's AppUpdateChecker, for the iOS builds: asked once a launch whether the fork's
+ * ios-latest pre-release was built from a different commit than this build. Upstream's numbered
+ * releases are Android APKs and say nothing about the iOS port, so they aren't asked. Where the
+ * phone downloads and installs the APK, an iPhone can't install anything itself: the notice opens
+ * the release, and the listener signs the new build as they did this one.
  */
 internal object IosUpdates {
     private const val TAG = "IosUpdates"
-    private const val LATEST_RELEASE_URL = "https://api.github.com/repos/kushagrasinghx/BitChord/releases/latest"
+    private const val LATEST_RELEASE_URL = "https://api.github.com/repos/jugaltaneja111/BitChord/releases/tags/ios-latest"
 
+    /** [version] is the new build's short commit. */
     data class Update(val version: String, val url: String, val notes: String?)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -62,8 +63,8 @@ internal object IosUpdates {
     /** Whether the once-a-launch notice is up. */
     var showing by mutableStateOf(false)
 
-    /** The version this build was made from. */
-    val current: String get() = BITCHORD_VERSION
+    /** The version this build was made from, and its commit when CI built it. */
+    val current: String get() = if (BITCHORD_COMMIT.isEmpty()) BITCHORD_VERSION else "$BITCHORD_VERSION (${BITCHORD_COMMIT.take(7)})"
 
     /** Asks GitHub; [announce] shows the notice when there is something newer. */
     fun check(announce: Boolean = true, quiet: Boolean = true) {
@@ -102,29 +103,14 @@ internal object IosUpdates {
             if (!response.status.isSuccess()) error("HTTP ${response.status.value}")
             val release = json.parseToJsonElement(response.bodyAsText()) as? JsonObject ?: return null
             fun field(name: String) = (release[name] as? JsonPrimitive)?.contentOrNull
-            val tag = field("tag_name") ?: return null
+            val commit = field("target_commitish") ?: return null
             val url = field("html_url") ?: return null
-            val version = tag.removePrefix("v")
-            return Update(version, url, field("body")).takeIf { isNewer(version, current) }
+            // A build made outside CI doesn't know its commit, and can't tell.
+            if (BITCHORD_COMMIT.isEmpty() || commit == BITCHORD_COMMIT) return null
+            return Update(commit.take(7), url, field("body"))
         } finally {
             http.close()
         }
-    }
-
-    /**
-     * Numeric, dotted ("1.10" above "1.9"), with a "-beta" build older than the release of the
-     * same numbers, as the phone compares.
-     */
-    internal fun isNewer(latest: String, current: String): Boolean {
-        fun parse(raw: String) = raw.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 } to ('-' in raw)
-        val (l, lPre) = parse(latest)
-        val (c, cPre) = parse(current)
-        for (i in 0 until maxOf(l.size, c.size)) {
-            val a = l.getOrElse(i) { 0 }
-            val b = c.getOrElse(i) { 0 }
-            if (a != b) return a > b
-        }
-        return cPre && !lPre
     }
 }
 
@@ -135,11 +121,11 @@ internal fun UpdateDialog() {
     if (!IosUpdates.showing) return
     AlertDialog(
         onDismissRequest = { IosUpdates.showing = false },
-        title = { Text(tr("Update available: v{0}", update.version)) },
+        title = { Text(tr("New iOS build: {0}", update.version)) },
         text = {
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                 Text(
-                    tr("BitChord {0} is out. On iPhone, install it by signing the new build, as you installed this one.", update.version),
+                    tr("A newer BitChord build ({0}) is out. Install it by signing the new IPA, as you installed this one.", update.version),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 update.notes?.takeIf(String::isNotBlank)?.let { notes ->
