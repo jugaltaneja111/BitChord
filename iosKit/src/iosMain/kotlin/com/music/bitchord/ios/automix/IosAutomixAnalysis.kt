@@ -17,6 +17,7 @@ import com.music.bitchord.ios.party.IosListenTogether
 import com.music.bitchord.ios.sources.IosSources
 import com.music.bitchord.playback.smart.ModelRegions
 import com.music.bitchord.playback.smart.TrackAnalysis
+import com.music.bitchord.playback.smart.VOCAL_ACTIVE_THRESHOLD
 import com.music.bitchord.playback.smart.VocalModel
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
@@ -421,7 +422,9 @@ internal object IosAutomixAnalysis {
                 "${analysis.bpm.oneDecimal()} bpm (dsp ${dsp.bpm.oneDecimal()}), confidence ${analysis.beatConfidence.twoDecimals()}, " +
                 "head ${analysis.headBeats?.beats?.size ?: 0} beats, tail ${analysis.tailBeats?.beats?.size ?: 0} beats, " +
                 "${analysis.downbeats.size} downbeats, vocal windows ${analysis.vocalWindows.size}, " +
-                "sung ${(analysis.vocalWindows.sumOf { w -> w.values.count { it >= 0.6f } } * 100 / analysis.vocalWindows.sumOf { it.values.size }.coerceAtLeast(1))}%"
+                "head ${analysis.headBeats?.bpm?.oneDecimal() ?: "-"} / tail ${analysis.tailBeats?.bpm?.oneDecimal() ?: "-"} bpm, " +
+                "sung ${sungPercent(analysis, VOCAL_ACTIVE_THRESHOLD.toFloat())}%, " +
+                "${IosSettings.automixPerformanceMode.inferenceThreads} threads"
             TrackLog.i(TAG, "automix: $summary", about = id)
             Modelled(analysis, ms, summary)
         }
@@ -537,6 +540,11 @@ internal object IosAutomixAnalysis {
 
     private fun ByteArray.toNSData(): NSData =
         if (isEmpty()) NSData() else usePinned { NSData.dataWithBytes(it.addressOf(0), size.toULong()) }
+
+    /** Share of the model's vocal frames at or over [threshold], in percent. */
+    private fun sungPercent(analysis: TrackAnalysis, threshold: Float): Int =
+        analysis.vocalWindows.sumOf { w -> w.values.count { it >= threshold } } * 100 /
+            analysis.vocalWindows.sumOf { it.values.size }.coerceAtLeast(1)
 
     private fun Double.oneDecimal(): String = ((this * 10).roundToLong() / 10.0).toString()
 

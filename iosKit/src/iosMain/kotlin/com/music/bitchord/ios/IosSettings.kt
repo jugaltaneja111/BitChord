@@ -1,6 +1,7 @@
 package com.music.bitchord.ios
 
 import com.music.bitchord.data.settings.AudioQuality
+import com.music.bitchord.data.settings.AutomixPerformanceMode
 import platform.Foundation.NSLocale
 import platform.Foundation.preferredLanguages
 import androidx.compose.foundation.text.KeyboardOptions
@@ -268,6 +269,12 @@ internal object IosSettings {
 
     /** iOS's own: Automix fetches a track it has no copy of only on Wi-Fi. */
     val automixWifiOnly = BoolPref("${PREFIX}automix_analysis_wifi_only", false)
+
+    /** The phone's Automix performance mode: how many threads the beat and vocal models get. */
+    val automixPerformance = StringPref("${PREFIX}automix_performance_mode", AutomixPerformanceMode.BALANCED.name)
+
+    val automixPerformanceMode: AutomixPerformanceMode
+        get() = AutomixPerformanceMode.entries.firstOrNull { it.name == automixPerformance.flow.value } ?: AutomixPerformanceMode.BALANCED
     /** SYSTEM, LIGHT or DARK, as the phone stores it. */
     val themeMode = StringPref("${PREFIX}theme_mode", "DARK")
     /** A BCP 47 tag, or empty for the phone's own language. */
@@ -579,6 +586,8 @@ internal fun SettingsPage(
                         tr("Songs that aren’t downloaded or cached are fetched for analysis only on Wi-Fi"),
                         IosSettings.automixWifiOnly,
                     )
+                    Divider()
+                    AutomixPerformanceRow()
                     Divider()
                 }
                 Toggle(tr("Skip silence"), tr("Trim gaps longer than a second"), IosSettings.skipSilence)
@@ -1033,6 +1042,58 @@ private fun QualityRow(title: String, pref: StringPref) {
             confirmButton = { TextButton(onClick = { picking = false }) { Text(tr("Done")) } },
         )
     }
+}
+
+/** The phone's Automix performance picker: Efficient, Balanced or Performance, by model threads. */
+@Composable
+private fun AutomixPerformanceRow() {
+    val chosen by IosSettings.automixPerformance.flow.collectAsState()
+    var picking by remember { mutableStateOf(false) }
+    val mode = AutomixPerformanceMode.entries.firstOrNull { it.name == chosen } ?: AutomixPerformanceMode.BALANCED
+    val title = tr("Automix performance")
+    ActionRow(title, value = mode.label()) { picking = true }
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text(title) },
+            text = {
+                Column {
+                    AutomixPerformanceMode.entries.forEach { option ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                IosSettings.automixPerformance.set(option.name)
+                                picking = false
+                            }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(option.label(), color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    option.subtitle(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (option == mode) Icon(Icons.Rounded.Check, contentDescription = tr("Selected"), tint = Color(0xFF34C759))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text(tr("Done")) } },
+        )
+    }
+}
+
+private fun AutomixPerformanceMode.label(): String = when (this) {
+    AutomixPerformanceMode.EFFICIENT -> tr("Efficient")
+    AutomixPerformanceMode.BALANCED -> tr("Balanced")
+    AutomixPerformanceMode.PERFORMANCE -> tr("Performance")
+}
+
+private fun AutomixPerformanceMode.subtitle(): String = when (this) {
+    AutomixPerformanceMode.EFFICIENT -> tr("1 thread · lowest heat and battery use · analysis may take longer")
+    AutomixPerformanceMode.BALANCED -> tr("2 threads · recommended balance of speed, heat and battery")
+    AutomixPerformanceMode.PERFORMANCE -> tr("4 threads · fastest analysis · higher heat and battery use")
 }
 
 /** The phone's Theme row: System, Light or Dark, as a segmented control under the title. */

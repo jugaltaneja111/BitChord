@@ -8,6 +8,7 @@ import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.ios.IosNetwork
 import com.music.bitchord.ios.IosPlayerHost
+import com.music.bitchord.ios.IosSettings
 import com.music.bitchord.ios.tr
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -62,6 +63,7 @@ internal object IosAutomixModelCheck {
                 report.appendLine("metered: ${IosNetwork.metered.value}")
                 report.appendLine("analyzer: ${IosAnalyzerNative.loadError ?: "loaded"}")
                 report.appendLine("models: ${IosModels.loadError ?: "loaded"}")
+                report.appendLine("performance: ${IosSettings.automixPerformanceMode.name} (${IosSettings.automixPerformanceMode.inferenceThreads} threads)")
                 _progress.value = tr("Finding songs…")
                 val songs = pickSongs()
                 report.appendLine("songs: ${songs.size}")
@@ -69,6 +71,7 @@ internal object IosAutomixModelCheck {
                 var withBeats = 0
                 var withVocals = 0
                 val ratios = ArrayList<Double>()
+                val modelTimes = ArrayList<Long>()
                 songs.forEachIndexed { index, song ->
                     _progress.value = "${index + 1}/${songs.size}"
                     val started = MonotonicClock.nowMs()
@@ -80,7 +83,10 @@ internal object IosAutomixModelCheck {
                         if (analysis.headBeats != null || analysis.tailBeats != null) withBeats++
                         if (analysis.vocalWindows.isNotEmpty()) withVocals++
                         val before = (total - measured.modelMs).coerceAtLeast(1)
-                        if (measured.models) ratios += total.toDouble() / before
+                        if (measured.models) {
+                            ratios += total.toDouble() / before
+                            modelTimes += measured.modelMs
+                        }
                         "total $total ms (fetch and DSP $before, models ${measured.modelMs}); ${measured.summary}"
                     } catch (e: CancellationException) {
                         throw e
@@ -92,9 +98,13 @@ internal object IosAutomixModelCheck {
                 val median = ratios.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
                 report.appendLine(
                     "modelled $modelled/${songs.size}, model beats $withBeats, vocal curves $withVocals; " +
-                        "time with models vs without, median ${(median * 100).toInt() / 100.0}x",
+                        "time with models vs without, median ${(median * 100).toInt() / 100.0}x; " +
+                        "model time per song, median ${modelTimes.sorted().let { if (it.isEmpty()) 0 else it[it.size / 2] }} ms",
                 )
-                val go = songs.isNotEmpty() && withBeats >= songs.size - 1 && withVocals >= songs.size - 1 && median in 0.01..2.0
+                // Analysis runs ahead of playback, so what matters is that the models finish well
+                // inside a song: under a minute each, not a ratio to the DSP pass.
+                val modelMedian = modelTimes.sorted().let { if (it.isEmpty()) Long.MAX_VALUE else it[it.size / 2] }
+                val go = songs.isNotEmpty() && withBeats >= songs.size - 1 && withVocals >= songs.size - 1 && modelMedian <= 60_000
                 report.appendLine(if (go) "verdict: GO" else "verdict: CHECK")
                 _progress.value = tr("Done: {0}/{1} with model beats", withBeats, songs.size)
             } catch (e: CancellationException) {

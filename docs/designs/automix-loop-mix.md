@@ -612,3 +612,33 @@ call (it cancels cleanly), and lock the phone (the lock screen follows).
   - The on-device check is Settings › "Automix model check". It measures ten
     searched songs as Automix would, without storing them, and copies a report:
     model beats, vocal curves, times, and the time with models against without.
+- **Phase 2 on the phone (2026-11-02).** The model check passed on coverage:
+  10/10 songs got model beats and vocal curves, with grids matching the DSP's
+  or correcting its half-time read (Blinding Lights 170 against the DSP's 86).
+  The model pass took about 22 s a song on one thread, 18 s of it Beat This!,
+  so the ≤2× gate (10.5×) was the wrong measure: analysis runs well ahead of
+  playback, so the check now passes when the models take under a minute a
+  song.
+  - The thread count now follows a port of the phone's Automix performance
+    setting (Efficient 1, Balanced 2 by default, Performance 4). A session
+    opened with another count is reopened between runs.
+  - The check's report also gives each side's tempo and the thread count. A
+    song's top-level tempo comes from its ending, as on Android. So "bad guy"
+    reads 124 against its 135 opening: its slowed outro.
+- **Phase 3 (built).**
+  - `LoopMix.kt`, `LoopMixTest`, `SpokenOrLiveTest`, and upstream's final
+    `TransitionPlanner`, `TransitionPolicy` and `AdvancedAutomixPlannerTest`
+    were copied unchanged; this repo's versions had not moved since the fork
+    point. That brings the 0.9–1.25 blend stretch window, the 0.25 vocal
+    threshold and `heuristicVocalOnModelScale` to every platform.
+  - Every DSP mask is rescaled onto the model's scale where it is made: on
+    Android's fallback, on the desktop analyzer and on iOS's front end.
+    Android's unmeasured value moves from 0.5 to upstream's 0.2. The schemas
+    move to 2 (`AnalysisStore`) and 3 (`IosAnalysisStore`), so masks stored on
+    the old scale are measured again.
+  - `IosLoopPlanner` is upstream's `loopPlanFor`, `loopRefusalFor`,
+    `noteLoopVerdict` and `describeLoop`. The renderer and output refusals wait
+    for Phase 4. Lyrics come from `LyricsRepository` with the player's sources,
+    with a 10 s timeout, as the phone's `loopMixLyrics`.
+  - `PlayerHost.automixDetail` is upstream's, with a null default for hosts
+    without a planner. On iOS it shows the verdict for the pair now playing.

@@ -159,6 +159,12 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     ) { _, queue, index ->
         IosAutomixAnalysis.smartAnalysis(queue.getOrNull(index)?.videoId, queue.getOrNull(index + 1)?.videoId)
     }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main), SharingStarted.Eagerly, SmartAnalysis())
+    override val automixDetail = kotlinx.coroutines.flow.combine(
+        com.music.bitchord.ios.automix.IosLoopPlanner.detail, IosPlayer.queue, IosPlayer.index,
+    ) { detail, queue, index ->
+        // Only the verdict for the pair now playing: a stale one reads as a plan for these songs.
+        detail?.takeIf { it.first == queue.getOrNull(index)?.videoId && it.second == queue.getOrNull(index + 1)?.videoId }?.third
+    }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main), SharingStarted.Eagerly, null)
     override val smartFadeEnabled = IosSettings.automix.flow
     override val smartMixInProgress = IosPlayer.mixing
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)

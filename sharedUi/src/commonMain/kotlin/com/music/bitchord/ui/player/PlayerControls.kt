@@ -360,6 +360,7 @@ internal fun SleeveNerdStats(song: Song, modifier: Modifier = Modifier) {
     val nerdStats by NerdStats.current.collectAsStateWithLifecycle()
     val smartFadeOn by PlayerSettings.smartFadeEnabled.collectAsStateWithLifecycle()
     val smartAnalysis by PlayerSettings.smartAnalysis.collectAsStateWithLifecycle()
+    val automixDetail by PlayerSettings.automixDetail.collectAsStateWithLifecycle()
     // A party doesn't mix, and doesn't analyse for one either — see
     // [com.music.bitchord.playback.CrossfadeController]. So the two flows above
     // simply stop moving there, and the stats line has to say why rather than
@@ -412,6 +413,9 @@ internal fun SleeveNerdStats(song: Song, modifier: Modifier = Modifier) {
                     inParty -> stringResource(Res.string.automix_stopped_in_party)
                     song.isVideoOrigin ->
                         stringResource(Res.string.automix_not_supported_video)
+                    // The detailed line once the controller has one: the planned mix — the
+                    // loops and what cleared them — or why the pair gets none.
+                    automixDetail != null -> automixDetail!!
                     else -> stringResource(
                         Res.string.automix_analysis_status,
                         smartAnalysis.current.localizedLabel(),
@@ -423,7 +427,9 @@ internal fun SleeveNerdStats(song: Song, modifier: Modifier = Modifier) {
                 // the audio, this one describes the app, and the ranking
                 // should show.
                 color = Color.White.copy(alpha = 0.5f),
-                maxLines = 1,
+                // The detailed line runs long on a phone: a second line rather
+                // than an ellipsis through the part that says what the mix is.
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )

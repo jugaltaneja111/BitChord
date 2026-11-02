@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import com.music.bitchord.ios.automix.IosAutomixAnalysis
+import com.music.bitchord.ios.automix.IosLoopPlanner
 import com.music.bitchord.ios.automix.IosVersionAligner
 import com.music.bitchord.ios.automix.IosAutomixRide
 import com.music.bitchord.ios.automix.IosMixView
@@ -691,6 +692,18 @@ internal object IosPlayer {
             // outs and tempo ramps (see IosAutomixRide).
             advanced = true,
             mixWindow = true,
+        )
+        // The loop mix, as a dry run (B6 Phase 3): its verdict is logged and shown in stats for
+        // nerds, and the blend below still plays. Phase 4 plays the plan instead.
+        IosLoopPlanner.planFor(
+            song = song,
+            next = next,
+            outAnalysis = outAnalysis,
+            inAnalysis = inAnalysis,
+            state = IosAutomixAnalysis.smartAnalysis(song.videoId, next.videoId),
+            durationMs = durationMs,
+            nextDurationMs = phoneLength(next),
+            positionMs = engine.position.positionMs,
         )
         if (plan.blocked) {
             if (rampRate != 1f) {

@@ -30,7 +30,7 @@ import kotlin.math.roundToLong
 /**
  * Analyses kept on the phone, so a track is measured once and stays measured: the iOS side of
  * AnalysisStore (jvmSharedMain, java.io), with the same files — one per track, named by a hash of
- * its id, schema [SCHEMA_VERSION] (2: the models' beats and curves), at most [MAX_ENTRIES], curves rounded to milliseconds — in
+ * its id, schema [SCHEMA_VERSION] (2: the models' beats and curves; 3: vocal values on the model's 0.25 scale), at most [MAX_ENTRIES], curves rounded to milliseconds — in
  * Application Support/BitChord/smart_analysis, kept out of the phone's backup: every one of them
  * can be measured again.
  *
@@ -254,7 +254,7 @@ internal class IosAnalysisStore(
         const val DIRECTORY = "smart_analysis"
 
         /** AnalysisStore's: bumped whenever a stored number starts being computed differently. */
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
 
         const val MAX_ENTRIES = 2_000
 

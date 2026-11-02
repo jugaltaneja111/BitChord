@@ -285,6 +285,13 @@ interface PlayerSettingsSource {
     val showListenTogetherButton: StateFlow<Boolean>
         get() = kotlinx.coroutines.flow.MutableStateFlow(true)
     val smartAnalysis: StateFlow<SmartAnalysis>
+    /**
+     * Automix's detailed stats line — the planned loop mix (loop lengths and what cleared them,
+     * the tempo ramp) or why there is none — or null when there is nothing to say beyond
+     * [smartAnalysis]. Upstream's; a host without a loop planner leaves it null.
+     */
+    val automixDetail: StateFlow<String?>
+        get() = NO_AUTOMIX_DETAIL
     val smartFadeEnabled: StateFlow<Boolean>
     /** True only while an analysed Automix transition is audibly mixing two tracks. */
     val smartMixInProgress: StateFlow<Boolean>
@@ -461,3 +468,5 @@ internal fun AudioPipelineDialog(hazeState: HazeState, isPlaying: Boolean, onDis
 
 private val NoMixView: StateFlow<MixTransitionView?> = MutableStateFlow(null)
 private val NoMixProgress: StateFlow<Float> = MutableStateFlow(0f)
+
+private val NO_AUTOMIX_DETAIL: StateFlow<String?> = MutableStateFlow(null)

@@ -3,6 +3,7 @@
 package com.music.bitchord.ios.automix
 
 import com.music.bitchord.data.TrackLog
+import com.music.bitchord.ios.IosSettings
 import com.music.bitchord.playback.smart.BeatModel
 import com.music.bitchord.playback.smart.VocalModel
 import kotlinx.cinterop.ByteVar
@@ -39,7 +40,8 @@ import platform.posix.memcpy
  *
  * Each model's session is opened on first use, on the analysis thread, and kept until [release]
  * (the end of a run of analyses): opening parses the whole graph, which is too slow to repeat per
- * window. One intra-op thread each, so analysis never takes the cores playback needs.
+ * window. Intra-op threads follow the Automix performance setting, as on the phone (Balanced, 2,
+ * by default); a session opened with another count is reopened once no run holds it.
  *
  * A build without the framework or a weights file still runs: [loadError] says why, the model
  * fields of an analysis stay empty, and Automix plans on the DSP's evidence alone, as before.
@@ -55,7 +57,7 @@ internal object IosModels {
     const val BEAT_MODEL = "beat_this_final0_q8"
     const val VOCAL_MODEL = "vocals_umxhq_int8"
 
-    private const val THREADS = 1
+    private val threads: Int get() = IosSettings.automixPerformanceMode.inferenceThreads
     private const val MAX_OUTPUTS = 4
 
     private class Bound(
@@ -97,6 +99,7 @@ internal object IosModels {
     /** A session of [model], or the reason there is none. Kept apart so one model's failure leaves the other. */
     private class Session(val model: String) {
         var handle: COpaquePointer? = null
+        var threads = 0
         var failure: String? = null
     }
 
@@ -114,19 +117,25 @@ internal object IosModels {
     private fun session(model: String): COpaquePointer? {
         val native = bound.getOrNull() ?: return null
         val session = sessions.getOrPut(model) { Session(model) }
-        session.handle?.let { return it }
+        val wanted = threads
+        session.handle?.let { open ->
+            if (session.threads == wanted || running > 0) return open
+            native.close(open)
+            session.handle = null
+        }
         if (session.failure != null) return null
         val file = path(model) ?: run {
             session.failure = "$model.onnx isn't in this build"
             return null
         }
-        val handle = memScoped { native.open(file.cstr.ptr, THREADS) }
+        val handle = memScoped { native.open(file.cstr.ptr, wanted) }
         if (handle == null) {
             session.failure = native.lastError()?.toKString().orEmpty().ifBlank { "would not open" }
             TrackLog.w(TAG, "automix: $model unavailable: ${session.failure}")
             return null
         }
         session.handle = handle
+        session.threads = wanted
         return handle
     }
 

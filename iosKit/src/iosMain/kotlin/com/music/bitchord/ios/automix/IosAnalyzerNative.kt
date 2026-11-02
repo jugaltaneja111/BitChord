@@ -2,6 +2,7 @@
 
 package com.music.bitchord.ios.automix
 
+import com.music.bitchord.playback.smart.heuristicVocalOnModelScale
 import com.music.bitchord.playback.smart.EnergySample
 import com.music.bitchord.playback.smart.MixCandidate
 import com.music.bitchord.playback.smart.TrackAnalysis
@@ -214,7 +215,8 @@ internal object IosTrackFeatures {
             mixOutCandidates = root.cuePoints("mixOutCandidates"),
             energyCurve = root.energyCurve("energyCurve"),
             lowEnergyCurve = root.energyCurve("lowEnergyCurve"),
-            vocalActivityMask = root.doubles("vocalActivityMask"),
+            // The heuristic's 0.6 boundary moved onto the vocal model's 0.25, as Android stores it.
+            vocalActivityMask = root.doubles("vocalActivityMask").map(::heuristicVocalOnModelScale),
             vocalProbability = root.number("vocalProbability"),
         )
     }

@@ -3,6 +3,7 @@ package com.music.bitchord.desktop
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.settings.AutomixPerformanceMode
 import com.music.bitchord.data.settings.TrackAnalysisState
+import com.music.bitchord.playback.smart.heuristicVocalOnModelScale
 import com.music.bitchord.playback.smart.AnalysisStore
 import com.music.bitchord.playback.smart.BeatTracker
 import com.music.bitchord.playback.smart.MelSpectrogram
@@ -217,7 +218,8 @@ internal class DesktopTrackAnalyzer(
             mixOutCandidates = features.mixOutCandidates,
             energyCurve = features.energyCurve,
             lowEnergyCurve = features.lowEnergyCurve,
-            vocalActivityMask = features.vocalActivityMask,
+            // The DSP heuristic's mask, moved onto the vocal model's scale the policy reads.
+            vocalActivityMask = features.vocalActivityMask.map(::heuristicVocalOnModelScale),
             vocalProbability = features.vocalProbability,
         )
     }

@@ -1091,7 +1091,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
                 // absent mask and a neutral one identically — as "no evidence" — so a failed model
                 // pass would otherwise silently discard the estimate Phase 1 already had.
                 vocalActivityMask = mergeMasks(features.energyCurve.size, head?.vocalMask, tail?.vocalMask)
-                    ?: features.vocalActivityMask,
+                    ?: features.vocalActivityMask.map(::heuristicVocalOnModelScale),
                 vocalProbability = features.vocalProbability,
             ),
         )
@@ -1295,7 +1295,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
          * design, so absence of measurement is never mistaken for absence of a vocal, or for the
          * presence of one.
          */
-        const val NEUTRAL_VOCAL = 0.5
+        const val NEUTRAL_VOCAL = 0.2
 
         /**
          * How much more than the average-bitrate estimate of the opening window
