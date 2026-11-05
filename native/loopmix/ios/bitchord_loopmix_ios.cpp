@@ -32,13 +32,13 @@ namespace {
 constexpr int32_t kAbiVersion = 1;
 
 /** The renderer and the scratch block blm_render_planar renders into. */
-struct Handle {
-  explicit Handle(int sampleRate) : renderer(sampleRate) {}
+struct LoopMixHandle {
+  explicit LoopMixHandle(int sampleRate) : renderer(sampleRate) {}
   Renderer renderer;
   std::vector<float> interleaved;
 };
 
-Handle* From(void* handle) { return static_cast<Handle*>(handle); }
+LoopMixHandle* From(void* handle) { return static_cast<LoopMixHandle*>(handle); }
 
 Deck* DeckOf(void* handle, int32_t index) {
   if (handle == nullptr || index < 0 || index > 1) return nullptr;
@@ -51,7 +51,7 @@ BITCHORD_EXPORT int32_t blm_abi(void) { return kAbiVersion; }
 
 BITCHORD_EXPORT void* blm_create(int32_t sample_rate) {
   if (sample_rate <= 0) return nullptr;
-  return new (std::nothrow) Handle(sample_rate);
+  return new (std::nothrow) LoopMixHandle(sample_rate);
 }
 
 BITCHORD_EXPORT void blm_destroy(void* handle) { delete From(handle); }
@@ -116,7 +116,7 @@ BITCHORD_EXPORT void blm_render(void* handle, int64_t frame, float* interleaved,
 /** As blm_render, into two planes: AVAudioPCMBuffer's own layout, so nothing is reshuffled in Kotlin. */
 BITCHORD_EXPORT void blm_render_planar(void* handle, int64_t frame, float* left, float* right, int32_t frames) {
   if (handle == nullptr || left == nullptr || right == nullptr || frames <= 0) return;
-  Handle* h = From(handle);
+  LoopMixHandle* h = From(handle);
   if (h->interleaved.size() < size_t(frames) * 2) h->interleaved.resize(size_t(frames) * 2);
   float* block = h->interleaved.data();
   h->renderer.render(frame, block, frames);
