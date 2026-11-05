@@ -106,6 +106,26 @@ internal class IosFfmpegPlayer(
         session?.play()
     }
 
+    /**
+     * Plays with the node's first frame from now on at render host time [hostTime] (mach ticks,
+     * the engine's own timeline): the loop mix brings the incoming song in on the renderer's clock.
+     */
+    fun playAt(hostTime: ULong) {
+        startAtHost = hostTime
+        session?.play()
+    }
+
+    /** A host time the node's next start waits for; once used, it is gone. */
+    @Volatile
+    private var startAtHost: ULong? = null
+
+    /**
+     * The track second the node is rendering at, and the render host time (mach ticks) of that:
+     * the engine's own clock, so another node in the same engine can be put sample-exactly beside
+     * it. Null while it isn't playing.
+     */
+    fun presented(): Pair<ULong, Double>? = session?.presented()
+
     fun pause() {
         session?.pause()
     }
@@ -347,6 +367,27 @@ internal class IosFfmpegPlayer(
             source?.let { (it as? RemoteSource)?.wake() }
         }
 
+        fun presented(): Pair<ULong, Double>? {
+            locked(cond) {
+                if (pendingSeekMs != null || endedReported || !nodeStarted) return null
+            }
+            return locked(transport) {
+                if (nodeReleased) return@locked null
+                val render = node.lastRenderTime ?: return@locked null
+                if (!render.hostTimeValid) return@locked null
+                val player = node.playerTimeForNodeTime(render)?.takeIf { it.sampleTimeValid } ?: return@locked null
+                val played = player.sampleTime.coerceAtLeast(0L)
+                locked(cond) {
+                    val rate = outRate
+                    if (rate <= 0 || played > scheduledFrames) return@locked null
+                    val i = segmentAt(played)
+                    val fromFrame = if (i >= 0) segFrames[i] else 0L
+                    val fromMs = if (i >= 0) segMs[i] else baseMs
+                    render.hostTime to (fromMs / 1000.0 + (played - fromFrame) / rate)
+                }
+            }
+        }
+
         fun positionMs(): Long {
             locked(cond) {
                 pendingSeekMs?.let { return it }
@@ -437,8 +478,10 @@ internal class IosFfmpegPlayer(
                 fail(error)
                 return
             }
-            node.play()
-            TrackLog.d(TAG, "node started: engine=${node.engine?.running} ${counters()}")
+            val at = startAtHost
+            startAtHost = null
+            if (at != null) node.playAtTime(platform.AVFAudio.AVAudioTime.timeWithHostTime(at)) else node.play()
+            TrackLog.d(TAG, "node started${if (at != null) " at host $at" else ""}: engine=${node.engine?.running} ${counters()}")
             locked(cond) { nodeStarted = true }
         }
 
@@ -857,7 +900,7 @@ internal class IosFfmpegPlayer(
             locked(cond) { outRate = buffer.format.sampleRate }
             locked(transport) {
                 if (nodeReleased || locked(cond) { cancelled || pendingSeekMs != null }) return
-                buffer.mutableAudioBufferList?.let { dsp.process(it.pointed, frames) }
+                buffer.mutableAudioBufferList?.let { dsp.process(it.pointed, frames, startMs / 1000.0) }
                 dsp.attached = true
                 if (locked(cond) { needsRestart }) {
                     locked(cond) { bufferGeneration++ }

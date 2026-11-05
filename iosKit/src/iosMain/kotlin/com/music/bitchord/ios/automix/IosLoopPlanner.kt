@@ -23,8 +23,9 @@ import kotlin.math.roundToInt
  * phone's `loopPlanFor`, `loopRefusalFor`, `noteLoopVerdict` and `describeLoop` for iOS, over the
  * shared [LoopMix] planner.
  *
- * A dry run for now: the verdict is logged and shown on the Automix line of stats for nerds, and
- * the blend plays as before. The renderer that plays a plan comes in Phase 4.
+ * The verdict is logged and shown on the Automix line of stats for nerds; [IosPlayer] plays a plan
+ * through the engine's loop mix (Phase 4), and a pair whose loop mix fell through is told so here
+ * ([fallBack]) and gets its blend.
  *
  * Main thread only.
  */
@@ -54,6 +55,9 @@ internal object IosLoopPlanner {
     private var planIn: TrackAnalysis? = null
     private var planned: LoopMix.Plan? = null
     private var lastVerdict = ""
+
+    /** Pairs whose loop mix fell through, and why: they get their blend from then on. */
+    private val fellBack = HashMap<String, String>()
 
     private val _detail = MutableStateFlow<Triple<String, String, String>?>(null)
 
@@ -119,10 +123,39 @@ internal object IosLoopPlanner {
 
     /** Why [song] -> [next] can't be a loop mix right now, or null when it can. */
     private fun refusalFor(song: Song, next: Song, state: SmartAnalysis): String? = when {
+        fellBack.containsKey("${song.videoId}->${next.videoId}") -> fellBack["${song.videoId}->${next.videoId}"]
         song.isVideoOrigin || next.isVideoOrigin -> "a music video"
         IosSettings.skipSilence.flow.value -> "skip silence is on"
         state.current != TrackAnalysisState.ANALYSED || state.next != TrackAnalysisState.ANALYSED -> "waiting on analysis"
         else -> null
+    }
+
+    /** The loop mix of [song] -> [next] fell through ([reason]): the pair gets its blend instead. */
+    fun fallBack(song: Song, next: Song, reason: String) {
+        val pair = "${song.videoId}->${next.videoId}"
+        if (fellBack[pair] == reason) return
+        if (fellBack.size > 64) fellBack.clear()
+        fellBack[pair] = reason
+        if (planPair == pair) {
+            planPair = null
+            planned = null
+        }
+        note(song, next, null, reason)
+    }
+
+    /** The loop mix of [song] -> [next] has started. */
+    fun playing(song: Song, next: Song, plan: LoopMix.Plan) {
+        _detail.value = Triple(song.videoId, next.videoId, "Automix · loop mix playing · ${describe(plan)}")
+        TrackLog.i(TAG, "loop ${song.videoId}->${next.videoId}: playing")
+    }
+
+    /** The loop mix of [song] -> [next] played out. */
+    fun finished(song: Song, next: Song) {
+        TrackLog.i(TAG, "loop ${song.videoId}->${next.videoId}: played out")
+        if (planPair == "${song.videoId}->${next.videoId}") {
+            planPair = null
+            planned = null
+        }
     }
 
     /** Asks for [song]'s synced lyrics once; a loop they vouch for needs no vocal mask. */

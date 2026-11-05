@@ -32,6 +32,8 @@ import kotlin.coroutines.coroutineContext
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFAudio.outputLatency
+import platform.AVFAudio.currentRoute
+import platform.AVFAudio.sampleRate
 import platform.AVFAudio.setActive
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
@@ -50,6 +52,9 @@ import platform.AVFoundation.play
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.timeControlStatus
+import platform.AVFoundation.timebase
+import platform.AVFoundation.automaticallyWaitsToMinimizeStalling
+import platform.AVFoundation.setAutomaticallyWaitsToMinimizeStalling
 import platform.AVFoundation.volume
 import platform.AVFoundation.setVolume
 import platform.CoreMedia.CMTimeGetSeconds
@@ -99,6 +104,11 @@ internal class IosAudioEngine(
         /** The FFmpeg player holding this deck's track instead of [player], for what AVPlayer can't open. */
         var ff: IosFfmpegPlayer? = null
 
+        /** Where this deck's audio comes from, for the loop mix to decode the same stream. */
+        var url: String? = null
+        var headers: Map<String, String> = emptyMap()
+        var route: Route? = null
+
         // Skip silence on AVPlayer, which can't drop samples: a gap past a second is played muted at
         // speed, then rewound a little once sound comes back, so the music after it starts whole.
         /** Where in the track the silence now being heard began; NaN while there's sound. */
@@ -116,6 +126,10 @@ internal class IosAudioEngine(
         }
 
         fun hold(url: String, headers: Map<String, String>, loudnessDb: Double?, key: String?, durationMs: Long, route: Route): Boolean {
+            this.url = url
+            this.headers = headers
+            this.route = route
+            player.setAutomaticallyWaitsToMinimizeStalling(true)
             if (route.ffmpeg) {
                 clearObservers()
                 releaseFfmpeg()
@@ -302,6 +316,46 @@ internal class IosAudioEngine(
         /** Whether this deck has a track at all, on either player. */
         val holding: Boolean get() = ff != null || item != null
 
+        /**
+         * The track second this deck is rendering at and the render host time of that, on the
+         * audio engine's own timeline (see [IosLoopMix]). An AVPlayer's timebase follows what is
+         * heard, so the route's output latency is taken off it to land on the engine's. Null while
+         * it isn't playing at 1x.
+         */
+        fun presented(): Pair<ULong, Double>? {
+            ff?.let { return it.presented() }
+            val item = item ?: return null
+            if (player.timeControlStatus != AVPlayerTimeControlStatusPlaying || player.rate != 1f) return null
+            val timebase = item.timebase ?: return null
+            val hostClock = platform.CoreMedia.CMClockGetHostTimeClock()
+            val hostNow = platform.CoreMedia.CMClockGetTime(hostClock)
+            val track = CMTimeGetSeconds(platform.CoreMedia.CMSyncConvertTime(hostNow, hostClock, timebase))
+            if (track.isNaN()) return null
+            val heard = platform.CoreMedia.CMClockConvertHostTimeToSystemUnits(hostNow)
+            return com.music.bitchord.ios.automix.HostClock.plus(heard, -outputLatencySeconds()) to track
+        }
+
+        /**
+         * Starts playing from [trackSeconds] so that it is rendered at render host time
+         * [renderHost]: an AVPlayer told to present it then plus the output latency, an FFmpeg
+         * deck's node started then. Used by the loop mix for the incoming song.
+         */
+        fun startAt(trackSeconds: Double, renderHost: ULong) {
+            val ff = ff
+            if (ff != null) {
+                ff.seekTo((trackSeconds * 1000).toLong())
+                ff.playAt(renderHost)
+                return
+            }
+            player.setAutomaticallyWaitsToMinimizeStalling(false)
+            val heard = com.music.bitchord.ios.automix.HostClock.plus(renderHost, outputLatencySeconds())
+            player.setRate(
+                1f,
+                time = CMTimeMakeWithSeconds(trackSeconds, 48_000),
+                atHostTime = platform.CoreMedia.CMClockMakeHostTimeFromSystemUnits(heard),
+            )
+        }
+
         fun clear() {
             clearObservers()
             releaseFfmpeg()
@@ -313,6 +367,9 @@ internal class IosAudioEngine(
             loudnessDb = null
             knownDurationMs = 0L
             fade = 1f
+            url = null
+            headers = emptyMap()
+            route = null
             resetGap()
         }
 
@@ -330,6 +387,9 @@ internal class IosAudioEngine(
 
     private var active = Deck()
     private var spare = Deck()
+
+    /** The route's output latency, which an AVPlayer's clock includes and the engine's doesn't. */
+    private fun outputLatencySeconds(): Double = AVAudioSession.sharedInstance().outputLatency
 
     /** What the deck being heard decodes, once its item is ready; null before then. */
     data class DecodedFormat(
@@ -482,6 +542,7 @@ internal class IosAudioEngine(
         /** Which player opens it; see [Route]. */
         route: Route = Route.of(url),
     ) {
+        loopBail("another track", settle = false)
         abandonSwap()
         finishFade()
         if (!active.hold(url, headers, loudnessDb, key, durationMs, route)) return onFailed("bad stream URL")
@@ -503,6 +564,7 @@ internal class IosAudioEngine(
         durationMs: Long = 0L,
         route: Route = Route.of(url),
     ) {
+        if (loopHoldsSpare) return
         abandonSwap()
         if (spare === outgoing) finishFade()
         spare.fade = 0f
@@ -526,12 +588,12 @@ internal class IosAudioEngine(
 
     /** Puts the waiting player's track at [positionMs], where Automix brings it in. */
     fun cueNext(positionMs: Long) {
-        if (!isBlending) spare.seekExactly(positionMs)
+        if (!isBlending && !loopHoldsSpare) spare.seekExactly(positionMs)
     }
 
     /** Drops whatever the waiting player holds. */
     fun clearPrepared() {
-        if (spare !== outgoing) spare.clear()
+        if (spare !== outgoing && !loopHoldsSpare) spare.clear()
     }
 
     /**
@@ -555,6 +617,7 @@ internal class IosAudioEngine(
         outgoingRate: Float = 1f,
         beatMs: Long = 0L,
     ) {
+        loopBail("a skip", settle = false)
         abandonSwap()
         finishFade()
         val previous = active
@@ -647,7 +710,7 @@ internal class IosAudioEngine(
         mapPosition: ((Long) -> Long)? = null,
         onDone: (Boolean) -> Unit,
     ) {
-        if (isBlending || spare.holding || swapJob?.isActive == true) return onDone(false)
+        if (loopMixing || isBlending || spare.holding || swapJob?.isActive == true) return onDone(false)
         val key = active.key
         val incoming = spare
         incoming.fade = 0f
@@ -836,16 +899,444 @@ internal class IosAudioEngine(
     }
 
     fun pause() {
+        loopBail("paused")
         active.pause()
         outgoing?.pause()
         _isPlaying.value = false
         tick(active.seconds)
     }
 
+    // ---- The Automix loop mix (docs/designs/automix-loop-mix.md, Phase 4) ---------------------
+    //
+    // The heard deck plays on until its loop start; the renderer (IosLoopMix) takes over from it
+    // there, on a node of its own started on the same host-time timeline, and the two cross over
+    // 25 ms of identical audio, each side shaped in its own tap on its samples' own track time.
+    // The waiting deck starts silent half a second into the mix on that timeline, comes in at the
+    // end of it as the renderer's incoming deck fades out at the same track second, and the queue
+    // moves on mid-ramp, as a blend's does. Anything that moves the playhead calls it off
+    // ([loopBail]); before the renderer has taken over, the pair falls back to its blend.
+
+    private enum class LoopPhase { BUILDING, ARMED, RUNNING }
+
+    private var loopMix: com.music.bitchord.ios.automix.IosLoopMix? = null
+    private var loopPhase = LoopPhase.BUILDING
+    private var loopJob: Job? = null
+    private var loopAlignJob: Job? = null
+    private var loopOut: Deck? = null
+    private var loopIn: Deck? = null
+    private var loopHandedOff = false
+    private var loopPlan: com.music.bitchord.playback.smart.LoopMix.Plan? = null
+    private var loopOnHandOff: (() -> Unit)? = null
+    private var loopOnEnd: ((String?) -> Unit)? = null
+    private var loopLastReport = 0L
+    private var loopLastPositionMs = -1L
+    private var loopAlignedMs = Double.NaN
+
+    /** A loop mix is being built or is playing: nothing else may change tracks meanwhile. */
+    val loopMixing: Boolean get() = loopPlan != null
+
+    /** The renderer has the music: positions come from the mix's clock. */
+    private val loopRunning: Boolean get() = loopPlan != null && loopPhase == LoopPhase.RUNNING
+
+    /** The waiting deck is the loop mix's incoming one, not free for the queue. */
+    private val loopHoldsSpare: Boolean get() = loopPlan != null && !loopHandedOff
+
+    /** Why no loop mix can play here at all just now — the pair gets its blend — or null. */
+    fun loopBlocker(): String? = when {
+        !com.music.bitchord.ios.automix.IosLoopMixNative.available ->
+            "no renderer (${com.music.bitchord.ios.automix.IosLoopMixNative.loadError})"
+        // AirPlay bypasses the taps the handovers are shaped in.
+        AVAudioSession.sharedInstance().currentRoute.outputs.any {
+            (it as? platform.AVFAudio.AVAudioSessionPortDescription)?.portType == platform.AVFAudio.AVAudioSessionPortAirPlay
+        } -> "AirPlay"
+        active.route?.dash == true || (spare.holding && spare.route?.dash == true) -> "a DASH stream"
+        else -> null
+    }
+
+    /** Why the decks can't take a loop mix right now, or null when they can. */
+    fun loopRefusal(outKey: String, inKey: String): String? = loopBlocker() ?: when {
+        isBlending || isSwapping -> "a blend or swap is running"
+        active.key != outKey -> "the heard deck isn't the song"
+        !readyFor(inKey) -> "the next song isn't ready"
+        active.dsp?.attached != true -> "the song's tap isn't running"
+        spare.ff == null && spare.dsp?.attached != true -> "the next song's tap isn't running"
+        else -> null
+    }
+
+    /**
+     * Starts the loop mix of [plan] from the heard deck ([outKey]) into the waiting one ([inKey]):
+     * both regions are decoded off the main thread from the streams the decks play, then the mix
+     * is armed a couple of seconds before its loop. [onHandOff] is when the queue moves on;
+     * [onEnd] says it is over: null when it played out, else why it stopped. False when it can't
+     * start at all (see [loopRefusal]).
+     */
+    fun beginLoopMix(
+        plan: com.music.bitchord.playback.smart.LoopMix.Plan,
+        outKey: String,
+        inKey: String,
+        onHandOff: () -> Unit,
+        onEnd: (String?) -> Unit,
+    ): Boolean {
+        if (loopPlan != null || loopRefusal(outKey, inKey) != null) return false
+        val out = active
+        val inn = spare
+        val outSource = out.url ?: return false
+        val inSource = inn.url ?: return false
+        val sampleRate = AVAudioSession.sharedInstance().sampleRate.toInt().takeIf { it > 0 } ?: 48_000
+        val outGain = IosSound.loudnessGain(out.loudnessDb)
+        val inLevel = (IosSound.loudnessGain(inn.loudnessDb) / outGain).takeIf { it.isFinite() && it > 0f } ?: 1f
+        loopPlan = plan
+        loopPhase = LoopPhase.BUILDING
+        loopOut = out
+        loopIn = inn
+        loopHandedOff = false
+        loopOnHandOff = onHandOff
+        loopOnEnd = onEnd
+        loopAlignedMs = Double.NaN
+        loopLastPositionMs = -1L
+        val outHeaders = out.headers
+        val inHeaders = inn.headers
+        TrackLog.i(
+            TAG,
+            "loop build $outKey->$inKey at ${sampleRate}Hz, loop at ${(plan.out.loopStart * 100).toLong() / 100.0}s, " +
+                "playhead ${position.positionMs}ms",
+        )
+        loopJob = scope.launch {
+            val began = com.music.bitchord.data.MonotonicClock.nowMs()
+            val mix = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                runCatching {
+                    com.music.bitchord.ios.automix.IosLoopMix.build(plan, outKey, inKey, sampleRate, inLevel) { side, from, to ->
+                        if (side == com.music.bitchord.playback.smart.LoopMix.Side.OUT) {
+                            decodeLoopRegion(outSource, outHeaders, from, to, sampleRate)
+                        } else {
+                            decodeLoopRegion(inSource, inHeaders, from, to, sampleRate)
+                        }
+                    }
+                }.onFailure { TrackLog.w(TAG, "loop build failed: ${it.message}") }.getOrNull()
+            }
+            if (loopPlan !== plan) {
+                mix?.close()
+                return@launch
+            }
+            if (mix == null) return@launch loopBail("the decks would not build")
+            TrackLog.i(TAG, "loop decks built in ${com.music.bitchord.data.MonotonicClock.nowMs() - began}ms")
+            loopMix = mix
+            driveLoop(mix, out, inn, outGain)
+        }
+        return true
+    }
+
+    /** [from]..[to] of the stream at [source] (a URL with [headers], or a file), as a deck's region. */
+    private fun decodeLoopRegion(
+        source: String,
+        headers: Map<String, String>,
+        from: Double,
+        to: Double,
+        sampleRate: Int,
+    ): com.music.bitchord.ios.automix.LoopRegion? {
+        val start = kotlin.math.max(0.0, from)
+        val remote = source.startsWith("http://") || source.startsWith("https://")
+        val decoder = com.music.bitchord.ios.ffmpeg.FfmpegMonoDecoder(
+            path = source,
+            rate = sampleRate,
+            maxSamples = ((to - start) * sampleRate).toInt().coerceAtLeast(1),
+            stereo = true,
+            startSeconds = start,
+            headers = if (remote) headers else null,
+        )
+        val decoded = decoder.decode(to - start)
+        val right = decoded.right ?: return null
+        if (decoded.count < sampleRate) return null
+        TrackLog.d(
+            TAG,
+            "loop region: asked ${(from * 1000).toLong() / 1000.0}s, got ${(decoded.startSeconds * 1000).toLong() / 1000.0}s + " +
+                "${(decoded.seconds * 100).toLong() / 100.0}s from ${decoded.codec} at ${decoded.sourceRate}->$sampleRate Hz",
+        )
+        return com.music.bitchord.ios.automix.LoopRegion(
+            decoded.samples.copyOf(decoded.count),
+            right.copyOf(decoded.count),
+            decoded.startSeconds,
+        )
+    }
+
+    /** Arms the mix once its loop is near, then runs it to the end; main thread. */
+    private suspend fun driveLoop(mix: com.music.bitchord.ios.automix.IosLoopMix, out: Deck, inn: Deck, outGain: Float) {
+        val plan = mix.plan
+        val clock = mix.clock
+        // Waits for the loop: armed once its renderer's first frame is a second and a half away.
+        while (true) {
+            if (loopMix !== mix) return
+            if (active !== out || !_isPlaying.value) return loopBail("paused before the loop")
+            val (host, track) = out.presented() ?: run {
+                // Buffering, or not at 1x: waited for until the loop is too near to make.
+                if (position.positionMs > (plan.out.loopStart * 1000).toLong() - LOOP_ARM_MIN_SECONDS * 1000 - 500) {
+                    return loopBail("the song wasn't playing as its loop came")
+                }
+                delay(LOOP_STEP_MS)
+                continue
+            }
+            val toLoop = plan.out.loopStart - track
+            if (toLoop < -mix.firstSeconds + LOOP_ARM_MIN_SECONDS) {
+                return loopBail("built too late for the loop (${(toLoop * 100).toLong() / 100.0}s to go)")
+            }
+            if (toLoop <= -mix.firstSeconds + LOOP_ARM_SECONDS) {
+                val h0 = com.music.bitchord.ios.automix.HostClock.plus(host, toLoop)
+                if (!armLoop(mix, out, inn, outGain, h0)) return
+                break
+            }
+            delay(LOOP_STEP_MS)
+        }
+        loopPhase = LoopPhase.ARMED
+        var incomingStarted = false
+        while (true) {
+            delay(LOOP_STEP_MS)
+            if (loopMix !== mix) return
+            if (mix.engineLost) return loopBail("the audio engine restarted")
+            val m = loopHeardSeconds(mix)
+            if (loopPhase == LoopPhase.ARMED) {
+                // Still the song itself until frame 0: any slip in its clock now and the renderer
+                // would take over somewhere else.
+                if (m < -0.2) {
+                    out.presented()?.let { (host, track) ->
+                        val drift = track - (plan.out.loopStart + mix.mixSecondsAt(host))
+                        if (kotlin.math.abs(drift) > LOOP_DRIFT_SECONDS) {
+                            return loopBail("the song slipped ${(drift * 1000).toLong()}ms before the loop")
+                        }
+                    }
+                }
+                if (m >= LOOP_TAKEN_OVER_SECONDS) {
+                    // The renderer has to be playing, and where it was told to, before the song is let go.
+                    val error = mix.renderError()
+                        ?: return loopBail("the renderer never started")
+                    if (kotlin.math.abs(error) > LOOP_RENDER_ERROR_SECONDS) {
+                        return loopBail("the renderer started ${(error * 1000).toLong()}ms off")
+                    }
+                    TrackLog.i(TAG, "loop renderer on time: ${(error * 100_000).toLong() / 100.0}ms")
+                    loopPhase = LoopPhase.RUNNING
+                    // The song's own player has nothing more to say: it would only reach its end.
+                    out.clearObservers()
+                    out.pause()
+                    val songRate = out.dsp?.rate ?: 0
+                    val capture = out.dsp?.spliceSong?.copyOf() ?: FloatArray(0)
+                    val filled = out.dsp?.spliceFilled ?: 0
+                    scope.launch {
+                        val lag = kotlinx.coroutines.withContext(Dispatchers.Default) { mix.spliceLag(capture, filled, songRate) }
+                        TrackLog.i(
+                            TAG,
+                            if (lag == null) {
+                                "loop took over (no splice reading: $filled frames at $songRate Hz)"
+                            } else {
+                                "loop took over: region ${(lag.first * 100_000.0 / songRate).toLong() / 100.0}ms against its song " +
+                                    "(r=${(lag.second * 1000).toLong() / 1000.0}), outgoing on ${if (out.ff != null) "FFmpeg" else "AVPlayer"}"
+                            },
+                        )
+                    }
+                }
+            }
+            if (!incomingStarted && m >= mix.inStartAt - LOOP_IN_START_EARLY_SECONDS) {
+                incomingStarted = true
+                inn.startAt(mix.inStartTrack, mix.hostAt(mix.inStartAt))
+            }
+            if (incomingStarted && loopAlignJob == null && m >= mix.inStartAt + LOOP_ALIGN_SETTLE_SECONDS) {
+                startLoopAlignment(mix, inn)
+            }
+            if (loopPhase == LoopPhase.RUNNING && !loopHandedOff && m >= clock.handoffAt) loopHandOff(out, inn)
+            reportLoopPosition(mix, m)
+            if (m >= clock.elementAt + LOOP_END_MARGIN_SECONDS) return finishLoop(mix)
+        }
+    }
+
+    /**
+     * Pins mix second 0 to render host time [h0] and starts everything on it: both taps' fades,
+     * the renderer's node, and the incoming deck. False (and called off) when it can't.
+     */
+    private fun armLoop(mix: com.music.bitchord.ios.automix.IosLoopMix, out: Deck, inn: Deck, outGain: Float, h0: ULong): Boolean {
+        val outDsp = out.dsp ?: run {
+            loopBail("no tap on the song")
+            return false
+        }
+        val inDsp = inn.dsp ?: run {
+            loopBail("no tap on the next song")
+            return false
+        }
+        outDsp.resetLoop()
+        inDsp.resetLoop()
+        outDsp.loopFadeOutAt = mix.plan.out.loopStart
+        inDsp.loopFadeInAt = mix.handoverTrack
+        // The renderer's own DSP: the outgoing song's loudness and the equaliser, as its tap had.
+        val renderDsp = TapDsp().also { it.targetGain = outGain }
+        mix.start(h0, renderDsp)?.let { error ->
+            loopBail("the renderer won't start: $error")
+            return false
+        }
+        // Heard through its tap's gate from here: silent until the handover. Cued now, started
+        // just before its moment.
+        inn.fade = 1f
+        inn.applyGain()
+        inn.seekExactly((mix.inStartTrack * 1000).toLong())
+        TrackLog.i(
+            TAG,
+            "loop armed: incoming from ${(mix.inStartTrack * 1000).toLong() / 1000.0}s, handover at " +
+                "${(mix.handoverTrack * 1000).toLong() / 1000.0}s, mix ${(mix.clock.elementAt * 10).toLong() / 10.0}s, " +
+                "renderer from ${(mix.firstSeconds * 1000).toLong()}ms, latency ${(outputLatencySeconds() * 1000).toLong()}ms",
+        )
+        return true
+    }
+
+    /** Mix seconds the listener is hearing now. */
+    private fun loopHeardSeconds(mix: com.music.bitchord.ios.automix.IosLoopMix): Double =
+        mix.mixSecondsAt(com.music.bitchord.ios.automix.HostClock.now()) - outputLatencySeconds()
+
+    /**
+     * Puts the incoming deck exactly in step with the renderer's incoming deck while it is still
+     * silent: measures it on both clocks, and starts it again on the renderer's timeline when it
+     * is out by more than [LOOP_ALIGNED_SECONDS] and there is time before the handover.
+     */
+    private fun startLoopAlignment(mix: com.music.bitchord.ios.automix.IosLoopMix, inn: Deck) {
+        loopAlignJob = scope.launch {
+            repeat(LOOP_ALIGN_ROUNDS) { round ->
+                val samples = ArrayList<Double>()
+                repeat(LOOP_ALIGN_SAMPLES) {
+                    inn.presented()?.let { (host, track) -> samples += track - mix.incomingTrackAt(mix.mixSecondsAt(host)) }
+                    delay(LOOP_ALIGN_SAMPLE_MS)
+                }
+                if (loopMix !== mix) return@launch
+                if (samples.size < LOOP_ALIGN_SAMPLES / 2) {
+                    TrackLog.d(TAG, "loop align $round: no clock on the incoming deck")
+                    return@launch
+                }
+                samples.sort()
+                val error = samples[samples.size / 2]
+                loopAlignedMs = error * 1000
+                TrackLog.i(
+                    TAG,
+                    "loop align $round: incoming ${(error * 100_000).toLong() / 100.0}ms against the deck " +
+                        "(spread ${((samples.last() - samples.first()) * 100_000).toLong() / 100.0}ms)",
+                )
+                if (kotlin.math.abs(error) <= LOOP_ALIGNED_SECONDS) return@launch
+                val m = loopHeardSeconds(mix)
+                if (mix.clock.elementAt - m < LOOP_REALIGN_MARGIN_SECONDS) return@launch
+                // Started again a little ahead, on the renderer's timeline, while it is silent.
+                val at = m + LOOP_REALIGN_LEAD_SECONDS + outputLatencySeconds()
+                if (mix.incomingTrackAt(at) < 0) return@launch
+                inn.startAt(mix.incomingTrackAt(at), mix.hostAt(at))
+                delay(((LOOP_REALIGN_LEAD_SECONDS + 0.4) * 1000).toLong())
+            }
+        }
+    }
+
+    /** Mid-ramp: the incoming deck becomes the heard one, and the queue moves on to its song. */
+    private fun loopHandOff(out: Deck, inn: Deck) {
+        loopHandedOff = true
+        active = inn
+        spare = out
+        active.listen()
+        out.clear()
+        _durationMs.value = inn.knownDurationMs
+        position.seeks++
+        loopOnHandOff?.invoke()
+    }
+
+    /** The song's position as the mix plays it (looped, following the ramp), for the bar and lyrics. */
+    private fun reportLoopPosition(mix: com.music.bitchord.ios.automix.IosLoopMix, m: Double) {
+        if (loopPhase != LoopPhase.RUNNING) return
+        val side = if (loopHandedOff) com.music.bitchord.playback.smart.LoopMix.Side.IN else com.music.bitchord.playback.smart.LoopMix.Side.OUT
+        val seconds = com.music.bitchord.playback.smart.LoopMix.positionAt(mix.clock, side, m) ?: return
+        val ms = (seconds * 1000).toLong()
+        val now = com.music.bitchord.data.MonotonicClock.nowMs()
+        // A loop wrapping back is a jump: whatever follows the playhead snaps rather than glides.
+        val wrapped = loopLastPositionMs >= 0 && ms < loopLastPositionMs - LOOP_WRAP_MS
+        loopLastPositionMs = ms
+        if (wrapped || now - loopLastReport >= LOOP_REPORT_MS) {
+            loopLastReport = now
+            if (wrapped) position.seeks++
+            position.advancing = true
+            position.report(ms)
+        }
+    }
+
+    private fun finishLoop(mix: com.music.bitchord.ios.automix.IosLoopMix) {
+        TrackLog.i(TAG, "loop mix done: incoming ${(loopAlignedMs * 100).toLong() / 100.0}ms against the deck at the handover")
+        val onEnd = loopOnEnd
+        mix.close()
+        loopIn?.dsp?.resetLoop()
+        loopIn?.player?.setAutomaticallyWaitsToMinimizeStalling(true)
+        clearLoop()
+        onEnd?.invoke(null)
+    }
+
+    private fun clearLoop() {
+        loopJob = null
+        loopAlignJob?.cancel()
+        loopAlignJob = null
+        loopMix = null
+        loopPlan = null
+        loopOut = null
+        loopIn = null
+        loopOnHandOff = null
+        loopOnEnd = null
+        loopHandedOff = false
+    }
+
+    /**
+     * Calls the loop mix off. With [settle], whichever song is ahead in it carries on from where
+     * the mix had it; without, the caller is about to move the playhead itself.
+     */
+    private fun loopBail(reason: String, settle: Boolean = true) {
+        val plan = loopPlan ?: return
+        val mix = loopMix
+        TrackLog.i(TAG, "loop mix stops ($loopPhase${if (loopHandedOff) ", handed off" else ""}): $reason")
+        val job = loopJob
+        val out = loopOut
+        val inn = loopIn
+        val handedOff = loopHandedOff
+        val tookOver = loopPhase == LoopPhase.RUNNING
+        val m = mix?.let { loopHeardSeconds(it) }
+        val onEnd = loopOnEnd
+        mix?.close()
+        out?.dsp?.resetLoop()
+        inn?.dsp?.resetLoop()
+        clearLoop()
+        job?.cancel()
+        when {
+            handedOff && inn != null -> {
+                val target = m?.let { mix?.clock?.let { c -> com.music.bitchord.playback.smart.LoopMix.positionAt(c, com.music.bitchord.playback.smart.LoopMix.Side.IN, it) } }
+                if (settle && target != null) {
+                    inn.seekExactly((target * 1000).toLong())
+                    if (_isPlaying.value) inn.play()
+                }
+                inn.player.setAutomaticallyWaitsToMinimizeStalling(true)
+            }
+            tookOver && out != null -> {
+                // The song comes back where the loop had it; the next one waits for its blend.
+                val target = m?.takeIf { it >= 0 }?.let { mix?.clock?.let { c -> com.music.bitchord.playback.smart.LoopMix.positionAt(c, com.music.bitchord.playback.smart.LoopMix.Side.OUT, it) } }
+                    ?: plan.out.loopStart
+                if (active === out) {
+                    out.listen()
+                    out.seekExactly((target * 1000).toLong())
+                    if (settle && _isPlaying.value) out.play()
+                }
+                inn?.let { silenceWaiting(it) }
+            }
+            else -> inn?.let { silenceWaiting(it) }
+        }
+        onEnd?.invoke(reason)
+    }
+
+    /** The waiting deck back to how [prepareNext] left it: paused, silent, at 1x. */
+    private fun silenceWaiting(deck: Deck) {
+        if (deck === active) return
+        deck.pause()
+        deck.fade = 0f
+        deck.applyGain()
+        deck.player.setAutomaticallyWaitsToMinimizeStalling(true)
+    }
+
     /** Whether the FFmpeg player holds the track now (a stream or a cached or downloaded file). */
     val onFfmpeg: Boolean get() = active.ff != null
 
     fun seekTo(positionMs: Long) {
+        loopBail("a seek", settle = false)
         finishFade()
         // A seek jumps the playhead: the real-time watch starts over from the new position.
         watchedFf = null
@@ -855,6 +1346,7 @@ internal class IosAudioEngine(
     }
 
     fun stop() {
+        loopBail("stopped", settle = false)
         abandonSwap()
         finishFade()
         active.clear()
@@ -889,6 +1381,8 @@ internal class IosAudioEngine(
         } else if (!duration.isNaN() && duration > 0) {
             _durationMs.value = (duration * 1000).toLong()
         }
+        // The loop mix reports the position itself, off its own clock.
+        if (loopRunning) return
         val player = active.player
         val waiting = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
         _isBuffering.value = _isPlaying.value && waiting
@@ -913,6 +1407,7 @@ internal class IosAudioEngine(
         watchFfmpeg(ff)
         val known = active.knownDurationMs
         _durationMs.value = if (known > 0L) known else ff.durationMs
+        if (loopRunning) return
         _isBuffering.value = _isPlaying.value && (ff.isBuffering || !ff.isReady)
         position.advancing = ff.isPlaying
         position.report(ff.positionMs)
@@ -1047,6 +1542,34 @@ internal class IosAudioEngine(
         const val WATCH_WINDOW_MS = 3_000L
         const val DIAGNOSTICS_MS = 2_000L
         const val STUCK_MS = 8_000L
+
+        // The loop mix's, upstream's where it has them (CrossfadeController's LOOP_*).
+        const val LOOP_STEP_MS = 20L
+        /** The renderer is started this long before its first frame. */
+        const val LOOP_ARM_SECONDS = 1.5
+        /** Less than this before its first frame and it can't be started in time. */
+        const val LOOP_ARM_MIN_SECONDS = 0.4
+        /** The song's clock may slip this much before the loop; more and the renderer would miss it. */
+        const val LOOP_DRIFT_SECONDS = 0.02
+        /** The renderer has the song once this far past mix second 0 is heard. */
+        const val LOOP_TAKEN_OVER_SECONDS = 0.25
+        /** The renderer's node may start this far from its host time; past it, the song keeps the music. */
+        const val LOOP_RENDER_ERROR_SECONDS = 0.01
+        const val LOOP_ALIGN_SETTLE_SECONDS = 1.2
+        const val LOOP_ALIGN_ROUNDS = 3
+        const val LOOP_ALIGN_SAMPLES = 15
+        const val LOOP_ALIGN_SAMPLE_MS = 30L
+        /** The spec's: within 1.5 ms the handover is one sound; past it the deck is started again. */
+        const val LOOP_ALIGNED_SECONDS = 0.0015
+        /** A restart of the incoming deck lands this far ahead of the mix. */
+        const val LOOP_REALIGN_LEAD_SECONDS = 0.6
+        /** No restart closer than this to the handover. */
+        const val LOOP_REALIGN_MARGIN_SECONDS = 2.5
+        const val LOOP_END_MARGIN_SECONDS = 0.3
+        /** The incoming deck is told its start this long before it. */
+        const val LOOP_IN_START_EARLY_SECONDS = 1.0
+        const val LOOP_WRAP_MS = 400L
+        const val LOOP_REPORT_MS = 250L
 
         private fun fourCc(code: String): UInt = code.fold(0u) { acc, c -> (acc shl 8) or c.code.toUInt() }
         val FOURCC_AAC = fourCc("aac ")

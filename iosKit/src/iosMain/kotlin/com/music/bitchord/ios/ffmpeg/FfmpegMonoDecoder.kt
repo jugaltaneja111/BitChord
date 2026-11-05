@@ -51,6 +51,11 @@ internal class FfmpegMonoDecoder(
     private val stereo: Boolean = false,
     /** Where to start, in the file's seconds. */
     private val startSeconds: Double = 0.0,
+    /**
+     * With these, [path] is an http(s) URL read over the network as the player reads it: the loop
+     * mix decodes its regions from the very stream a deck plays, so the two are the same audio.
+     */
+    private val headers: Map<String, String>? = null,
 ) {
     class Decoded(
         /** The first [count] are the audio. */
@@ -74,7 +79,7 @@ internal class FfmpegMonoDecoder(
     private var cancelled = false
 
     @Volatile
-    private var source: FileSource? = null
+    private var source: ByteSource? = null
 
     fun cancel() {
         cancelled = true
@@ -121,7 +126,7 @@ internal class FfmpegMonoDecoder(
     fun decode(expectedSeconds: Double): Decoded {
         try {
             Av.loadError?.let { error(it) }
-            val src = FileSource(path)
+            val src: ByteSource = if (headers != null) RemoteSource(path, headers, dash = false) else FileSource(path)
             source = src
             if (cancelled) src.cancel()
             src.failure?.let { error(it) }
@@ -172,7 +177,7 @@ internal class FfmpegMonoDecoder(
         }
     }
 
-    private fun openDemuxer(src: FileSource): Triple<Double, String?, Int> {
+    private fun openDemuxer(src: ByteSource): Triple<Double, String?, Int> {
         val buffer = Av.malloc(IO_BUFFER_BYTES) ?: error("out of memory")
         val ref = StableRef.create(AvioBridge(src))
         bridge = ref

@@ -112,6 +112,18 @@ internal object IosPlayer {
     private const val TRANSITION_POLL_MS = 250L
     /** Automix readies the next song earlier, so it can be cued before its blend comes round. */
     private const val AUTOMIX_PREPARE_AHEAD_MS = 75_000L
+
+    /** Upstream's LOOP_ARM_LEAD_MS: the loop mix's decks are built this far ahead of its loop. */
+    private const val LOOP_ARM_LEAD_MS = 12_000L
+
+    /** The next song is readied this much earlier still, for a loop well before the end. */
+    private const val LOOP_PREPARE_LEAD_MS = 30_000L
+
+    /** Past this close to its loop, a pair whose decks still refuse gives the loop mix up. */
+    private const val LOOP_LAST_TRY_MS = 6_000L
+
+    /** The engine's reasons for a loop mix stopping that are the listener's doing, not a failure. */
+    private val LOOP_LISTENER_STOPS = setOf("paused", "a seek", "a skip", "stopped", "another track")
     /** Automix's fade for a pair it has no analysis for, with the slider at 0 (the phone's 6 s). */
     private const val AUTOMIX_FALLBACK_SECONDS = 6.0
 
@@ -631,7 +643,8 @@ internal object IosPlayer {
     private fun watchTransition() {
         val song = _song.value ?: return
         // A swap onto another copy holds the waiting player until it lands.
-        if (_resolving.value || !engine.isPlaying.value || engine.isBlending || engine.isSwapping) return
+        // A loop mix runs itself to its end, the queue's move on included.
+        if (_resolving.value || !engine.isPlaying.value || engine.isBlending || engine.isSwapping || engine.loopMixing) return
         val duration = engine.durationMs.value
         if (duration <= 0L) return
         val remaining = duration - engine.position.positionMs
@@ -693,9 +706,9 @@ internal object IosPlayer {
             advanced = true,
             mixWindow = true,
         )
-        // The loop mix, as a dry run (B6 Phase 3): its verdict is logged and shown in stats for
-        // nerds, and the blend below still plays. Phase 4 plays the plan instead.
-        IosLoopPlanner.planFor(
+        // The loop mix first: a pair it can do, with the next song's stream ready, never reaches
+        // the blend below (upstream's order).
+        val loop = IosLoopPlanner.planFor(
             song = song,
             next = next,
             outAnalysis = outAnalysis,
@@ -705,6 +718,7 @@ internal object IosPlayer {
             nextDurationMs = phoneLength(next),
             positionMs = engine.position.positionMs,
         )
+        if (loop != null && loopMix(song, next, nextIndex, loop)) return true
         if (plan.blocked) {
             if (rampRate != 1f) {
                 rampRate = 1f
@@ -754,6 +768,72 @@ internal object IosPlayer {
         )
         advancingFromEnd = false
         return true
+    }
+
+    /**
+     * The loop mix for [song] -> [next] once its loop is [LOOP_ARM_LEAD_MS] away: true while it
+     * holds the pair (waiting for its loop, or started), false when the blend should decide —
+     * the next song's stream isn't ready yet, or the decks can't take a loop mix at all.
+     */
+    private fun loopMix(song: Song, next: Song, nextIndex: Int, loop: com.music.bitchord.playback.smart.LoopMix.Plan): Boolean {
+        engine.loopBlocker()?.let { why ->
+            IosLoopPlanner.fallBack(song, next, why)
+            return false
+        }
+        val leadMs = (loop.out.loopStart * 1000).toLong() - engine.position.positionMs
+        // The next song readied in time for it, wherever in the song the loop is.
+        if (leadMs <= LOOP_ARM_LEAD_MS + LOOP_PREPARE_LEAD_MS && engine.preparedKey != next.videoId && preparing != next.videoId) {
+            prepare(next)
+        }
+        if (!engine.readyFor(next.videoId)) return false
+        // The renderer plays the loop at its own tempo; the heard song stays at 1x until then.
+        if (rampRate != 1f) {
+            rampRate = 1f
+            engine.setHeardRate(1f)
+        }
+        if (leadMs > LOOP_ARM_LEAD_MS) return true
+        val why = engine.loopRefusal(song.videoId, next.videoId)
+        if (why != null) {
+            // Transient (a tap still attaching): tried again next tick while there is time.
+            if (leadMs < LOOP_LAST_TRY_MS) IosLoopPlanner.fallBack(song, next, why)
+            return leadMs >= LOOP_LAST_TRY_MS
+        }
+        automixCue = null
+        val started = engine.beginLoopMix(
+            plan = loop,
+            outKey = song.videoId,
+            inKey = next.videoId,
+            onHandOff = { loopHandOff(next, nextIndex) },
+            onEnd = { reason ->
+                when {
+                    reason == null -> IosLoopPlanner.finished(song, next)
+                    // The listener moved the music: planned afresh from where it is now.
+                    reason in LOOP_LISTENER_STOPS -> IosLoopPlanner.finished(song, next)
+                    else -> IosLoopPlanner.fallBack(song, next, reason)
+                }
+            },
+        )
+        if (started) IosLoopPlanner.playing(song, next, loop)
+        return started
+    }
+
+    /** Mid-ramp in a loop mix: the queue moves on to [next], which the engine is already playing. */
+    private fun loopHandOff(next: Song, plannedIndex: Int) {
+        val queue = _queue.value
+        val index = plannedIndex.takeIf { queue.getOrNull(it)?.videoId == next.videoId }
+            ?: queue.indexOfFirst { it.videoId == next.videoId }.takeIf { it >= 0 }
+            ?: return
+        val song = queue[index]
+        loadJob?.cancel()
+        _resolving.value = false
+        _index.value = index
+        playedThisSession += song.videoId
+        IosScrobbler.onSongChanged(_song.value, true, song)
+        _song.value = song
+        _error.value = null
+        if (autoplayOn && queue.size > 1 && index >= queue.size - 2) extendWithRadio(playNext = false)
+        upgradeJob?.cancel()
+        IosScrobbler.onPlaying(engine.isPlaying.value, 0L)
     }
 
     /** The speed the heard track has been ramped up to for the coming blend; 1 when it hasn't. */

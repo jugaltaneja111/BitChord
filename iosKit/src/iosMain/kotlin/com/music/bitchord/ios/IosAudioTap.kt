@@ -102,6 +102,56 @@ internal class TapDsp {
 
     private var unmuteRamp = 1f
 
+    // ---- The Automix loop mix's handovers (upstream's LoopMixPort, in the tap) -----------------
+    // Each is keyed to the track time of the samples themselves, so its side of the crossfade is
+    // sample-exact whatever the audio thread's timing; the renderer's side is shaped to match.
+
+    /**
+     * The outgoing song: linear down over [LOOP_HANDOVER_SECONDS] ending at this track second, and
+     * silent after it, while the renderer's deck of the same audio comes up. NaN: off.
+     */
+    @Volatile
+    var loopFadeOutAt: Double = Double.NaN
+
+    /**
+     * The incoming song: silent before this track second, then linear up over
+     * [LOOP_HANDOVER_SECONDS], while the renderer's incoming deck fades out at the same point. NaN: off.
+     */
+    @Volatile
+    var loopFadeInAt: Double = Double.NaN
+
+    /**
+     * The outgoing song's own audio, mono, over the [SPLICE_CAPTURE] frames before [loopFadeOutAt]:
+     * set against the renderer's deck afterwards, it says how far apart the two decoders really are.
+     */
+    val spliceSong = FloatArray(SPLICE_CAPTURE)
+
+    /** How many frames of [spliceSong] are filled; [SPLICE_CAPTURE] once it is all there. */
+    @Volatile
+    var spliceFilled = 0
+        private set
+
+    /** The track second of the first block this tap saw since [resetLoop], NaN before one. */
+    @Volatile
+    var lastBlockSeconds: Double = Double.NaN
+        private set
+
+    /** The rate this tap's samples run at, once prepared; 0 before. */
+    val rate: Int get() = sampleRate
+
+    fun resetLoop() {
+        loopFadeOutAt = Double.NaN
+        loopFadeInAt = Double.NaN
+        spliceFilled = 0
+    }
+
+    /**
+     * The tap's own scratch for MTAudioProcessingTapGetSourceAudio's time range, so the audio
+     * thread allocates nothing to learn where its samples are. Made in the tap's init, freed in
+     * its finalize; an FFmpeg deck's DSP never has one.
+     */
+    internal var timeRange: platform.CoreMedia.CMTimeRange? = null
+
     private var sampleRate = 0
     private var channels = 0
     private var usable = false
@@ -155,9 +205,14 @@ internal class TapDsp {
         if (usable) fx.configure(sampleRate, channels)
     }
 
-    fun process(buffers: AudioBufferList, frames: Int) {
+    /**
+     * Shapes [frames] in place. [blockSeconds] is the track second of the first of them, NaN when
+     * unknown, which leaves the loop mix's handovers out.
+     */
+    fun process(buffers: AudioBufferList, frames: Int, blockSeconds: Double = Double.NaN) {
         if (!usable || frames <= 0) return
         if (!mapChannels(buffers)) return
+        lastBlockSeconds = blockSeconds
         if (!isQuiet(frames)) heardSound = true
         if (muted) {
             for (c in 0 until channels) {
@@ -177,6 +232,52 @@ internal class TapDsp {
                 for (c in 0 until channels) {
                     val data = channelData[c] ?: return
                     data[f * channelStride[c] + channelOffset[c]] *= unmuteRamp
+                }
+            }
+        }
+        if (!blockSeconds.isNaN()) loopGates(frames, blockSeconds)
+    }
+
+    /** The loop mix's two handovers, on the samples' own track time; see [loopFadeOutAt]. */
+    private fun loopGates(frames: Int, blockSeconds: Double) {
+        val rate = sampleRate.toDouble()
+        val handover = LOOP_HANDOVER_SECONDS * rate
+        val outAt = loopFadeOutAt
+        if (!outAt.isNaN()) {
+            // Frames from the block's start to the end of the fade (positive: still before it).
+            val toEnd = (outAt - blockSeconds) * rate
+            if (toEnd < frames + SPLICE_CAPTURE) {
+                for (f in 0 until frames) {
+                    val left = toEnd - f
+                    val captureAt = SPLICE_CAPTURE - kotlin.math.ceil(left).toInt()
+                    if (captureAt in 0 until SPLICE_CAPTURE) {
+                        var sum = 0f
+                        for (c in 0 until channels) sum += channelData[c]!![f * channelStride[c] + channelOffset[c]]
+                        spliceSong[captureAt] = sum / channels
+                        if (captureAt + 1 > spliceFilled) spliceFilled = captureAt + 1
+                    }
+                    val keep = when {
+                        left >= handover -> continue
+                        left <= 0 -> 0f
+                        else -> (left / handover).toFloat()
+                    }
+                    for (c in 0 until channels) channelData[c]!![f * channelStride[c] + channelOffset[c]] *= keep
+                }
+            }
+        }
+        val inAt = loopFadeInAt
+        if (!inAt.isNaN()) {
+            // Frames from the handover to the block's start (negative: still before it).
+            val past = (blockSeconds - inAt) * rate
+            if (past < handover) {
+                for (f in 0 until frames) {
+                    val into = past + f
+                    val gain = when {
+                        into <= 0 -> 0f
+                        into >= handover -> break
+                        else -> (into / handover).toFloat()
+                    }
+                    for (c in 0 until channels) channelData[c]!![f * channelStride[c] + channelOffset[c]] *= gain
                 }
             }
         }
@@ -402,6 +503,12 @@ internal class TapDsp {
         const val MIN_HZ = 10f
         const val MAX_FREQUENCY_FRACTION = 0.45f
         const val DENORMAL_FLOOR = 1e-12f
+
+        /** Upstream's LoopMix.HANDOVER_SEC: identical audio crossed this fast is heard as one. */
+        const val LOOP_HANDOVER_SECONDS = 0.025
+
+        /** Upstream's LoopMixPort.SPLICE_CAPTURE. */
+        const val SPLICE_CAPTURE = 8192
     }
 }
 
@@ -460,6 +567,9 @@ internal object IosAudioTap {
 @OptIn(ExperimentalForeignApi::class)
 private fun tapInit(tap: platform.MediaToolbox.MTAudioProcessingTapRef?, clientInfo: COpaquePointer?, storageOut: CPointer<COpaquePointerVar>?) {
     storageOut?.set(0, clientInfo)
+    clientInfo?.asStableRef<TapDsp>()?.get()?.let { dsp ->
+        if (dsp.timeRange == null) dsp.timeRange = kotlinx.cinterop.nativeHeap.alloc<platform.CoreMedia.CMTimeRange>()
+    }
 }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -467,6 +577,8 @@ private fun tapFinalize(tap: platform.MediaToolbox.MTAudioProcessingTapRef?) {
     val storage = tap?.let(::MTAudioProcessingTapGetStorage) ?: return
     val ref = storage.asStableRef<TapDsp>()
     ref.get().attached = false
+    ref.get().timeRange?.let { kotlinx.cinterop.nativeHeap.free(it.rawPtr) }
+    ref.get().timeRange = null
     ref.dispose()
 }
 
@@ -491,9 +603,18 @@ private fun tapProcess(
     flagsOut: CPointer<platform.MediaToolbox.MTAudioProcessingTapFlagsVar>?,
 ) {
     if (tap == null || bufferList == null) return
-    val status = MTAudioProcessingTapGetSourceAudio(tap, numberFrames, bufferList, flagsOut, null, numberFramesOut)
+    val storage = MTAudioProcessingTapGetStorage(tap) ?: return
+    val dsp = storage.asStableRef<TapDsp>().get()
+    val range = dsp.timeRange
+    val status = MTAudioProcessingTapGetSourceAudio(tap, numberFrames, bufferList, flagsOut, range?.ptr, numberFramesOut)
     if (status != 0) return
     val frames = numberFramesOut?.pointed?.value?.toInt() ?: return
-    val storage = MTAudioProcessingTapGetStorage(tap) ?: return
-    storage.asStableRef<TapDsp>().get().process(bufferList.pointed, frames)
+    // Where these samples are in the track, when AVFoundation says (a valid, non-zero timescale).
+    val start = range?.start
+    val seconds = if (start != null && start.timescale > 0 && (start.flags and platform.CoreMedia.kCMTimeFlags_Valid) != 0u) {
+        start.value.toDouble() / start.timescale
+    } else {
+        Double.NaN
+    }
+    dsp.process(bufferList.pointed, frames, seconds)
 }

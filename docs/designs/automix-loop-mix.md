@@ -642,3 +642,56 @@ call (it cancels cleanly), and lock the phone (the lock screen follows).
     with a 10 s timeout, as the phone's `loopMixLyrics`.
   - `PlayerHost.automixDetail` is upstream's, with a null default for hosts
     without a planner. On iOS it shows the verdict for the pair now playing.
+- **Phase 4 (built, 2026-11-05).**
+  - The renderer (`native/loopmix`) and Signalsmith Stretch were copied
+    unchanged. They are built as `BitChordLoopMix.framework`, with FFTs on
+    Accelerate. The C bridge is `native/loopmix/ios/bitchord_loopmix_ios.cpp`,
+    with `blm_render_planar` added so buffers need no reshuffling in Kotlin.
+    `IosLoopMixNative` binds it behind an ABI check. The model check renders a
+    synthetic 17 s mix to time it on the phone; on the Linux CI host that takes
+    2.3% of real time.
+  - `IosLoopMix` is upstream's `LoopMixSession.build`, unchanged in what it
+    gives the decks. In place of the sink it ran in, it has its own
+    `AVAudioPlayerNode` on `FfmpegAudioEngine`'s graph, fed six 4096-frame
+    buffers ahead by a feeder thread through a `TapDsp` with the outgoing
+    song's loudness and the equaliser. The node is started with
+    `play(at: H0 + firstFrame)`.
+  - **Departure from the plan above:** each handover is shaped in the deck's
+    own tap (`TapDsp.loopFadeOutAt` / `loopFadeInAt`) on its samples' own
+    track time, not by ramping a player's volume. The AVPlayer tap now asks
+    `MTAudioProcessingTapGetSourceAudio` for the time range, and the FFmpeg
+    deck passes each buffer's start. That makes each side of both crossfades
+    sample-exact against its own stream; only the host-time alignment between
+    the renderer and the players remains to measure. That is upstream's
+    `LoopMixPort` gating (outgoing linear down to the loop start, incoming
+    silent until the handover and then linear up) moved into the taps.
+  - `H0` is pinned 1.5 s before the renderer's first frame, from the outgoing
+    deck's clock: an AVPlayer's item timebase through `CMSyncConvertTime`,
+    minus the route's output latency (the engine's render time is that much
+    ahead of what is heard), or an FFmpeg node's `lastRenderTime`. Before frame
+    0 a slip of more than 20 ms calls the mix off. At the takeover the node
+    must be rendering within 10 ms of where it was told to be, or the song
+    keeps the music.
+  - The incoming deck is cued at arm time and started 1 s before its moment:
+    an AVPlayer with `setRate(1, time:, atHostTime:)` (stalling waits off), an
+    FFmpeg deck with `playAt` (its node's `play(at:)`). When half a second in
+    would be before its song's start (an intro loop in a long mix), it starts
+    where the deck's timeline reaches its first second. Alignment follows
+    upstream: three rounds of 15 readings. Past 1.5 ms, with 2.5 s still left
+    before the handover, the deck is started again on the renderer's timeline.
+  - The queue moves on at `clock.handoffAt`. Through the mix the bar and lyrics
+    follow `LoopMix.positionAt`, with each loop wrap counted as a seek.
+  - Pause, seek, skip, stop, another track, or an engine rebuild calls the mix
+    off. Upstream's `loopBail`: the song ahead goes on from where the mix had
+    it. Before the takeover the pair gets its blend. A failure, as opposed to
+    something the listener did, refuses the pair for the session.
+  - Refused here, besides upstream's: AirPlay (it bypasses the taps) and DASH
+    streams. The loop regions are decoded from the very stream each deck plays
+    (`FfmpegMonoDecoder` reads a URL through `RemoteSource`), not from
+    analysis' low-rate copy.
+  - The log carries the splice reading (the AVPlayer's or FFmpeg's decode of
+    the song against the region decoder's, correlated over the 8192 frames
+    before the loop), the renderer's start error and each alignment round:
+    the numbers the Phase 4 pass marks are read from.
+  - **Not yet:** Mix View for a loop mix (no popup during one), and pause or
+    resume carrying on inside the mix (Phase 5).
