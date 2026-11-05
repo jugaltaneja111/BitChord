@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
 import platform.UIKit.UIPasteboard
 
 /**
- * Phase 2 of docs/designs/automix-loop-mix.md, on the phone: do Beat This! and open-unmix run on
+ * Phases 2 and 4 of docs/designs/automix-loop-mix.md, on the phone: do Beat This! and open-unmix run on
  * iOS, what do they find, and what do they cost? It measures ten songs found by search exactly as
  * Automix measures a queued one (a low-bitrate copy, the DSP pass, then the models), without
  * storing anything, and reports each song's model results and both passes' times. The report goes
@@ -59,10 +59,11 @@ internal object IosAutomixModelCheck {
         job = scope.launch {
             val report = StringBuilder()
             try {
-                report.appendLine("BitChord Automix model check (B6 Phase 2)")
+                report.appendLine("BitChord Automix model check (B6 Phase 4)")
                 report.appendLine("metered: ${IosNetwork.metered.value}")
                 report.appendLine("analyzer: ${IosAnalyzerNative.loadError ?: "loaded"}")
                 report.appendLine("models: ${IosModels.loadError ?: "loaded"}")
+                report.appendLine("loop mix renderer: ${IosLoopMixNative.loadError ?: withContext(Dispatchers.Default) { rendererCheck() }}")
                 report.appendLine("performance: ${IosSettings.automixPerformanceMode.name} (${IosSettings.automixPerformanceMode.inferenceThreads} threads)")
                 _progress.value = tr("Finding songs…")
                 val songs = pickSongs()
@@ -118,6 +119,65 @@ internal object IosAutomixModelCheck {
             TrackLog.i(TAG, text)
             UIPasteboard.generalPasteboard.string = text
             IosPlayerHost.showMessage(tr("Automix model check copied to the clipboard"))
+        }
+    }
+
+    /**
+     * The renderer on its own: a synthetic two-deck mix with a tempo ramp and a loop, rendered
+     * offline the way the feeder renders it, and how long that took against its length. The pass
+     * mark for the real thing is under 15% of one core.
+     */
+    private fun rendererCheck(): String {
+        val rate = 44_100
+        val renderer = IosLoopMixRenderer(rate)
+        if (!renderer.isValid) return "would not create"
+        try {
+            val n = rate * 40
+            val left = FloatArray(n) { i ->
+                val t = i.toDouble() / rate
+                (0.3 * kotlin.math.sin(2 * kotlin.math.PI * 220 * t) * (if (i % (rate / 2) < 2000) 1.0 else 0.3)).toFloat()
+            }
+            val beats = 32
+            val frames = DoubleArray(beats + 1)
+            val positions = DoubleArray(beats + 1)
+            var t = 0.0
+            var position = rate * 1.0
+            for (b in 0..beats) {
+                frames[b] = t * rate
+                positions[b] = position
+                t += 60.0 / (120 + 5.0 * b / beats)
+                position += 0.5 * rate
+            }
+            renderer.setDeck(
+                IosLoopMixRenderer.OUT,
+                IosLoopMixRenderer.DeckSetup(left, left, 0.0, rate * 1L, rate * 3L, 1e18, frames, positions, false, t + 0.05, 0.4, 1f),
+            )
+            renderer.setDeck(
+                IosLoopMixRenderer.IN,
+                IosLoopMixRenderer.DeckSetup(left, left, 0.0, rate * 1L, rate * 3L, positions[16], frames, positions, true, t + 2, 0.4, 1f),
+            )
+            renderer.setEnvelope(IosLoopMixRenderer.IN, IosLoopMixRenderer.KIND_GAIN, doubleArrayOf(0.0, 5.0, 10.0), floatArrayOf(0f, 0.5f, 1f))
+            renderer.prepare()
+            val first = renderer.firstFrame()
+            val total = ((t + 1) * rate).toLong() - first
+            val block = 4096
+            val l = FloatArray(block)
+            val r = FloatArray(block)
+            var peak = 0f
+            val started = MonotonicClock.nowMs()
+            var frame = first
+            while (frame < first + total) {
+                renderer.render(frame, l, r, block)
+                for (i in 0 until block) peak = maxOf(peak, kotlin.math.abs(l[i]))
+                frame += block
+            }
+            val ms = MonotonicClock.nowMs() - started
+            val seconds = total.toDouble() / rate
+            val percent = ms / (seconds * 10)
+            return "loaded; ${(seconds * 10).toInt() / 10.0} s test mix in $ms ms " +
+                "(${(percent * 10).toInt() / 10.0}% of real time), peak ${(peak * 100).toInt() / 100.0}"
+        } finally {
+            renderer.close()
         }
     }
 

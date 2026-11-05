@@ -15,6 +15,9 @@ on:
       - 'iosApp/**'
       # Automix's analyzer, which the app builds as BitChordAnalysis.framework.
       - 'native/analyzer/**'
+      # The loop mix renderer, built as BitChordLoopMix.framework.
+      - 'native/loopmix/**'
+      - 'native/third_party/**'
       # Its models' bridge (BitChordModels.framework) and the scripts that fetch ORT and the weights.
       - 'native/models/**'
       - 'scripts/fetch-*.sh'
@@ -84,6 +87,19 @@ jobs:
             native/analyzer/ios/bitchord_analysis_ios.cpp -o "$lib"
           for symbol in bitchord_analysis_abi_version bitchord_analysis_sample_rate bitchord_analysis_run bitchord_analysis_free \
                         bitchord_frontend_shape bitchord_mel_compute bitchord_vocal_compute bitchord_resample bitchord_buffer_free; do
+            nm -D --defined-only "$lib" | grep -qw "$symbol" || { echo "$symbol is not exported"; exit 1; }
+          done
+
+      # BitChordLoopMix's renderer and bridge, the same way: built and linked with the host's
+      # compiler, exports checked.
+      - name: Build the Automix loop mix's iOS bridge
+        run: |
+          lib="$RUNNER_TEMP/libbitchord_loopmix.so"
+          g++ -std=c++17 -O2 -ffast-math -Wall -Wno-unused-parameter -shared -fPIC -fvisibility=hidden -Wl,--no-undefined \
+            -I native -I native/third_party \
+            native/loopmix/loop_mix_renderer.cpp native/loopmix/ios/bitchord_loopmix_ios.cpp -o "$lib"
+          for symbol in blm_abi blm_create blm_destroy blm_set_deck blm_set_envelope blm_prepare blm_first_frame \
+                        blm_render blm_render_planar blm_fade_out blm_heard; do
             nm -D --defined-only "$lib" | grep -qw "$symbol" || { echo "$symbol is not exported"; exit 1; }
           done
 
@@ -302,6 +318,11 @@ jobs:
           models="$app/Frameworks/BitChordModels.framework/BitChordModels"
           for symbol in bcm_abi bcm_last_error bcm_open bcm_output_count bcm_run bcm_free bcm_close; do
             nm -gU "$models" | grep -q " _$symbol\$" || { echo "$symbol is not exported by $models"; exit 1; }
+          done
+          loopmix="$app/Frameworks/BitChordLoopMix.framework/BitChordLoopMix"
+          for symbol in blm_abi blm_create blm_destroy blm_set_deck blm_set_envelope blm_prepare blm_first_frame \
+                        blm_render blm_render_planar blm_fade_out blm_heard; do
+            nm -gU "$loopmix" | grep -q " _$symbol\$" || { echo "$symbol is not exported by $loopmix"; exit 1; }
           done
           # ORT is linked in, not left for the loader to find.
           if nm -u "$models" | grep -q "_OrtGetApiBase"; then echo "ONNX Runtime is not linked into $models"; exit 1; fi

@@ -114,6 +114,9 @@ targets:
       # Their weights are in iosApp/Models (scripts/fetch-models.sh), bundled as resources.
       - target: BitChordModels
         embed: true
+      # Automix's loop mix renderer (native/loopmix), built below; dlopened too (IosLoopMixNative).
+      - target: BitChordLoopMix
+        embed: true
       # The Replay poster's Save button; linked explicitly, as the Kotlin framework is static.
       - sdk: Photos.framework
       # The Now Playing widget, in PlugIns.
@@ -191,6 +194,34 @@ targets:
         # arithmetic is tuned against (see app/src/main/cpp/CMakeLists.txt).
         GCC_OPTIMIZATION_LEVEL: "2"
         # Hidden unless marked: only the bridge's BITCHORD_EXPORT functions are exported.
+        GCC_SYMBOLS_PRIVATE_EXTERN: "YES"
+  # Automix's loop mix renderer: native/loopmix, which Android builds as libbitchord_loopmix, with
+  # a C bridge in place of its JNI one, over Signalsmith Stretch (header-only, native/third_party).
+  # Its FFTs run on Accelerate here. A dynamic framework for the same reason as the analyzer.
+  BitChordLoopMix:
+    type: framework
+    platform: iOS
+    sources:
+      - path: ../native/loopmix/loop_mix_renderer.cpp
+      - path: ../native/loopmix/ios/bitchord_loopmix_ios.cpp
+    dependencies:
+      - sdk: Accelerate.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.music.bitchord.loopmix
+        PRODUCT_NAME: BitChordLoopMix
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: "YES"
+        DEFINES_MODULE: "NO"
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        CLANG_CXX_LIBRARY: libc++
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../native $(SRCROOT)/../native/third_party"
+        # Android's flags (app/src/main/cpp/CMakeLists.txt): -O3 -ffast-math, in Debug too, since
+        # it renders in real time.
+        GCC_OPTIMIZATION_LEVEL: "3"
+        OTHER_CPLUSPLUSFLAGS: "$(inherited) -ffast-math -Wno-unused-parameter"
+        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) SIGNALSMITH_USE_ACCELERATE=1"
         GCC_SYMBOLS_PRIVATE_EXTERN: "YES"
   # Automix's models: the C bridge in native/models/ios over ONNX Runtime, which is Microsoft's
   # prebuilt onnxruntime.xcframework (scripts/fetch-onnxruntime.sh) linked in statically, so the
