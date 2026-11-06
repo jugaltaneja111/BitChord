@@ -225,6 +225,24 @@ internal object IosSongCache {
         save()
     }
 
+    /** Whether a copy of [videoId] is kept, or waiting to be fetched. */
+    fun holds(videoId: String): Boolean =
+        entries.any { it.videoId == videoId } || waiting.any { it.first == videoId }
+
+    /**
+     * Lets [videoId]'s copy go, and anything queued to fetch it (v1.9's "Remove from cache").
+     * A copy playing now carries on: the player holds the file open, and iOS frees it after.
+     */
+    fun remove(videoId: String) {
+        waiting.removeAll { it.first == videoId }
+        webmIds.remove(videoId)
+        val gone = entries.filter { it.videoId == videoId }
+        if (gone.isEmpty()) return
+        gone.forEach { files.removeItemAtPath("$dir/${it.file}", null) }
+        publish(entries - gone.toSet())
+        save()
+    }
+
     fun clear() {
         worker?.cancel()
         waiting.clear()

@@ -87,6 +87,13 @@ import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaylistPrivacy
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.SongInfo
+import com.music.bitchord.data.SongInfoRepository
+import com.music.bitchord.data.compactCount
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.runtime.produceState
 import com.music.bitchord.ios.party.IosListenTogether
 import com.music.bitchord.ios.sources.IosSources
 import androidx.compose.material.icons.rounded.MusicNote
@@ -310,10 +317,15 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
     }
 
     var pickingSleepTimer by remember { mutableStateOf(false) }
+    var showingSongInfo by remember(song.videoId) { mutableStateOf(false) }
 
     TintedSheet(song.thumbnailUrl, onDismiss) { colors ->
         if (pickingSleepTimer) {
             SleepTimerPicker(colors, onBack = { pickingSleepTimer = false })
+            return@TintedSheet
+        }
+        if (showingSongInfo) {
+            SongInfoPage(song, colors, onBack = { showingSongInfo = false })
             return@TintedSheet
         }
         SheetHeader(song.title, song.artist, song.thumbnailUrl, colors)
@@ -472,6 +484,16 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 IosDownloads.cancel(song.videoId)
             }
         }
+        // Read when the menu opens: the row shows only while the song cache holds some of it.
+        val cached = remember(song.videoId) { IosSongCache.holds(song.videoId) }
+        if (cached) {
+            MenuRow(Icons.Rounded.DeleteSweep, tr("Remove from cache"), colors) {
+                leave {
+                    IosSongCache.remove(song.videoId)
+                    IosPlayerHost.showMessage(tr("Removed from the song cache"))
+                }
+            }
+        }
         if (albumId != null || !linksLoaded) {
             MenuRow(Icons.Rounded.Album, tr("Go to album"), colors, loading = albumId == null) {
                 albumId ?: return@MenuRow
@@ -490,6 +512,7 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 }
             }
         }
+        MenuRow(Icons.Rounded.Info, tr("Song Info"), colors) { showingSongInfo = true }
         if (request.fromPlayer && !IosLyrics.lyrics.value.isNullOrEmpty()) {
             MenuRow(Icons.Rounded.Timer, tr("Adjust lyrics timing"), colors) {
                 onDismiss()
@@ -500,6 +523,70 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
             MenuRow(Icons.Rounded.Bedtime, tr("Sleep timer"), colors, value = sleepTimerStatus()) { pickingSleepTimer = true }
         }
         if (!onDevice) MenuRow(Icons.Rounded.Share, tr("Share"), colors) { leave { shareLink(songLink(song.videoId)) } }
+    }
+}
+
+/**
+ * v1.9's Song Info page: the album, the release date the catalogue upload states (never the
+ * video's own upload date), and this exact upload's plays, likes and comments, fetched only
+ * when the page is opened. See [SongInfoRepository].
+ */
+@Composable
+private fun SongInfoPage(song: Song, colors: MenuColors, onBack: () -> Unit) {
+    var retry by remember(song.videoId) { mutableStateOf(0) }
+    val info by produceState<SongInfo?>(null, song.videoId, retry) {
+        value = null
+        value = SongInfoRepository.load(song)
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Back"), tint = colors.text)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(tr("Song Info"), style = MaterialTheme.typography.titleLarge, color = colors.text)
+            Text(
+                listOf(song.title, song.artist).filter(String::isNotBlank).joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.secondary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = colors.divider)
+    val loading = info == null
+    val unavailable = tr("Not available")
+    listOf(
+        tr("Album") to (info?.album ?: song.albumName),
+        tr("Release date") to (info?.releaseDate ?: info?.releaseYear),
+        tr("Plays / views") to info?.views?.let(::compactCount),
+        tr("Likes") to info?.likes,
+        tr("Comments") to info?.comments,
+    ).forEach { (label, value) ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = colors.text, modifier = Modifier.weight(1f))
+            if (loading && value == null) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = colors.secondary, strokeWidth = 2.dp)
+            } else {
+                Text(
+                    value ?: unavailable,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (value == null) colors.secondary else colors.text,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
+            }
+        }
+    }
+    if (info?.failed == true) {
+        Text(
+            tr("Some information could not be loaded."),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.secondary,
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp),
+        )
+        MenuRow(Icons.Rounded.Refresh, tr("Try again"), colors) { retry++ }
     }
 }
 
