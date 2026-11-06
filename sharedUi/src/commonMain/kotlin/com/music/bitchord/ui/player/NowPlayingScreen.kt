@@ -863,6 +863,9 @@ fun NowPlayingScreen(
     val canvasCover = remember(canvas?.url) { mutableFloatStateOf(0f) }
     // v1.5's backdrop, kept behind a switch — see [PlayerSettings.legacyMeshGradient].
     val legacyMesh by PlayerSettings.legacyMeshGradient.collectAsStateWithLifecycle()
+    // The "Simple" theme: the full-cover blur on the main player too — see
+    // [PlayerSettingsSource.simplePlayerBackdrop].
+    val simpleTheme by PlayerSettings.simplePlayerBackdrop.collectAsStateWithLifecycle()
     // The backdrop's colours, taken off the artwork's own arrangement rather
     // than quantised out of it — see [ArtworkMesh].
     //
@@ -1637,6 +1640,9 @@ fun NowPlayingScreen(
     // phone only the lyrics and queue replace the main player's seam-aware,
     // reflected mesh; the main player deliberately keeps its existing look.
     val tabletArtworkBackdrop = tabletSizedPlayer(windowWidth)
+    // The phone's "Simple" theme stands on the same blur as the tablet. A portrait or
+    // Spotify clip keeps its own presentation, as it does under the legacy mesh.
+    val simpleArtworkBackdrop = simpleTheme && !tabletArtworkBackdrop && !canvasFirstPortrait
     // Owned by the song-level player composition, not by any one screen state.
     // Opening lyrics/queue, and rotating into or out of landscape, therefore
     // reuse the same tiny pre-blurred bitmap instead of running a screen-sized
@@ -1644,7 +1650,7 @@ fun NowPlayingScreen(
     val fullArtworkBlurImage = rememberFullArtworkBlurImage(
         imageUrl = remoteArt,
         artPx = ART_PX,
-        prepare = landscape || tabletArtworkBackdrop || lyricsOpen || queueOpen ||
+        prepare = landscape || tabletArtworkBackdrop || simpleArtworkBackdrop || lyricsOpen || queueOpen ||
             playerPrewarmStage >= 1,
     )
     // One movable Image node, not two backdrop call sites. Compose carries it
@@ -2162,12 +2168,13 @@ fun NowPlayingScreen(
                 // The tablet has no mirrored main-player treatment to crossfade from.
                 // Legacy mesh is the whole backdrop on every page, so the lyrics and
                 // queue panels must not crossfade the blurred artwork over it.
+                val simpleBackdrop = simpleArtworkBackdrop && !spotifyCanvasPresentation
                 val legacyMeshBackdrop = !tabletArtworkBackdrop && !spotifyCanvasPresentation &&
-                    legacyMesh && !canvasFirstPortrait
+                    legacyMesh && !canvasFirstPortrait && !simpleBackdrop
                 val fullArtworkBackdropAlpha by animateFloatAsState(
                     targetValue = if (
                         !legacyMeshBackdrop &&
-                        (tabletArtworkBackdrop || lyricsOpen || queueOpen) &&
+                        (tabletArtworkBackdrop || simpleBackdrop || lyricsOpen || queueOpen) &&
                         (tabletArtworkBackdrop || fullArtworkBlurImage != null)
                     ) 1f else 0f,
                     animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),

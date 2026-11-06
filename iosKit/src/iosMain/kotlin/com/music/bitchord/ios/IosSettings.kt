@@ -232,7 +232,13 @@ internal object IosSettings {
 
     val autoplay = BoolPref("${PREFIX}autoplay", true)
     val fullBleedArtwork = BoolPref("${PREFIX}full_bleed_artwork", true)
+
+    /** v1.9.1: album and playlist covers run to the page's edges instead of a framed sleeve. */
+    val fullBleedDetailArtwork = BoolPref("${PREFIX}full_bleed_detail_artwork", false)
     val legacyMeshGradient = BoolPref("${PREFIX}legacy_mesh_gradient", false)
+
+    /** The "Simple" player theme (v1.9.1); with [legacyMeshGradient], the Player theme picker's three choices. */
+    val simplePlayerBackdrop = BoolPref("${PREFIX}simple_player_backdrop", false)
     val reduceAnimation = BoolPref("${PREFIX}reduce_animation", false)
     val reduceDynamicBlur = BoolPref("${PREFIX}reduce_dynamic_blur", false)
     val hideSongStatus = BoolPref("${PREFIX}hide_song_status", false)
@@ -629,7 +635,9 @@ internal fun SettingsPage(
                 Divider()
                 Toggle(tr("Full-screen cover art"), tr("Runs the cover to the edges of the player instead of a square sleeve"), IosSettings.fullBleedArtwork)
                 Divider()
-                Toggle(tr("Legacy mesh gradient"), tr("Brings back the drifting colour blobs behind the player from v1.5"), IosSettings.legacyMeshGradient)
+                Toggle(tr("Full-screen album/playlist cover"), tr("Runs album and playlist covers to the edges of the page instead of a framed sleeve"), IosSettings.fullBleedDetailArtwork)
+                Divider()
+                PlayerThemeRow()
                 Divider()
                 Toggle(tr("Animated cover art"), tr("Plays the looping video some releases ship instead of a still sleeve"), IosSettings.animatedCanvas)
                 val animated by IosSettings.animatedCanvas.flow.collectAsState()
@@ -1147,6 +1155,61 @@ private fun ThemeRow() = Searchable(tr("Theme"), tr("System"), tr("Light"), tr("
                 }
             }
         }
+    }
+}
+
+/**
+ * v1.9.1's Player theme: Default (the cover's colours carried on below it), Simple (the cover
+ * blurred behind the whole player) or Legacy (v1.5's drifting blobs). Kept as two switches under
+ * the hood, so a listener who had the Legacy switch on keeps it.
+ */
+@Composable
+private fun PlayerThemeRow() = Searchable(tr("Player theme"), tr("Default"), tr("Simple"), tr("Legacy"), tr("Legacy mesh gradient")) {
+    val legacy by IosSettings.legacyMeshGradient.flow.collectAsState()
+    val simple by IosSettings.simplePlayerBackdrop.flow.collectAsState()
+    val current = when {
+        legacy -> "LEGACY"
+        simple -> "SIMPLE"
+        else -> "DEFAULT"
+    }
+    val subtitle = when (current) {
+        "LEGACY" -> tr("Brings back the drifting colour blobs behind the player from v1.5")
+        "SIMPLE" -> tr("A soft blur of the cover behind the whole player")
+        else -> tr("The cover's own colours carry on below it")
+    }
+    Column(Modifier.fillMaxWidth().padding(16.dp, 12.dp)) {
+        Text(tr("Player theme"), color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PlaceholderColor).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            listOf(tr("Default") to "DEFAULT", tr("Simple") to "SIMPLE", tr("Legacy") to "LEGACY").forEach { (label, value) ->
+                val chosen = current == value
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (chosen) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .clickable {
+                            if (!chosen) {
+                                IosSettings.legacyMeshGradient.set(value == "LEGACY")
+                                IosSettings.simplePlayerBackdrop.set(value == "SIMPLE")
+                            }
+                        }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (chosen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

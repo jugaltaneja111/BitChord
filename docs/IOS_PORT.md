@@ -59,7 +59,7 @@ sound returns. Theme (System / Light / Dark) uses the phone's light scheme, the 
 stories staying dark; app language writes `AppleLanguages`, applied at the next launch; the shared screens
 translate through their Compose resources and iosKit's own words through `tr()`/`trPlural()`
 over iOS's Localizable.strings (iosApp/iosApp/Localization, keyed by the English, the Android
-app's translations where it has the same string and new ones for the rest). Local playlists
+app's translations where it has the same string and new ones for the rest). From v1.9.1: Content Preferences (hide Recents, Top Picks and Find Your Mood on Home; square music-video thumbnails), the Player theme picker (Default, Simple, Legacy; Simple is the full-cover blur the lyrics and queue use) and full-screen album/playlist covers. Not brought over, because iOS has nothing for them to change: "Hide videos from Home" (the iOS feed has no video shelves yet), "Disable blend effects" (the iOS player draws no artwork-blended chrome) and "Better Performance for Glass" (no Liquid Glass bars on iOS). Local playlists
 are kept on the phone when signed out (and when a YouTube create fails), and the Replay poster is
 drawn with Skia and shared or saved to Photos. Automix analyses each track with the phone's C++
 analyzer (native/analyzer, built into an embedded BitChordAnalysis framework and loaded with

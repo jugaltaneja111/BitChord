@@ -144,6 +144,7 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val hideStatusBar = MutableStateFlow(false)
     override val lastPlayerScreen = MutableStateFlow(LastPlayerScreen.MAIN)
     override val legacyMeshGradient = IosSettings.legacyMeshGradient.flow
+    override val simplePlayerBackdrop = IosSettings.simplePlayerBackdrop.flow
     override val lyricsBlur = IosSettings.lyricsBlur.flow
     override val lyricsOffsetMs = IosSettings.lyricsOffsetMs.flow
     override val lyricsSourceOrder = IosSettings.lyricsSourceOrder.flow

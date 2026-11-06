@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.ArtistPage
 import com.music.bitchord.data.model.BrowseType
@@ -431,12 +432,58 @@ internal fun CollectionHeader(
     onShuffle: () -> Unit,
     onMore: () -> Unit,
 ) {
+    val fullBleedPref by IosSettings.fullBleedDetailArtwork.flow.collectAsState()
+    var artFailed by remember(thumbnailUrl) { mutableStateOf(false) }
+    // A square the page's width only where it leaves room for the title under it: a
+    // landscape window or an iPad keeps the framed sleeve. And a placeholder is a sleeve
+    // or nothing: blown out to the page's width it would only tint the top of the screen.
+    val bleed = fullBleedPref && thumbnailUrl != null && !artFailed &&
+        windowWidth() <= windowHeight() * FULL_BLEED_MAX_HEIGHT
     Column(
-        Modifier.fillMaxWidth().padding(top = topInset + 56.dp, start = PAGE_GUTTER, end = PAGE_GUTTER, bottom = 12.dp),
+        Modifier.fillMaxWidth().padding(
+            top = if (bleed) 0.dp else topInset + 56.dp,
+            start = if (bleed) 0.dp else PAGE_GUTTER,
+            end = if (bleed) 0.dp else PAGE_GUTTER,
+            bottom = 12.dp,
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // As on the phone, held to half the window's height, so an iPad still shows the title under it.
-        Box(
+        if (bleed) {
+            val page = MaterialTheme.colorScheme.background
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    // Laid out shorter than it draws, so the title rides up into the dissolve.
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        val height = (placeable.height - FULL_BLEED_TITLE_OVERLAP.roundToPx()).coerceAtLeast(0)
+                        layout(placeable.width, height) { placeable.place(0, 0) }
+                    }
+                    .aspectRatio(1f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                AsyncImage(
+                    model = thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    onState = { artFailed = it is AsyncImagePainter.State.Error },
+                    modifier = Modifier.matchParentSize(),
+                )
+                canvas?.let { HeaderClip(it, Modifier.matchParentSize()) }
+                // The player banner's dissolve into the page, along smootherstep so neither
+                // end of it shows as a line. Over the clip too, which takes no Compose mask.
+                Box(
+                    Modifier.matchParentSize().background(
+                        Brush.verticalGradient(
+                            colorStops = Array(FADE_STOPS + 1) { i ->
+                                val t = i / FADE_STOPS.toFloat()
+                                (1f - FULL_BLEED_FADE_FRACTION + t * FULL_BLEED_FADE_FRACTION) to page.copy(alpha = smootherStep(t))
+                            },
+                        ),
+                    ),
+                )
+            }
+        } else Box(
             Modifier
                 .fillMaxWidth(0.68f)
                 .widthIn(max = windowHeight() * 0.5f)
@@ -455,6 +502,7 @@ internal fun CollectionHeader(
         Spacer(Modifier.height(18.dp))
         Text(
             title,
+            modifier = Modifier.padding(horizontal = if (bleed) PAGE_GUTTER else 0.dp),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
@@ -469,6 +517,7 @@ internal fun CollectionHeader(
             Spacer(Modifier.height(6.dp))
             Text(
                 meta,
+                modifier = Modifier.padding(horizontal = if (bleed) PAGE_GUTTER else 0.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -956,6 +1005,22 @@ private fun DownloadsPage(contentPadding: PaddingValues, topPadding: Dp) {
 
 /** The words a release's subtitle uses for what it is, which are not who made it. */
 private val RELEASE_KINDS = setOf("album", "single", "ep", "playlist", "artist", "podcast", "episode", "song", "video")
+
+/** The tallest a full-bleed cover may be, as a share of the window's height — see [CollectionHeader]. */
+private const val FULL_BLEED_MAX_HEIGHT = 0.62f
+
+/** How much of a full-bleed cover's foot dissolves into the page: the player's banner's share. */
+private const val FULL_BLEED_FADE_FRACTION = 0.42f
+
+/** How far the title rides up into that dissolve. */
+private val FULL_BLEED_TITLE_OVERLAP = 44.dp
+
+private const val FADE_STOPS = 12
+
+private fun smootherStep(t: Float): Float = t * t * t * (t * (t * 6f - 15f) + 10f)
+
+@Composable
+private fun windowWidth(): Dp = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
 
 /** The window's height, for capping what a phone sizes from the width alone. */
 @Composable

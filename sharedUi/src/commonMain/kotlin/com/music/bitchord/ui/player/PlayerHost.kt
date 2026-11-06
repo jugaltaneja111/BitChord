@@ -278,6 +278,11 @@ interface PlayerSettingsSource {
     val hideStatusBar: StateFlow<Boolean>
     val lastPlayerScreen: StateFlow<LastPlayerScreen>
     val legacyMeshGradient: StateFlow<Boolean>
+    /**
+     * v1.9.1's "Simple" player theme: the cover blurred across the whole main player, as the
+     * lyrics and queue already are, in place of the mesh. Off where a host doesn't offer it.
+     */
+    val simplePlayerBackdrop: StateFlow<Boolean> get() = SIMPLE_BACKDROP_OFF
     val lyricsBlur: StateFlow<Boolean>
     val lyricsOffsetMs: StateFlow<Int>
     val lyricsSourceOrder: StateFlow<List<LyricsSource>>
@@ -320,6 +325,8 @@ interface PlayerSettingsSource {
 }
 
 /** The player's name for the installed host's settings, read where AppSettings used to be. */
+private val SIMPLE_BACKDROP_OFF: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(false)
+
 internal val PlayerSettings: PlayerSettingsSource
     get() = PlayerPlatform.host.settings
 
