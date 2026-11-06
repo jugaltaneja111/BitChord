@@ -91,6 +91,7 @@ import com.music.bitchord.data.SongInfo
 import com.music.bitchord.data.SongInfoRepository
 import com.music.bitchord.data.compactCount
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.produceState
@@ -532,6 +533,14 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
         }
         if (request.fromPlayer) {
             MenuRow(Icons.Rounded.Bedtime, tr("Sleep timer"), colors, value = sleepTimerStatus()) { pickingSleepTimer = true }
+        }
+        // v1.9.1's Automix overview: the mix popup, on the transition still to come. It lives in
+        // the player, so the menu only closes and asks for it.
+        val automixOn by IosSettings.automix.flow.collectAsState()
+        if (request.fromPlayer && automixOn) {
+            MenuRow(Icons.Rounded.GraphicEq, tr("Automix overview"), colors) {
+                leave { com.music.bitchord.ui.player.MixViewRequest.open = true }
+            }
         }
         if (!onDevice) MenuRow(Icons.Rounded.Share, tr("Share"), colors) { leave { shareLink(songLink(song.videoId)) } }
     }

@@ -170,6 +170,10 @@ internal object IosPlayerSettings : PlayerSettingsSource {
     override val smartMixInProgress = IosPlayer.mixing
     override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
     override val smartMixView = com.music.bitchord.ios.automix.IosMixView.view
+    override val smartMixPreview = com.music.bitchord.ios.automix.IosMixView.preview
+    override fun setMixViewOpen(open: Boolean) {
+        com.music.bitchord.ios.automix.IosMixView.popupOpen = open
+    }
     override val smartMixProgress = com.music.bitchord.ios.automix.IosMixView.progress
     override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
     override val spotifyCanvasAutoHide = IosSettings.spotifyCanvasAutoHide.flow

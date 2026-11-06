@@ -839,3 +839,11 @@
 "What {0} is asked for when the best quality is wanted. Downloads kept at High or Standard still ask for less." = "최고 음질을 원할 때 {0}에 요청하는 음질입니다. 고음질이나 표준으로 보관하는 다운로드는 여전히 더 낮은 음질을 요청합니다.";
 "{0} h" = "{0}시간";
 "{0} h {1} min" = "{0}시간 {1}분";
+"Automix overview" = "Automix 개요";
+"Liked" = "좋아요 표시한 곡";
+"Playlists" = "재생목록";
+"Folders" = "폴더";
+"No playlists yet. Make one from Add to playlist in any song’s menu." = "아직 재생목록이 없습니다. 곡 메뉴의 재생목록에 추가로 만드세요.";
+"Songs you like on this device show up here" = "이 기기에서 좋아요 표시한 곡이 여기에 표시됩니다";
+"BitChord can’t play that file" = "BitChord가 이 파일을 재생할 수 없습니다";
+"BitChord couldn’t open that file" = "BitChord가 이 파일을 열 수 없습니다";

@@ -718,13 +718,31 @@ internal object IosPlayer {
             nextDurationMs = phoneLength(next),
             positionMs = engine.position.positionMs,
         )
-        if (loop != null && loopMix(song, next, nextIndex, loop)) return true
+        if (loop != null && loopMix(song, next, nextIndex, loop)) {
+            IosMixView.clearPreview()
+            return true
+        }
         if (plan.blocked) {
+            IosMixView.clearPreview()
             if (rampRate != 1f) {
                 rampRate = 1f
                 engine.setHeardRate(1f)
             }
             return false
+        }
+        // The Automix overview, for a mix popup opened between blends.
+        if (!plan.shouldStart) {
+            IosMixView.preview(
+                out = song,
+                inn = next,
+                plan = plan,
+                outAnalysis = outAnalysis,
+                inAnalysis = inAnalysis,
+                positionSeconds = engine.position.positionMs / 1000.0,
+                outgoingRate = plan.outgoingPlaybackRate,
+                outDurationMs = durationMs,
+                inDurationMs = phoneLength(next),
+            )
         }
         // Cued only once it has opened: a seek before then can be lost.
         if (!engine.readyFor(next.videoId)) return true

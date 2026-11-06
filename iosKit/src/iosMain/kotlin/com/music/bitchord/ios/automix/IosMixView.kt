@@ -59,6 +59,24 @@ internal object IosMixView {
     private val _view = MutableStateFlow<MixTransitionView?>(null)
     val view: StateFlow<MixTransitionView?> = _view.asStateFlow()
 
+    private val _preview = MutableStateFlow<MixTransitionView?>(null)
+    /**
+     * The next transition as planned, for a popup opened by hand between blends (v1.9.1's
+     * Automix overview): only while [popupOpen], and null whenever [view] has a blend to show.
+     */
+    val preview: StateFlow<MixTransitionView?> = _preview.asStateFlow()
+
+    /** The mix popup is up: someone is waiting on [preview], so it is laid out and decoded now. */
+    var popupOpen = false
+        set(value) {
+            field = value
+            if (!value) clearPreview()
+        }
+
+    /** The ids of the pair [preview] lays out, and what it last showed, so a tick that changes nothing is skipped. */
+    private var previewing: Pair<String, String>? = null
+    private var previewKey = ""
+
     private val _progress = MutableStateFlow(0f)
     val progress: StateFlow<Float> = _progress.asStateFlow()
 
@@ -80,8 +98,8 @@ internal object IosMixView {
      * Called on every Automix tick while a blend is planned but not started: decodes both windows
      * once it is [PREFETCH_SECONDS] away, so the popup has them the moment the blend starts.
      */
-    fun prefetch(out: Song, inn: Song, plan: TransitionPlan, positionSeconds: Double, outgoingRate: Double) {
-        if (plan.transitionStart - positionSeconds > PREFETCH_SECONDS) return
+    fun prefetch(out: Song, inn: Song, plan: TransitionPlan, positionSeconds: Double, outgoingRate: Double, now: Boolean = false) {
+        if (!now && plan.transitionStart - positionSeconds > PREFETCH_SECONDS) return
         val g = Geometry.of(plan, plan.transitionStart, outgoingRate)
         val pad = g.outSpan * CONTEXT + PAD_SECONDS
         val outFrom = (g.outStart - pad).coerceAtLeast(0.0)
@@ -126,6 +144,62 @@ internal object IosMixView {
         outDurationMs: Long,
         inDurationMs: Long,
     ) {
+        clearPreview()
+        _progress.value = 0f
+        showing = out.videoId to inn.videoId
+        _view.value = layout(out, inn, plan, outAnalysis, inAnalysis, positionSeconds, outgoingRate, outDurationMs, inDurationMs)
+        republish()
+        // A blend that started before its prefetch (a skip, a short song) decodes now.
+        prefetch(out, inn, plan.copy(transitionStart = positionSeconds), positionSeconds, outgoingRate)
+    }
+
+    /**
+     * Lays the coming blend out for a popup opened between blends: the same decks, frame and
+     * faders [begin] will show, from the plan as it stands, with its waveforms decoded now rather
+     * than [PREFETCH_SECONDS] out, because someone is looking. Called on every Automix tick
+     * while a blend is planned; does nothing unless [popupOpen].
+     */
+    fun preview(
+        out: Song,
+        inn: Song,
+        plan: TransitionPlan,
+        outAnalysis: TrackAnalysis,
+        inAnalysis: TrackAnalysis,
+        positionSeconds: Double,
+        outgoingRate: Double,
+        outDurationMs: Long,
+        inDurationMs: Long,
+    ) {
+        if (!popupOpen || _view.value != null) return
+        prefetch(out, inn, plan, positionSeconds, outgoingRate, now = true)
+        val ids = out.videoId to inn.videoId
+        val key = "${ids.first}|${ids.second}|${(plan.transitionStart * 20).roundToInt()}|${(plan.transitionEnd * 20).roundToInt()}|" +
+            "${(plan.incomingCueTime * 20).roundToInt()}|${plan.transitionStyle}|${plan.bassSwap}|${outAnalysis.bpm}|${inAnalysis.bpm}"
+        if (key == previewKey && previewing == ids && _preview.value != null) return
+        previewKey = key
+        previewing = ids
+        _preview.value = layout(out, inn, plan, outAnalysis, inAnalysis, plan.transitionStart, outgoingRate, outDurationMs, inDurationMs)
+        republish()
+    }
+
+    /** Nothing planned to show: no next track, a blocked pair, a loop mix, the popup closed. */
+    fun clearPreview() {
+        previewing = null
+        previewKey = ""
+        _preview.value = null
+    }
+
+    private fun layout(
+        out: Song,
+        inn: Song,
+        plan: TransitionPlan,
+        outAnalysis: TrackAnalysis,
+        inAnalysis: TrackAnalysis,
+        positionSeconds: Double,
+        outgoingRate: Double,
+        outDurationMs: Long,
+        inDurationMs: Long,
+    ): MixTransitionView {
         val g = Geometry.of(plan, positionSeconds, outgoingRate)
         val beatSeconds = plan.beatSeconds
         val beats = if (beatSeconds > 0) (g.outSpan / beatSeconds).roundToInt() else 0
@@ -153,9 +227,7 @@ internal object IosMixView {
             waveStart = from,
             waveEnd = to,
         )
-        _progress.value = 0f
-        showing = out.videoId to inn.videoId
-        _view.value = MixTransitionView(
+        return MixTransitionView(
             outgoing = deck(out, outAnalysis, outDurationMs, g.outStart - g.context, g.outEnd + g.context),
             incoming = deck(inn, inAnalysis, inDurationMs, g.inStart - g.context * g.ratio, g.inEnd + g.context * g.ratio),
             outStart = g.outStart,
@@ -168,9 +240,6 @@ internal object IosMixView {
             fadeIn = FloatArray(FADER_POINTS) { moves[it].incomingGain.coerceIn(0f, 1f) },
             bassSwapAt = ride.bassSwapMark,
         )
-        republish()
-        // A blend that started before its prefetch (a skip, a short song) decodes now.
-        prefetch(out, inn, plan.copy(transitionStart = positionSeconds), positionSeconds, outgoingRate)
     }
 
     /** The blend's progress, 0..1, each fade step. */
@@ -193,15 +262,22 @@ internal object IosMixView {
         lastAttempt = null
         outgoingWave = null
         incomingWave = null
+        clearPreview()
         end()
     }
 
+    /** Puts whatever waveforms have arrived into the views the popup can be showing. */
     private fun republish() {
-        val view = _view.value ?: return
-        val ids = showing ?: return
         fun MixDeck.with(wave: DeckWave?, id: String) =
             if (wave != null && wave.id == id) withWave(wave.bands.low, wave.bands.mid, wave.bands.high, wave.from, wave.to) else this
-        _view.value = view.withDecks(view.outgoing.with(outgoingWave, ids.first), view.incoming.with(incomingWave, ids.second))
+        fun MixTransitionView.withWaves(ids: Pair<String, String>) =
+            withDecks(outgoing.with(outgoingWave, ids.first), incoming.with(incomingWave, ids.second))
+        val view = _view.value
+        val ids = showing
+        if (view != null && ids != null) _view.value = view.withWaves(ids)
+        val preview = _preview.value
+        val previewIds = previewing
+        if (preview != null && previewIds != null) _preview.value = preview.withWaves(previewIds)
     }
 
     /** [song]'s three bands over [from]..[to] seconds; null when no copy could be had or decoded. */
