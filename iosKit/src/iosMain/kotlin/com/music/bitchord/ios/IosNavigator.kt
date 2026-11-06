@@ -35,7 +35,17 @@ internal sealed interface IosPage {
     /** The music folder on the listener's WebDAV server, laid out as [LocalMusic]. */
     data object WebDavMusic : IosPage
     /** One artist's or album's songs, opened from [LocalMusic] or, when [webdav], [WebDavMusic]. */
-    data class LocalMusicGroup(val album: Boolean, val name: String, val webdav: Boolean = false) : IosPage
+    /**
+     * One artist's or album's own files, or ([folder]) those in one folder, or ([liked]) the
+     * offline Liked playlist; [name] is the artist, album or folder.
+     */
+    data class LocalMusicGroup(
+        val album: Boolean,
+        val name: String,
+        val webdav: Boolean = false,
+        val folder: Boolean = false,
+        val liked: Boolean = false,
+    ) : IosPage
     data object Settings : IosPage
     data object LyricsSources : IosPage
     data object TranslationLanguage : IosPage

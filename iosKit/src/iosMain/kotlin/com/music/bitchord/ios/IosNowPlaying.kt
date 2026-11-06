@@ -58,7 +58,13 @@ internal fun IosNowPlaying(
     val signedIn by IosAccount.signedIn.collectAsState()
     val account by IosAccount.account.collectAsState()
     val likes by LikeState.overrides.collectAsState()
-    val likeStatus = likes[song.videoId] ?: LikeStatus.INDIFFERENT
+    // The listener's own files keep their hearts on this iPhone (v1.9's offline Liked).
+    val offlineLikes by IosOfflineLikes.ids.collectAsState()
+    val likeStatus = if (isOwnFile(song)) {
+        if (song.videoId in offlineLikes) LikeStatus.LIKE else LikeStatus.INDIFFERENT
+    } else {
+        likes[song.videoId] ?: LikeStatus.INDIFFERENT
+    }
     val lyrics by IosLyrics.lyrics.collectAsState()
     val lyricsSource by IosLyrics.source.collectAsState()
     val lyricsChecked by IosLyrics.checked.collectAsState()
@@ -134,8 +140,7 @@ internal fun IosNowPlaying(
             likeStatus = likeStatus,
             onToggleLike = {
                 when {
-                    IosLocalMusic.isLocal(song) -> IosPlayerHost.showMessage(tr("Songs on this iPhone can’t be liked on YouTube Music"))
-                    IosWebDav.isWebDav(song) -> IosPlayerHost.showMessage(tr("Songs on your server can’t be liked on YouTube Music"))
+                    isOwnFile(song) -> IosOfflineLikes.toggle(song)
                     signedIn -> IosAccount.toggleLike(song, likeStatus)
                     else -> leaveTo { IosOverlays.login = true }
                 }

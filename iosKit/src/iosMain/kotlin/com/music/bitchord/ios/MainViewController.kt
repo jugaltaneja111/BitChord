@@ -21,10 +21,16 @@ import platform.UIKit.UIViewController
 
 /**
  * A link the system handed the app: `bitchord://party/CODE` (or `?code=`), with the invite's
- * server if it carries one. Opens Listen Together on that invite.
+ * server if it carries one, which opens Listen Together on that invite; or an audio file opened
+ * with BitChord, which plays from Local music.
  */
 @Suppress("unused")
 fun handleOpenUrl(url: String) {
+    // An audio file opened with BitChord from Files or a share sheet.
+    if (url.startsWith("file:")) {
+        platform.Foundation.NSURL.URLWithString(url)?.let(IosLocalMusic::openFile)
+        return
+    }
     com.music.bitchord.ios.party.IosListenTogether.parseInvite(url)?.let { IosDeepLink.invite = it }
 }
 
@@ -89,6 +95,7 @@ private fun start() {
     IosDownloads.restore()
     IosLocalPlaylists.restore()
     IosLocalMusic.restore()
+    IosOfflineLikes.restore()
     IosWebDav.restore()
     IosSongCache.restore()
     IosPlaylistSync.start()

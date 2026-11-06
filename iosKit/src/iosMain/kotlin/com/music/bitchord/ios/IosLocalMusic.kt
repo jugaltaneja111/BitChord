@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import platform.AVFoundation.AVMetadataCommonKeyAlbumName
@@ -217,6 +218,54 @@ internal object IosLocalMusic {
                 TrackLog.w(TAG, "scan failed: ${e.message}")
             } finally {
                 _scanning.value = false
+            }
+        }
+    }
+
+    /**
+     * "Open with BitChord" (v1.9's offline player): an audio file handed over from the Files app
+     * or another app's share sheet. One already in BitChord's folder plays where it is; any other
+     * is copied into Music/Opened there first, so it stays in Local music, then played once the
+     * scan has found it.
+     */
+    fun openFile(url: NSURL) {
+        val source = url.path ?: return
+        val name = source.substringAfterLast('/')
+        if (name.substringAfterLast('.', "").lowercase() !in EXTENSIONS) {
+            IosPlayerHost.showMessage(tr("BitChord can’t play that file"))
+            return
+        }
+        val target = if (source.startsWith("$documents/")) {
+            source
+        } else {
+            val dir = "$documents/Music/Opened"
+            files.createDirectoryAtPath(dir, withIntermediateDirectories = true, attributes = null, error = null)
+            val dest = "$dir/$name"
+            val scoped = url.startAccessingSecurityScopedResource()
+            try {
+                if (!files.fileExistsAtPath(dest) && !files.copyItemAtPath(source, toPath = dest, error = null)) {
+                    IosPlayerHost.showMessage(tr("BitChord couldn’t open that file"))
+                    return
+                }
+            } finally {
+                if (scoped) url.stopAccessingSecurityScopedResource()
+            }
+            dest
+        }
+        val id = "$LOCAL_SONG_PREFIX$DOCUMENTS_TAG/" + target.removePrefix("$documents/")
+        rescan()
+        scope.launch {
+            // The scan that was just started; then the file's row, as Local music shows it.
+            kotlinx.coroutines.delay(100)
+            val found = kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                _scanning.first { !it }
+                songs.value.firstOrNull { it.videoId == id }
+            }
+            if (found != null) {
+                IosPlayer.playQueue(listOf(found), 0)
+            } else {
+                TrackLog.w(TAG, "opened file not found after the scan: $id")
+                IosPlayerHost.showMessage(tr("BitChord couldn’t open that file"))
             }
         }
     }

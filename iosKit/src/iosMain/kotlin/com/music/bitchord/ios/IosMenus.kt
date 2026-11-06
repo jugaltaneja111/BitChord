@@ -381,6 +381,17 @@ private fun SongMenuSheet(request: SongMenuRequest, navigator: IosNavigator, onL
                 tint = if (disliked) colors.accent else null,
             ) { IosAccount.toggleDislike(song, likeStatus) }
         }
+        // The listener's own file: its heart is kept on this iPhone, signed in or not.
+        if (onDevice) {
+            val offlineLikes by IosOfflineLikes.ids.collectAsState()
+            val liked = song.videoId in offlineLikes
+            MenuRow(
+                if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                if (liked) tr("Remove from Liked") else tr("Like"),
+                colors,
+                tint = if (liked) colors.accent else null,
+            ) { IosOfflineLikes.toggle(song) }
+        }
         MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, tr("Add to playlist"), colors) {
             leave { IosMenus.addToPlaylist = listOf(song) }
         }

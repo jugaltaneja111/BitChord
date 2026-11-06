@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.rounded.Favorite
+import platform.Foundation.create
+import platform.Foundation.stringByRemovingPercentEncoding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -57,7 +60,34 @@ internal enum class LocalMusicSort(val label: String) {
     RECENT(tr("Recently added")),
 }
 
-private enum class LocalMusicTab(val label: String) { SONGS(tr("Songs")), ARTISTS(tr("Artists")), ALBUMS(tr("Albums")) }
+private enum class LocalMusicTab(val label: String) {
+    SONGS(tr("Songs")),
+    ARTISTS(tr("Artists")),
+    ALBUMS(tr("Albums")),
+    // v1.9's offline player: Liked and the playlists kept on this iPhone, and the files by folder.
+    PLAYLISTS(tr("Playlists")),
+    FOLDERS(tr("Folders")),
+}
+
+/**
+ * The folder a file of the listener's sits in, as a key: the path under its root with the file
+ * name off (`tag/Albums/Kind of Blue`), or the WebDAV URL's directory.
+ */
+internal fun folderOf(song: Song): String = when {
+    IosLocalMusic.isLocal(song) -> song.videoId.removePrefix(LOCAL_SONG_PREFIX).substringBeforeLast('/', "")
+    else -> song.videoId.substringAfter(':').substringBeforeLast('/', "")
+}
+
+/** A folder key's own name, as a row shows it: its last part, or "Music" for a root. */
+internal fun folderLabel(folder: String): String {
+    val last = folder.trimEnd('/').substringAfterLast('/')
+    val decoded = runCatching { last.decodeUrlPart() }.getOrDefault(last)
+    // A root is its tag alone (no slash under it): the Files folder or the picked one.
+    return if ('/' !in folder || decoded.isBlank()) tr("Music") else decoded
+}
+
+private fun String.decodeUrlPart(): String =
+    if ('%' in this) (platform.Foundation.NSString.create(string = this).stringByRemovingPercentEncoding ?: this) else this
 
 private const val LOCAL_SOURCE = "Local music"
 
@@ -116,6 +146,7 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
     val songs = remember(all, query, sort) { localSongsMatching(all, query).sortedFor(sort).playable(webdav) }
+    val localPlaylists by IosLocalPlaylists.playlists.collectAsState()
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -220,6 +251,36 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
                     ) { navigator.open(IosPage.LocalMusicGroup(album = false, name = artist, webdav = webdav)) }
                 }
             }
+            LocalMusicTab.PLAYLISTS -> {
+                item(key = "liked") { LikedRow(webdav, navigator) }
+                val inLibrary = all.mapTo(HashSet()) { it.videoId }
+                val playlists = localPlaylists.filter { list -> list.songs.any { it.videoId in inLibrary } }
+                items(playlists, key = { "playlist:${it.id}" }) { playlist ->
+                    GroupRow(
+                        title = playlist.title,
+                        subtitle = trPlural(playlist.songs.size, "{0} song", "{0} songs"),
+                        imageUrl = playlist.thumbnailUrl,
+                        round = false,
+                    ) { navigator.open(IosPage.Collection(playlist.browseId)) }
+                }
+                if (playlists.isEmpty()) {
+                    item(key = "no-playlists") {
+                        MessageState(tr("No playlists yet. Make one from Add to playlist in any song’s menu."))
+                    }
+                }
+            }
+            LocalMusicTab.FOLDERS -> {
+                val folders = songs.groupBy(::folderOf).entries.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { folderLabel(it.key) })
+                if (folders.isEmpty()) item(key = "none") { MessageState(tr("Nothing here matches “{0}”", query.trim())) }
+                items(folders, key = { "folder:${it.key}" }) { (folder, tracks) ->
+                    GroupRow(
+                        title = folderLabel(folder),
+                        subtitle = trPlural(tracks.size, "{0} song", "{0} songs"),
+                        imageUrl = tracks.firstNotNullOfOrNull { it.thumbnailUrl },
+                        round = false,
+                    ) { navigator.open(IosPage.LocalMusicGroup(album = false, name = folder, webdav = webdav, folder = true)) }
+                }
+            }
             LocalMusicTab.ALBUMS -> {
                 val albums = songs.filter { it.albumName != null }.groupBy { it.albumName!! }.entries
                     .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.key })
@@ -242,10 +303,16 @@ internal fun LocalMusicPage(navigator: IosNavigator, contentPadding: PaddingValu
 @Composable
 internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: PaddingValues, topPadding: Dp) {
     val all by (if (page.webdav) IosWebDav.songs else IosLocalMusic.songs).collectAsState()
+    val liked by IosOfflineLikes.songs.collectAsState()
     val current by IosPlayer.song.collectAsState()
     val isPlaying by IosPlayer.isPlaying.collectAsState()
-    val songs = remember(all, page) {
-        if (page.album) {
+    val songs = remember(all, liked, page) {
+        if (page.liked) {
+            val here = all.mapTo(HashSet()) { it.videoId }
+            liked.filter { it.videoId in here }
+        } else if (page.folder) {
+            all.filter { folderOf(it) == page.name }.sortedFor(LocalMusicSort.ALBUM)
+        } else if (page.album) {
             all.filter { it.albumName == page.name }.sortedFor(LocalMusicSort.ALBUM)
         } else {
             all.filter { it.artist == page.name }.sortedFor(LocalMusicSort.ARTIST)
@@ -258,7 +325,15 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
     ) {
         item(key = "title") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text(page.name, style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    when {
+                        page.liked -> tr("Liked")
+                        page.folder -> folderLabel(page.name)
+                        else -> page.name
+                    },
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 Text(
                     buildString {
                         if (page.album) append(if (artists.size == 1) "${artists.first()} · " else tr("Various artists · "))
@@ -278,7 +353,13 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
         }
         if (songs.isEmpty()) {
             item(key = "gone") {
-                MessageState(if (page.webdav) tr("These songs are no longer on your server") else tr("These songs are no longer on this iPhone"))
+                MessageState(
+                    when {
+                        page.liked -> tr("Songs you like on this device show up here")
+                        page.webdav -> tr("These songs are no longer on your server")
+                        else -> tr("These songs are no longer on this iPhone")
+                    },
+                )
             }
         }
         itemsIndexed(songs, key = { _, song -> song.videoId }) { index, song ->
@@ -287,6 +368,37 @@ internal fun LocalMusicGroupPage(page: IosPage.LocalMusicGroup, contentPadding: 
                 IosPlayer.playQueue(songs, index)
             }
         }
+    }
+}
+
+/** The offline Liked playlist's row, first on the Playlists tab: a heart for a cover. */
+@Composable
+private fun LikedRow(webdav: Boolean, navigator: IosNavigator) {
+    val liked by IosOfflineLikes.songs.collectAsState()
+    val count = liked.count { if (webdav) IosWebDav.isWebDav(it) else IosLocalMusic.isLocal(it) }
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable { navigator.open(IosPage.LocalMusicGroup(album = false, name = "", webdav = webdav, liked = true)) }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(52.dp).clip(RoundedCornerShape(6.dp)).background(PlayingAccent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Favorite, contentDescription = null, tint = PlayingAccent, modifier = Modifier.size(26.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(tr("Liked"), color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+            Text(
+                trPlural(count, "{0} song", "{0} songs"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

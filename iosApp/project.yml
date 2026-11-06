@@ -64,6 +64,13 @@ targets:
         # lives in Application Support, out of sight.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        # "Open with BitChord" for audio files, from Files and other apps' share sheets: an
+        # alternate handler, so it never takes over from the file's own app (IosLocalMusic.openFile).
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Audio
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.audio]
         # The Replay share sheet's Save button: add-only, the app never reads the library.
         NSPhotoLibraryAddUsageDescription: BitChord saves your Replay picture to your photo library.
         # Last.fm's key and secret, from the repository's secrets when it has them (see ios.yml);
