@@ -4,6 +4,7 @@ import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.sources.SourceTrackKeys
 import com.music.bitchord.ios.sources.addon.AddonClient
 import com.music.bitchord.ios.sources.addon.AddonException
+import com.music.bitchord.ios.sources.addon.AddonQualityOption
 import com.music.bitchord.ios.sources.addon.DetectedFormat
 import com.music.bitchord.ios.sources.addon.SourceFormats
 import io.ktor.http.URLBuilder
@@ -53,14 +54,36 @@ internal data class SourceConfig(
      * already break that. Refreshed whenever the manifest is next read.
      */
     val checkValidLossless: Boolean = false,
+    /**
+     * The addon's `quality` choices, as its manifest last said. Stored for the same reason as
+     * [checkValidLossless]: the Sources page has to be able to list them without contacting it.
+     */
+    val qualityOptions: List<AddonQualityOption> = emptyList(),
+    /** Which of [qualityOptions] the user chose, or null for the first one listed. */
+    val pickedQuality: String? = null,
+    /**
+     * Whether the addon said (`bitchordAuth`, or a `401` challenge) that it only serves the
+     * verified Android app — see [AddonNeedsVerification]. Such an addon is left out of every
+     * walk, so it costs no request per track; refreshed whenever its manifest is next read.
+     */
+    val needsVerification: Boolean = false,
 ) {
+    /** The entry of [qualityOptions] in force: the pick while the addon still lists it, else its first. */
+    val activeQuality: AddonQualityOption?
+        get() = qualityOptions.firstOrNull { it.value == pickedQuality } ?: qualityOptions.firstOrNull()
+
     /** Whether this source is shut out right now because it needs an output that isn't connected. */
     val awaitsLosslessOutput: Boolean
         get() = checkValidLossless && !LosslessOutput.capable
 
-    /** The two manifest switches, without the parts of the config the user set. */
+    /** What the manifest last said, without the parts of the config the user set. */
     fun withPolicyOf(other: SourceConfig) =
-        copy(allowDownloads = other.allowDownloads, checkValidLossless = other.checkValidLossless)
+        copy(
+            allowDownloads = other.allowDownloads,
+            checkValidLossless = other.checkValidLossless,
+            qualityOptions = other.qualityOptions,
+            needsVerification = other.needsVerification,
+        )
 
     /** What the Sources page and the player show. Never blank. */
     val displayName: String
@@ -179,6 +202,8 @@ internal object SourceRegistry {
             // that asked for a lossless output costs nothing — not even a timed
             // out search — while there isn't one. See [SourceConfig.checkValidLossless].
             .filterNot { it.awaitsLosslessOutput }
+            // Nor one that only serves the verified Android app: it would refuse anyway.
+            .filterNot { it.needsVerification }
             .sortedBy { it.kind.rank }
             .mapNotNull { built[it.id] }
     }
@@ -222,24 +247,55 @@ internal object SourceRegistry {
      * from inside that source's own requests, off the main thread; the write
      * is carried over to it.
      */
-    fun updatePolicy(configId: String, allowDownloads: Boolean, checkValidLossless: Boolean) {
+    fun updatePolicy(
+        configId: String,
+        allowDownloads: Boolean,
+        checkValidLossless: Boolean,
+        qualityOptions: List<AddonQualityOption>,
+        needsVerification: Boolean,
+    ) {
         val current = config(configId) ?: return
-        if (current.allowDownloads == allowDownloads && current.checkValidLossless == checkValidLossless) return
+        if (current.allowDownloads == allowDownloads &&
+            current.checkValidLossless == checkValidLossless &&
+            current.qualityOptions == qualityOptions &&
+            current.needsVerification == needsVerification
+        ) {
+            return
+        }
         onMain {
             TrackLog.d(
                 TAG,
                 "${current.displayName}: manifest now says allowDownloads=$allowDownloads " +
-                    "checkValidLossless=$checkValidLossless",
+                    "checkValidLossless=$checkValidLossless qualityOptions=${qualityOptions.map { it.value }} " +
+                    "needsVerification=$needsVerification",
             )
             publish(
                 configs.value.map {
                     if (it.id == configId) {
-                        it.copy(allowDownloads = allowDownloads, checkValidLossless = checkValidLossless)
+                        it.copy(
+                            allowDownloads = allowDownloads,
+                            checkValidLossless = checkValidLossless,
+                            qualityOptions = qualityOptions,
+                            needsVerification = needsVerification,
+                        )
                     } else {
                         it
                     }
                 },
             )
+        }
+    }
+
+    /**
+     * Records that an addon answered a request with a `BitChord` verification challenge although
+     * its manifest didn't declare `bitchordAuth`. The rest of the stored policy is left as it was.
+     */
+    fun markNeedsVerification(configId: String) {
+        val current = config(configId) ?: return
+        if (current.needsVerification) return
+        onMain {
+            TrackLog.d(TAG, "${current.displayName}: asks for BitChord's Android verification; left out on iOS")
+            publish(configs.value.map { if (it.id == configId) it.copy(needsVerification = true) else it })
         }
     }
 
@@ -388,6 +444,12 @@ internal object SourceRegistry {
                     label = detected.manifest.displayName,
                     allowDownloads = detected.manifest.downloadsAllowed,
                     checkValidLossless = detected.manifest.requiresLosslessOutput,
+                    qualityOptions = detected.manifest.qualityOptions,
+                    needsVerification = detected.manifest.requiresBitChordAuth,
+                    // The address may now name a different addon, whose list this pick was never on.
+                    pickedQuality = existing?.pickedQuality?.takeIf { picked ->
+                        detected.manifest.qualityOptions.any { it.value == picked }
+                    },
                 ),
             )
             is DetectedFormat.Unsupported -> Result.failure(AddonException(detected.reason))

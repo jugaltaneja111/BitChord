@@ -27,6 +27,11 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Tune
+import com.music.bitchord.ios.sources.addon.AddonNeedsVerification
+import com.music.bitchord.ios.sources.addon.AddonQualityOption
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -101,6 +106,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
     var editing by remember { mutableStateOf<SourceConfig?>(null) }
     var editingWebDav by remember { mutableStateOf(false) }
     var confirmJioSaavn by remember { mutableStateOf(false) }
+    var choosingQuality by remember { mutableStateOf<SourceConfig?>(null) }
 
     // Bumped whenever the audio route changes, so a row waiting on a lossless
     // output redraws — and is probed — the moment a cable goes in.
@@ -173,6 +179,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                         awaitingOutput = config.enabled && config.checkValidLossless && !capable,
                         routeName = routeName,
                         onClick = { editing = config },
+                        onChooseQuality = { choosingQuality = config },
                         onToggle = { SourceRegistry.setEnabled(config.id, it) },
                         // No arrows for a single addon: there is nothing to
                         // reorder, and a control that can't move anything lies.
@@ -198,6 +205,7 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
                         awaitingOutput = false,
                         routeName = routeName,
                         onClick = null,
+                        onChooseQuality = null,
                         // YouTube gets no switch at all — see
                         // [SourceRegistry.setEnabled] for why one would be a lie.
                         onToggle = if (config.kind == SourceKind.YOUTUBE) {
@@ -338,6 +346,19 @@ internal fun SourcesPage(contentPadding: PaddingValues, topPadding: Dp) {
 
     if (editingWebDav) WebDavEditor(onDismiss = { editingWebDav = false })
 
+    choosingQuality?.let { config ->
+        QualityPicker(
+            config = config,
+            onPick = { option ->
+                // Off the stored config, not the one this list opened with: a health check
+                // may have refreshed it since.
+                SourceRegistry.config(config.id)?.let { SourceRegistry.update(it.copy(pickedQuality = option.value)) }
+                choosingQuality = null
+            },
+            onDismiss = { choosingQuality = null },
+        )
+    }
+
     if (confirmJioSaavn) {
         AlertDialog(
             onDismissRequest = { confirmJioSaavn = false },
@@ -384,6 +405,8 @@ private fun SourceRow(
     awaitingOutput: Boolean,
     routeName: String?,
     onClick: (() -> Unit)?,
+    /** Opens the addon's quality list; null for a source with none. */
+    onChooseQuality: (() -> Unit)?,
     /** Null for a source that cannot be switched off, which gets a label instead. */
     onToggle: ((Boolean) -> Unit)?,
     onMoveUp: (() -> Unit)?,
@@ -394,7 +417,7 @@ private fun SourceRow(
     // Dimmed for the same reason an off source is: it is not in the walk. The
     // switch stays where the user left it, so the row reads "on, but not now"
     // rather than "off".
-    val dimmed = !config.enabled || awaitingOutput
+    val dimmed = !config.enabled || awaitingOutput || config.needsVerification
     val fade = if (dimmed) 0.45f else 1f
     Row(
         Modifier.fillMaxWidth()
@@ -417,6 +440,29 @@ private fun SourceRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).alpha(fade)) {
             Text(config.displayName, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Read off the stored manifest, so it can still be set while the addon is down or
+            // waiting on a lossless output. One line whatever the label's length; the full label
+            // is in the list it opens.
+            val quality = config.activeQuality
+            if (onChooseQuality != null && config.kind == SourceKind.ADDON && config.isComplete && quality != null) {
+                Row(
+                    Modifier.clickable(onClick = onChooseQuality).padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Tune, contentDescription = null, tint = Accent, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        quality.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Accent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = tr("Audio quality"), tint = Accent, modifier = Modifier.size(12.dp))
+                }
+            }
             val line = when {
                 // Outranks everything: this one is not reached at all until
                 // the output changes.
@@ -434,6 +480,7 @@ private fun SourceRow(
                 // something.
                 color = when {
                     awaitingOutput -> Red
+                    config.needsVerification -> Red
                     health is SourceHealth.Rejected && config.isComplete -> Red
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -500,6 +547,7 @@ private fun kindIcon(kind: SourceKind): ImageVector = when (kind) {
 /** The second line of a row: what this source is, or what is wrong with it. */
 private fun SourceConfig.statusLine(health: SourceHealth?): String = when {
     !isComplete -> tr("Tap to finish setting up")
+    needsVerification -> AddonNeedsVerification.MESSAGE
     kind == SourceKind.JIOSAAVN -> tr("May match the wrong version of a song. Enable at your own risk.")
     health is SourceHealth.Ok -> listOfNotNull(
         health.detail,
@@ -662,4 +710,36 @@ private fun SourceEditor(
 private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
     if (from !in indices || to !in indices) return this
     return toMutableList().apply { add(to, removeAt(from)) }
+}
+
+/** An addon's `quality` choices, as its manifest lists them; the one in force is ticked. */
+@Composable
+private fun QualityPicker(config: SourceConfig, onPick: (AddonQualityOption) -> Unit, onDismiss: () -> Unit) {
+    val active = config.activeQuality
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Audio quality")) },
+        text = {
+            Column {
+                Text(
+                    tr("What {0} is asked for when the best quality is wanted. Downloads kept at High or Standard still ask for less.", config.displayName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                config.qualityOptions.forEach { option ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(GroupShape).clickable { onPick(option) }.heightIn(min = 44.dp).padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(option.label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                        if (option == active) {
+                            Icon(Icons.Rounded.Check, contentDescription = null, tint = Accent, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel")) } },
+    )
 }

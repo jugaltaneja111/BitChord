@@ -47,7 +47,7 @@ Caches; AVPlayer shares nothing it streamed, so a played track is fetched again 
 off mobile data only. Album pages loop the animated cover, and artist pages Apple Music's artist
 clip (`AppleArtistVideo`). Sources (iosKit/…/sources) are the phone's add-ons, JioSaavn and
 YouTube, resolved under the On Wi-Fi / On mobile data ceilings; a substitute for a YouTube track
-races YouTube's own stream for six seconds. Streams AVPlayer can't open (Opus, Vorbis, WebM, Ogg, DASH)
+races YouTube's own stream for six seconds. An addon that lists `quality` choices gets a picker on its Sources row (v1.9.1), sent whenever the best quality is wanted. v1.9.1's addon verification (`AddonAuth`) is not ported and cannot be: it proves to an addon, through Android's hardware key attestation, that the request comes from the official Android app. An addon that asks for it (`bitchordAuth`, or a `401` with `WWW-Authenticate: BitChord`) is shown as working only in that app and left out of every walk. iOS also keeps using addons that don't declare it, which v1.9.1 on Android now refuses as out of date. Streams AVPlayer can't open (Opus, Vorbis, WebM, Ogg, DASH)
 go to a second player (iosKit/…/ffmpeg): FFmpegBuild 3.9.0's prebuilt frameworks, fetched by
 `scripts/fetch-ffmpeg.sh` and embedded by the app, loaded with dlopen (cinterop would stop the
 Linux job cross-compiling iOS), decoding into AVAudioEngine through the same TapDsp; a track it

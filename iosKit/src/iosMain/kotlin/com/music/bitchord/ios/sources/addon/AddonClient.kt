@@ -39,8 +39,17 @@ import kotlinx.serialization.json.Json
  *
  * The phone's `AddonClient` with OkHttp swapped for Ktor's Darwin engine; the
  * protocol, the caching and the back-pressure rules are unchanged.
+ *
+ * [pickedQuality] is the `quality` value the listener chose for this addon, or
+ * null for the addon's first listed option. See [settingsFor] for when it applies.
+ *
+ * Upstream v1.9.1's `AddonAuth` is not here. It proves to an addon that a request
+ * comes from the official Android app, through Android's hardware key attestation,
+ * which no iOS build can produce. An addon that asks for it (`bitchordAuth` in its
+ * manifest, or a `401` with `WWW-Authenticate: BitChord`) is reported as
+ * [AddonNeedsVerification] and nothing is sent to it in its place.
  */
-internal class AddonClient(rawBaseUrl: String) {
+internal class AddonClient(rawBaseUrl: String, private val pickedQuality: String? = null) {
 
     /** Where this addon lives, with `/manifest.json` and trailing slashes off. */
     val baseUrl: String = normalizeBase(rawBaseUrl)
@@ -65,6 +74,15 @@ internal class AddonClient(rawBaseUrl: String) {
      */
     @Volatile
     private var quietUntilMs = 0L
+
+    /**
+     * Whether this addon has said it only serves the verified Android app — see the class
+     * comment. Learned from the manifest or a `401` challenge; once set, [body] refuses at once
+     * instead of sending a request the addon has already said it will turn down.
+     */
+    @Volatile
+    var needsVerification = false
+        private set
 
     // ── Manifest ──────────────────────────────────────────────────────────
 
@@ -91,6 +109,7 @@ internal class AddonClient(rawBaseUrl: String) {
                 val declared = manifest.resources.joinToString(", ")
                 throw AddonException(tr("This addon declares {0} — BitChord needs search", declared))
             }
+            if (manifest.requiresBitChordAuth) needsVerification = true
             manifest
         }.recoverCatching { failure ->
             // A manifest 404 is not "no such track", it is "no addon here" —
@@ -139,7 +158,7 @@ internal class AddonClient(rawBaseUrl: String) {
             // and an addon whose catalogue differs by tier would otherwise
             // answer the second one with the first one's rows.
             key = keyOf(trimmed, params.toString()),
-            describe = { "▶ addon search(${redact(baseUrl)}) q=\"$trimmed\" tier=$tier" },
+            describe = { "▶ addon search(${redact(baseUrl)}) q=\"$trimmed\" tier=$tier quality=${params[QUALITY_KEY]}" },
         ) {
             fetch<AddonSearchResponse>(endpoint(listOf("search"), params + ("q" to trimmed)))
         }.map { it.tracks }
@@ -164,7 +183,7 @@ internal class AddonClient(rawBaseUrl: String) {
         val params = settingsFor(tier, stereoOnly)
         return streams.get(
             key = keyOf(trackId, params.toString()),
-            describe = { "▶ addon stream(${redact(baseUrl)}) id=$trackId tier=$tier" },
+            describe = { "▶ addon stream(${redact(baseUrl)}) id=$trackId tier=$tier quality=${params[QUALITY_KEY]}" },
         ) {
             fetch<AddonStream>(endpoint(listOf("stream", trackId), params))
         }
@@ -183,13 +202,22 @@ internal class AddonClient(rawBaseUrl: String) {
      * that arrived carrying the manifest's `"default": "high"` is a request for
      * lossless that comes back at 320kbps.
      *
-     * The value sent for `quality` is negotiated rather than asserted. This
-     * app's tiers are `LOSSLESS`/`HIGH`/`LOW`, and an addon declaring a
-     * `quality` select of `high|normal|low` understands none of them — sending
-     * `LOSSLESS` there is not a strong ask, it is an invalid value that lands on
-     * the addon's fallback. So when the manifest enumerates options, the closest
-     * one is chosen from that list; only when it does not is the tier name sent
-     * as-is, which is what the reference host does unconditionally.
+     * The value sent for `quality` comes from the addon's own list rather than
+     * this app's. The tiers here are `LOSSLESS`/`HIGH`/`LOW`, and an addon
+     * declaring a `quality` select of `high|normal|low` understands none of them
+     * — sending `LOSSLESS` there is not a strong ask, it is an invalid value that
+     * lands on the addon's fallback. Only when the manifest enumerates nothing is
+     * the tier name sent as-is, which is what the reference host does
+     * unconditionally.
+     *
+     * Asking for the best it can get, the app sends the listener's pick for this
+     * addon, or the first option listed when there is none. Matching on the word
+     * `lossless` is not good enough here: an addon may use it for its CD tier and
+     * list better ones above it. A pick the addon has since stopped listing is
+     * dropped; with no manifest in hand there is nothing to judge it against, so
+     * it goes as chosen. A lower tier (a download kept at High or Standard) is a
+     * setting about what a file may cost, and a pick does not overrule it, so that
+     * goes to [matchTier] instead.
      *
      * The manifest is read best-effort: an addon whose manifest is briefly
      * unreachable while its search endpoint is fine should still be searchable,
@@ -200,7 +228,8 @@ internal class AddonClient(rawBaseUrl: String) {
      * quality. See [atmosHint].
      */
     private suspend fun settingsFor(tier: String, stereoOnly: Boolean = false): Map<String, String> {
-        val declared = manifest().getOrNull()?.settings.orEmpty()
+        val manifest = manifest().getOrNull()
+        val declared = manifest?.settings.orEmpty()
         val params = LinkedHashMap<String, String>()
         declared.forEach { setting ->
             val key = setting.key.takeIf { it.isNotBlank() } ?: return@forEach
@@ -210,7 +239,12 @@ internal class AddonClient(rawBaseUrl: String) {
             val options = declared.firstOrNull { it.key == QUALITY_KEY }
                 ?.options.orEmpty()
                 .mapNotNull { it.stringValue }
-            params[QUALITY_KEY] = matchTier(tier, options) ?: tier
+            val chosen = when {
+                tier != TIER_LOSSLESS -> matchTier(tier, options)
+                manifest == null -> pickedQuality
+                else -> pickedQuality?.takeIf { it in options } ?: options.firstOrNull()
+            }
+            params[QUALITY_KEY] = chosen ?: tier
         }
         if (stereoOnly) {
             // Asked for the stereo mix by name, so nothing that lets the addon
@@ -257,8 +291,8 @@ internal class AddonClient(rawBaseUrl: String) {
     private fun atmosHint(): String? = if (SourcePrefs.atmosWanted) ATMOS_AUTO else null
 
     /**
-     * The option in [options] that best answers a request for [tier], or null
-     * when the addon enumerated nothing to choose from.
+     * The option in [options] that best answers a request below the top tier,
+     * or null when the addon enumerated nothing to choose from.
      *
      * Matched on what an option *says* rather than on its position, so an addon
      * listing its tiers best-first and one listing them worst-first are both
@@ -268,11 +302,7 @@ internal class AddonClient(rawBaseUrl: String) {
     private fun matchTier(tier: String, options: List<String>): String? {
         if (options.isEmpty()) return null
         options.firstOrNull { it.equals(tier, ignoreCase = true) }?.let { return it }
-        val wanted = when (tier.uppercase()) {
-            TIER_LOSSLESS -> LOSSLESS_WORDS
-            TIER_LOW -> LOW_WORDS
-            else -> HIGH_WORDS
-        }
+        val wanted = if (tier.equals(TIER_LOW, ignoreCase = true)) LOW_WORDS else HIGH_WORDS
         return options.firstOrNull { option -> wanted.any { it in option.lowercase() } }
             ?: options.first()
     }
@@ -319,6 +349,7 @@ internal class AddonClient(rawBaseUrl: String) {
         var attempt = 0
         while (true) {
             (quietUntilMs - MonotonicClock.nowMs()).takeIf { it > 0 }?.let { delay(it) }
+            if (needsVerification && !url.endsWith(MANIFEST_SUFFIX)) throw AddonNeedsVerification()
 
             val response = addonHttp.get(url) {
                 header("Accept", "application/json")
@@ -329,6 +360,11 @@ internal class AddonClient(rawBaseUrl: String) {
                 response.status.isSuccess() ->
                     return response.bodyAsText().takeIf { it.isNotBlank() }
                         ?: throw AddonException("Empty response")
+                code == 401 && response.headers["WWW-Authenticate"]
+                    ?.trimStart()?.startsWith("BitChord", ignoreCase = true) == true -> {
+                    needsVerification = true
+                    throw AddonNeedsVerification()
+                }
                 code == 404 -> throw AddonNotFound()
                 // A 5xx is a server having a bad minute and will be tried
                 // again on the next track; a 4xx is this app asking for
@@ -368,6 +404,7 @@ internal class AddonClient(rawBaseUrl: String) {
         searches.clear()
         streams.clear()
         quietUntilMs = 0L
+        needsVerification = false
     }
 
     /**
@@ -392,7 +429,7 @@ internal class AddonClient(rawBaseUrl: String) {
         const val TIER_HIGH = "HIGH"
         const val TIER_LOW = "LOW"
 
-        private const val QUALITY_KEY = "quality"
+        internal const val QUALITY_KEY = "quality"
 
         /** The spec's immersive-audio hint: `auto` normally, an "off" only for a stereo row picked by hand. */
         private const val ATMOS_KEY = "atmos"
@@ -400,7 +437,6 @@ internal class AddonClient(rawBaseUrl: String) {
         private const val ATMOS_NEVER = "0"
         private val ATMOS_OFF = Regex("0|false|off|no|none|never|stereo", RegexOption.IGNORE_CASE)
 
-        private val LOSSLESS_WORDS = listOf("lossless", "flac", "hifi", "hi-res", "hires", "max", "best")
         private val HIGH_WORDS = listOf("high", "320", "normal", "standard")
         private val LOW_WORDS = listOf("low", "96", "128", "min")
 
@@ -550,6 +586,18 @@ internal class AddonRefused(code: Int) : AddonException("HTTP $code") {
  * [SourceHealth][com.music.bitchord.ios.sources.SourceHealth] draws.
  */
 internal class AddonUnavailable(message: String) : Exception(message)
+
+/**
+ * The addon only serves the official Android app, which it checks with upstream's `AddonAuth`
+ * (Android hardware key attestation). Nothing on iOS can answer that, so this is final: a
+ * [SourceHealth.Rejected][com.music.bitchord.ios.sources.SourceHealth.Rejected] with this line.
+ */
+internal class AddonNeedsVerification : AddonException(MESSAGE) {
+    companion object {
+        val MESSAGE: String
+            get() = tr("This addon only works in the official BitChord Android app: it checks the app with Android's hardware verification, which iOS can't provide")
+    }
+}
 
 /** The addon answered, and does not have what was asked for. A miss, not a fault. */
 internal class AddonNotFound : Exception("Not held by this addon")

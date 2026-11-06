@@ -7,6 +7,7 @@ import com.music.bitchord.data.sources.StreamFormat
 import com.music.bitchord.ios.sources.addon.AddonClient
 import com.music.bitchord.ios.sources.addon.AddonException
 import com.music.bitchord.ios.sources.addon.AddonManifest
+import com.music.bitchord.ios.sources.addon.AddonNeedsVerification
 import com.music.bitchord.ios.sources.addon.AddonNotFound
 import com.music.bitchord.ios.sources.addon.AddonRefused
 import com.music.bitchord.ios.sources.addon.AddonStream
@@ -37,7 +38,8 @@ internal class AddonSource(
     override val kind: SourceKind get() = config.kind
     override val displayName: String get() = config.displayName
 
-    private val client = AddonClient(config.baseUrl)
+    /** Holds the pick for this instance's life: changing it is an edit, and [SourceRegistry] rebuilds on one. */
+    private val client = AddonClient(config.baseUrl, config.pickedQuality)
 
     /**
      * Rows this addon has recently handed over, by their own track id.
@@ -77,6 +79,10 @@ internal class AddonSource(
      * queued track names its source directly and arrives here regardless.
      */
     private fun shutOut(what: String): Boolean {
+        if (live.needsVerification || client.needsVerification) {
+            TrackLog.d(TAG, "${config.displayName}: only serves the verified Android app; not asking it for $what")
+            return true
+        }
         if (!live.awaitsLosslessOutput) return false
         TrackLog.d(TAG, "${config.displayName}: no lossless output connected; not asking it for $what")
         return true
@@ -91,6 +97,10 @@ internal class AddonSource(
     /** A hard failure for [SourceHealthGate]: a refusal rests the addon at once, anything else is a strike. */
     private fun report(failure: Throwable?) {
         val why = failure?.message?.substringBefore(" [url=")
+        if (failure is AddonNeedsVerification) {
+            SourceRegistry.markNeedsVerification(config.id)
+            return
+        }
         if (failure is AddonRefused) {
             SourceHealthGate.refused(config.id, config.displayName, why)
         } else {
@@ -105,6 +115,10 @@ internal class AddonSource(
         // Read from the manifest just fetched, not from [live]: the registry
         // write it triggered is carried to the main thread and may not have
         // landed yet.
+        if (manifest.requiresBitChordAuth) {
+            TrackLog.d(TAG, "${config.displayName}: only serves the verified Android app; not asking it for $what")
+            return false
+        }
         if (manifest.requiresLosslessOutput && !LosslessOutput.capable) {
             TrackLog.d(TAG, "${config.displayName}: no lossless output connected; not asking it for $what")
             return false
@@ -113,7 +127,13 @@ internal class AddonSource(
     }
 
     private fun recordPolicy(manifest: AddonManifest) =
-        SourceRegistry.updatePolicy(config.id, manifest.downloadsAllowed, manifest.requiresLosslessOutput)
+        SourceRegistry.updatePolicy(
+            config.id,
+            manifest.downloadsAllowed,
+            manifest.requiresLosslessOutput,
+            manifest.qualityOptions,
+            manifest.requiresBitChordAuth || client.needsVerification,
+        )
 
     // ── Health ────────────────────────────────────────────────────────────
 
@@ -129,10 +149,14 @@ internal class AddonSource(
      */
     override suspend fun health(): SourceHealth {
         if (config.baseUrl.isBlank()) return SourceHealth.Rejected("An addon URL is required")
-        if (shutOut("a health check")) return SourceHealth.Rejected(NEEDS_LOSSLESS_OUTPUT)
+        if (live.awaitsLosslessOutput) return SourceHealth.Rejected(NEEDS_LOSSLESS_OUTPUT)
         return client.manifest().fold(
             onSuccess = { manifest ->
                 recordPolicy(manifest)
+                if (manifest.requiresBitChordAuth) return@fold SourceHealth.Rejected(AddonNeedsVerification.MESSAGE)
+                // Learned from a 401 challenge this session. A later launch starts clean and
+                // asks again, in case the addon stopped requiring it.
+                if (client.needsVerification) return@fold SourceHealth.Rejected(AddonNeedsVerification.MESSAGE)
                 SourceHealth.Ok(
                     listOfNotNull(
                         manifest.displayName.takeIf { it.isNotBlank() },

@@ -72,10 +72,34 @@ internal data class AddonManifest(
      * Read through [requiresLosslessOutput].
      */
     @SerialName("checkValidLossless") val checkValidLossless: JsonElement? = null,
+    /**
+     * `bitchordAuth`: the addon only serves the Android app it can verify with Android's hardware
+     * key attestation (upstream's `AddonAuth`, v1.9.1). iOS has no way to take part in that, so
+     * such an addon is reported as unusable here rather than asked and refused on every track.
+     * Read through [requiresBitChordAuth].
+     */
+    @SerialName("bitchordAuth") val bitchordAuth: JsonElement? = null,
 ) {
     val downloadsAllowed: Boolean get() = allowDownloads.asFlag() ?: true
 
     val requiresLosslessOutput: Boolean get() = checkValidLossless.asFlag() ?: false
+
+    val requiresBitChordAuth: Boolean get() = bitchordAuth.asFlag() ?: false
+
+    /**
+     * The renditions the listener can choose between, from a declared `quality` select. Empty
+     * when there is no choice to offer: no such setting, or fewer than two usable values.
+     */
+    val qualityOptions: List<AddonQualityOption>
+        get() = settings.firstOrNull { it.key == AddonClient.QUALITY_KEY }
+            ?.options.orEmpty()
+            .mapNotNull { option ->
+                val value = option.stringValue ?: return@mapNotNull null
+                AddonQualityOption(value, option.labelText ?: value)
+            }
+            .distinctBy { it.value }
+            .takeIf { it.size > 1 }
+            .orEmpty()
 
     fun declares(resource: String): Boolean =
         resources.any { it.equals(resource, ignoreCase = true) }
@@ -121,8 +145,12 @@ internal data class AddonSetting(
 @Serializable
 internal data class AddonSettingOption(
     @SerialName("value") val value: JsonElement? = null,
+    /** Read as an element so an addon's odd label costs the label, not the whole manifest. */
+    @SerialName("label") val label: JsonElement? = null,
 ) {
     val stringValue: String? get() = value?.asQueryValue()
+
+    val labelText: String? get() = label?.asQueryValue()
 }
 
 // ── Search ───────────────────────────────────────────────────────────────
@@ -439,3 +467,10 @@ private fun JsonElement.asQueryValue(): String? {
     val primitive = this as? JsonPrimitive ?: return null
     return primitive.content.ifBlank { null }
 }
+
+/** One entry of an addon's quality picker, as stored with the source — see [SourceConfig.qualityOptions][com.music.bitchord.ios.sources.SourceConfig.qualityOptions]. */
+@Serializable
+internal data class AddonQualityOption(
+    val value: String,
+    val label: String,
+)
