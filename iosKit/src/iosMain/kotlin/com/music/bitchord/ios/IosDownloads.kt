@@ -200,14 +200,14 @@ internal object IosDownloads {
     )
 
     /** Queues [songs] that are neither on the phone nor already on their way. */
-    fun download(songs: List<Song>) {
+    fun download(songs: List<Song>, announce: Boolean = true) {
         // A file already on this iPhone (a local playlist's) has nothing to fetch.
         val fresh = songs.filterNot { isOwnFile(it) }.filter { song ->
             song.videoId !in _ids.value && song.videoId != current &&
                 waiting.none { it.videoId == song.videoId }
         }
         if (fresh.isEmpty()) {
-            if (songs.isNotEmpty()) IosPlayerHost.showMessage(tr("Already downloaded"))
+            if (songs.isNotEmpty() && announce) IosPlayerHost.showMessage(tr("Already downloaded"))
             return
         }
         fresh.forEach {
@@ -215,16 +215,25 @@ internal object IosDownloads {
             titles[it.videoId] = "${it.title} · ${it.artist}"
         }
         _progress.update { map -> map + fresh.associate { it.videoId to DownloadProgress.Queued } }
-        IosPlayerHost.showMessage(if (fresh.size == 1) tr("Downloading “{0}”", fresh.first().title) else trPlural(fresh.size, "Downloading {0} song", "Downloading {0} songs"))
+        if (announce) {
+            IosPlayerHost.showMessage(if (fresh.size == 1) tr("Downloading “{0}”", fresh.first().title) else trPlural(fresh.size, "Downloading {0} song", "Downloading {0} songs"))
+        }
         if (worker?.isActive != true) worker = scope.launch { drain() }
     }
 
     /** A whole album or playlist: its tracks, and a card for it on Library. */
-    fun downloadRelease(release: DownloadedRelease, songs: List<Song>) {
-        _releases.value = listOf(release.copy(videoIds = songs.map { it.videoId })) +
-            _releases.value.filterNot { it.browseId == release.browseId }
+    fun downloadRelease(release: DownloadedRelease, songs: List<Song>, fetch: List<Song> = songs, announce: Boolean = true) {
+        // In place, so a release keeps its spot on Library's shelf when Keep playlists updated
+        // adds to it; a new one goes first.
+        val stored = release.copy(videoIds = songs.map { it.videoId })
+        val existing = _releases.value.indexOfFirst { it.browseId == release.browseId }
+        _releases.value = if (existing >= 0) {
+            _releases.value.toMutableList().also { it[existing] = stored }
+        } else {
+            listOf(stored) + _releases.value
+        }
         save()
-        download(songs)
+        download(fetch, announce)
     }
 
     fun cancel(videoId: String) {

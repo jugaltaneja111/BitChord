@@ -311,6 +311,25 @@ internal fun IosApp() {
                 )
             }
             IosReplay.share?.let { ReplayShareSheet(it, onDismiss = { IosReplay.share = null }) }
+            // Keep playlists updated: a batch too big to fetch without asking.
+            val syncAsk by IosPlaylistSync.ask.collectAsState()
+            syncAsk?.let { ask ->
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { IosPlaylistSync.answer(false) },
+                    title = { androidx.compose.material3.Text(tr("New songs in {0}: {1}", ask.title, ask.count)) },
+                    text = { androidx.compose.material3.Text(tr("Download them now? They can take a lot of storage.")) },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = { IosPlaylistSync.answer(true) }) {
+                            androidx.compose.material3.Text(tr("Download"))
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { IosPlaylistSync.answer(false) }) {
+                            androidx.compose.material3.Text(tr("Not now"))
+                        }
+                    },
+                )
+            }
             // Above the pages and the player: a menu can be opened from either.
             IosMenuHost(navigator, onLeavePlayer = { playerOpen = false })
             IosToast.Host(

@@ -234,6 +234,9 @@ internal object IosSettings {
     val fullBleedArtwork = BoolPref("${PREFIX}full_bleed_artwork", true)
 
     /** v1.9.1: album and playlist covers run to the page's edges instead of a framed sleeve. */
+    /** v1.9: playlists downloaded whole are checked for new songs, which are downloaded. See [IosPlaylistSync]. */
+    val syncDownloadedPlaylists = BoolPref("${PREFIX}sync_downloaded_playlists", false)
+
     val fullBleedDetailArtwork = BoolPref("${PREFIX}full_bleed_detail_artwork", false)
     val legacyMeshGradient = BoolPref("${PREFIX}legacy_mesh_gradient", false)
 
@@ -552,6 +555,12 @@ internal fun SettingsPage(
                     tr("Download over Wi-Fi only"),
                     if (wifiOnly && metered == true) tr("Blocking: downloads wait for Wi-Fi") else tr("Downloads wait for Wi-Fi instead of using mobile data"),
                     IosSettings.downloadWifiOnly,
+                )
+                Divider()
+                Toggle(
+                    tr("Keep playlists updated"),
+                    tr("Checks when you open BitChord, at most every few hours, and downloads songs newly added to your downloaded playlists"),
+                    IosSettings.syncDownloadedPlaylists,
                 )
                 if (downloaded.isNotEmpty()) {
                     Divider()
@@ -1430,6 +1439,7 @@ private val APP_LANGUAGES = listOf(
     "id" to "Bahasa Indonesia",
     "hi" to "हिन्दी",
     "ja" to "日本語",
+    "ko" to "한국어",
     "ru" to "Русский",
     "zh-Hans-CN" to "简体中文",
     "zh-Hant-TW" to "繁體中文",

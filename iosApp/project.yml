@@ -25,7 +25,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # The phone's translations, so iOS offers BitChord's own language in Settings › BitChord.
-        CFBundleLocalizations: [en, es, fr, de, pl, pt, id, hi, ja, ru, zh-Hans, zh-Hant, he, it, tr, th, vi]
+        CFBundleLocalizations: [en, es, fr, de, pl, pt, id, hi, ja, ko, ru, zh-Hans, zh-Hant, he, it, tr, th, vi]
         CFBundleAllowMixedLocalizations: true
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}

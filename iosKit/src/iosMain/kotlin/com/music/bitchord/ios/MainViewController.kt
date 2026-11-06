@@ -91,6 +91,7 @@ private fun start() {
     IosLocalMusic.restore()
     IosWebDav.restore()
     IosSongCache.restore()
+    IosPlaylistSync.start()
     com.music.bitchord.ios.sources.IosSources.init()
     IosArtistFacts.start()
     com.music.bitchord.data.lyrics.LyricsTranslation.store = CachesTranslationStore

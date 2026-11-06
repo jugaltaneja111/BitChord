@@ -81,7 +81,7 @@ private fun pluralCategory(n: Long): Plural {
     val mod10 = n % 10
     val mod100 = n % 100
     return when (language) {
-        "ja", "zh", "th", "vi", "id" -> Plural.OTHER
+        "ja", "zh", "th", "vi", "id", "ko" -> Plural.OTHER
         "fr", "pt", "hi" -> if (n == 0L || n == 1L) Plural.ONE else Plural.OTHER
         "ru" -> when {
             mod10 == 1L && mod100 != 11L -> Plural.ONE
