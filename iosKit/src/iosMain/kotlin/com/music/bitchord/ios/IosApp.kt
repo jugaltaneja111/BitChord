@@ -28,6 +28,8 @@ import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.UiState
+import com.music.bitchord.data.model.withoutVideos
+import com.music.bitchord.ui.components.VideoThumbnails
 import com.music.bitchord.data.settings.LastPlayerScreen
 import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.ui.player.PlayerBack
@@ -147,6 +149,10 @@ internal fun IosApp() {
             }
         }
 
+        // Compose state the shared screens read where they size a music video's picture.
+        LaunchedEffect(Unit) {
+            IosSettings.squareVideoThumbnails.flow.collect { VideoThumbnails.square = it }
+        }
         LaunchedEffect(Unit) {
             autoSearchQuery()?.takeUnless { tourRequested() }?.let { query ->
                 navigator.select(IosTab.SEARCH)
@@ -333,8 +339,24 @@ private fun HomePage(
     val topPicks by IosTopPicks.picks.collectAsState()
     val topPicksLoading by IosTopPicks.loading.collectAsState()
     val account by IosAccount.account.collectAsState()
+    val hideRecents by IosSettings.hideRecents.flow.collectAsState()
+    val hideHomeVideos by IosSettings.hideHomeVideos.flow.collectAsState()
+    val hideTopPicks by IosSettings.hideTopPicks.flow.collectAsState()
+    val hideHomeMoods by IosSettings.hideHomeMoods.flow.collectAsState()
+    // Content Preferences: only what Home draws. Top Picks reads the unfiltered feed.
+    val visible = remember(state, hideHomeVideos, hideRecents) {
+        val loaded = state as? UiState.Success
+        if (loaded != null && (hideHomeVideos || hideRecents)) {
+            var shelves = loaded.data
+            if (hideRecents) shelves = shelves.filterNot { it.title == YtMusicRepository.RECENT_TITLE }
+            if (hideHomeVideos) shelves = shelves.withoutVideos()
+            UiState.Success(shelves)
+        } else {
+            state
+        }
+    }
     HomeScreen(
-        state = state,
+        state = visible,
         listState = rememberLazyListState(),
         onItemClick = { item, shelfTitle -> navigator.openShelfItem(item, shelfTitle) },
         onItemLongPress = { IosMenus.openShelfItem(it) },
@@ -348,14 +370,15 @@ private fun HomePage(
         onSignIn = { IosOverlays.login = true },
         onLoadMore = feeds::loadMoreHome,
         loadingMore = loadingMore,
-        recentlyPlayedLoading = recentsLoading,
+        recentlyPlayedLoading = recentsLoading && !hideRecents,
         currentSong = song,
         isPlaying = isPlaying,
         topPicks = topPicks,
         topPicksLoading = topPicksLoading,
         listenerName = account?.name?.substringBefore(' '),
-        onTopPickClick = { pick, label -> IosTopPicks.open(pick, label, navigator) },
-        onMoodClick = { mood, title -> IosTopPicks.playMood(mood, title, navigator) },
+        // Neither shelf is drawn without its callback.
+        onTopPickClick = if (hideTopPicks) null else { pick, label -> IosTopPicks.open(pick, label, navigator) },
+        onMoodClick = if (hideHomeMoods) null else { mood, title -> IosTopPicks.playMood(mood, title, navigator) },
         onMoodsShowAll = { navigator.open(IosPage.Moods) },
     )
 }

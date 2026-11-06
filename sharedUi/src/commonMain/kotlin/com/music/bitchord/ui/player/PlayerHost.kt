@@ -210,9 +210,15 @@ internal fun showsMusicVideo(song: Song): Boolean {
     return state != MusicVideoState.None
 }
 
-/** A track's artwork box: [base] square, or a music video's 16:9 at the same height. */
+/**
+ * A track's artwork box: [base] square, or a music video's 16:9 at the same height, unless the
+ * listener asked for square ones — see [VideoThumbnails][com.music.bitchord.ui.components.VideoThumbnails].
+ */
 internal fun Modifier.trackArtSize(base: androidx.compose.ui.unit.Dp, isVideo: Boolean): Modifier =
-    size(width = if (isVideo) base * (16f / 9f) else base, height = base)
+    size(
+        width = if (isVideo && !com.music.bitchord.ui.components.VideoThumbnails.square) base * (16f / 9f) else base,
+        height = base,
+    )
 
 /** @see PlayerHost.MusicVideo */
 @Composable

@@ -405,6 +405,8 @@ data class ShelfItem(
     val thumbnailUrl: String?,
     val videoId: String?,
     val browseId: String?,
+    /** A music-video upload rather than a catalogue track (upstream v1.9). */
+    val isVideo: Boolean = false,
 )
 
 /** The signed-in Google account, as YouTube Music reports it. */
@@ -452,6 +454,12 @@ data class HomeShelf(
     val moreBrowseId: String? = null,
     val moreParams: String? = null,
 )
+
+/** These shelves without their music videos, and without any shelf that leaves empty. */
+fun List<HomeShelf>.withoutVideos(): List<HomeShelf> = mapNotNull { shelf ->
+    val items = shelf.items.filterNot { it.isVideo }
+    if (items.isEmpty()) null else shelf.copy(items = items)
+}
 
 /**
  * These shelves minus any that mostly repeat one already on the page, or one earlier in this

@@ -299,6 +299,13 @@ internal object IosSettings {
     /** For a music video, play the catalogue's audio release in its place. */
     val preferMusicOnly = BoolPref("${PREFIX}prefer_music_only", false)
 
+    // Content Preferences (v1.9.1): what Home leaves out, and the shape of a music video's picture.
+    val hideRecents = BoolPref("${PREFIX}hide_recents", false)
+    val hideHomeVideos = BoolPref("${PREFIX}hide_home_videos", false)
+    val hideTopPicks = BoolPref("${PREFIX}hide_top_picks", false)
+    val hideHomeMoods = BoolPref("${PREFIX}hide_home_moods", false)
+    val squareVideoThumbnails = BoolPref("${PREFIX}square_video_thumbnails", false)
+
     /** The music video height the listener holds, or 0 for Auto (set from the quality drawer). */
     val musicVideoHeight = IntPref("${PREFIX}music_video_height", 0)
 
@@ -594,6 +601,20 @@ internal fun SettingsPage(
                 Divider()
                 val equalizerOn by IosSettings.equalizerEnabled.flow.collectAsState()
                 ActionRow(tr("Equalizer"), value = if (equalizerOn) tr("On") else tr("Off"), onClick = onOpenEqualizer)
+            }
+        }
+        item {
+            Group(tr("Content Preferences")) {
+                Toggle(tr("Hide Recents"), null, IosSettings.hideRecents)
+                Divider()
+                // No "Hide videos from Home" yet: the iOS feed has no video shelves to hide (the
+                // parser still drops widescreen cards), so the switch would do nothing. The pref
+                // and Home's filter are in place for when the music-video shelves come over.
+                Toggle(tr("Hide Top Picks for You"), null, IosSettings.hideTopPicks)
+                Divider()
+                Toggle(tr("Hide Find Your Mood"), null, IosSettings.hideHomeMoods)
+                Divider()
+                Toggle(tr("Square video thumbnails"), tr("Show music videos as squares everywhere, including the player"), IosSettings.squareVideoThumbnails)
             }
         }
         item {
@@ -1294,7 +1315,7 @@ internal fun Divider() {
 }
 
 @Composable
-internal fun Toggle(title: String, subtitle: String, pref: BoolPref) = Searchable(title, subtitle) {
+internal fun Toggle(title: String, subtitle: String?, pref: BoolPref) = Searchable(title, subtitle) {
     val checked by pref.flow.collectAsState()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { pref.set(!checked) }.padding(16.dp, 10.dp),
@@ -1302,7 +1323,9 @@ internal fun Toggle(title: String, subtitle: String, pref: BoolPref) = Searchabl
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, color = MaterialTheme.colorScheme.onSurface)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Spacer(Modifier.width(12.dp))
         IosSwitch(checked, pref::set)

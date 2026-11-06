@@ -142,6 +142,7 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.music.bitchord.ui.components.ExplicitBadge
+import com.music.bitchord.ui.components.VideoThumbnails
 import com.music.bitchord.ui.theme.HideStatusBar
 import com.music.bitchord.ui.theme.rememberScreenOrientation
 import com.music.bitchord.ui.theme.StatusBarIcons
@@ -811,6 +812,9 @@ fun NowPlayingScreen(
     // A music video plays its own picture where the sleeve is — see
     // [MusicVideoSurface] — and takes the place of any animated cover.
     val videoMode = showsMusicVideo(song)
+    // Square video thumbnails: the picture takes the sleeve's own slot, cropped
+    // to it, in place of the full-width box at the video's shape.
+    val squareVideo = videoMode && VideoThumbnails.square
     val canvas = rememberCanvasArtwork(song)?.takeUnless { videoMode }
     // Whether the picture has a frame on screen; the still frame shows until then.
     var videoRendered by remember(song.videoId) { mutableStateOf(false) }
@@ -821,6 +825,15 @@ fun NowPlayingScreen(
     // is the whole screen. The full-screen buttons turn the screen rather than
     // switching a layout.
     val screenOrientation = rememberScreenOrientation()
+    // Whether a full-screen button turned the screen, which outlasts the video
+    // that asked: the queue can move on to a song while it is still sideways.
+    var fullscreenRequested by remember { mutableStateOf(false) }
+    val sideways = landscapePlayerAvailable(windowWidth, windowHeight)
+    LaunchedEffect(sideways) { if (!sideways) fullscreenRequested = false }
+    val exitFullscreen = {
+        fullscreenRequested = false
+        screenOrientation.portrait()
+    }
     var canvasAspect by remember(canvas) { mutableFloatStateOf(0f) }
     // Whether the clip actually has a frame on screen right now, and one of
     // them — used to blow the sleeve out to the full-bleed hero treatment and
@@ -1017,6 +1030,12 @@ fun NowPlayingScreen(
     // value, and the panel now outlives a track change (see above), so there is
     // no longer a whole-player recomposition standing behind it as a backstop.
     KeepScreenOn(enabled = lyricsOpen)
+
+    // Back out of full screen to the player, as its corner button does, rather
+    // than past it to the mini player: with the phone lying flat no sensor
+    // turns the screen back, so Home would be left sideways. First in this list
+    // so anything opened over the video, such as its quality sheet, closes first.
+    PlayerBackHandler(enabled = sideways && (videoMode || fullscreenRequested), onBack = exitFullscreen)
 
     // Back out of the lyrics panel to the player, and only from the player
     // itself out to the mini player.
@@ -1760,7 +1779,7 @@ fun NowPlayingScreen(
                     artRequest = art.request,
                     rendered = videoRendered,
                     onRenderedChanged = { videoRendered = it },
-                    onExitFullscreen = screenOrientation::portrait,
+                    onExitFullscreen = exitFullscreen,
                     onOpenQuality = { showVideoQuality = true },
                     scrubber = {
                         PlayerScrubber(
@@ -2727,8 +2746,9 @@ fun NowPlayingScreen(
                             lerp(collapsedTitleTop, regularTitleTop(), playerDeckReveal.value)
                         } ?: regularTitleTop()
                         // Collapsed, the thumbnail is a music video's own shape at
-                        // the header's height, and the credits start past it.
-                        val thumbWidth = if (videoMode) THUMB_SIZE * (16f / 9f) else THUMB_SIZE
+                        // the header's height, as every list shows one — see
+                        // [trackArtSize] — and the credits start past it.
+                        val thumbWidth = if (videoMode && !squareVideo) THUMB_SIZE * (16f / 9f) else THUMB_SIZE
                         fun titleStart(): Dp = lerp(0.dp, thumbWidth + 12.dp, p())
 
                         // How far down the *screen* the sleeve's bottom edge sits, which
@@ -2795,11 +2815,12 @@ fun NowPlayingScreen(
                                 offset = Offset(artStart().roundToPx().toFloat(), artTop().roundToPx().toFloat()),
                                 size = Size(side, side),
                             )
-                            if (!videoMode) return@with square
-                            // A music video's card is its picture box: the player's full
-                            // width at the video's shape, centred on the square's slot —
-                            // the frame the sleeve flies to and from the mini player, and
-                            // morphs from into the 16:9 header thumbnail as it collapses.
+                            if (!videoMode || squareVideo) return@with square
+                            // A music video's card is its picture box: the
+                            // player's full width at the video's shape, centred
+                            // on the square's slot — the frame the sleeve flies
+                            // to and from the mini player, and morphs from into
+                            // the 16:9 header thumbnail as the player collapses.
                             val height = boxWidthPx / videoAspectState.value.coerceIn(1f, 2.4f)
                             val video = Rect(
                                 offset = Offset(0f, square.center.y - height / 2f),
@@ -3219,14 +3240,21 @@ fun NowPlayingScreen(
                                 Box(
                                     modifier = Modifier
                                         .offset {
+                                            if (squareVideo) {
+                                                return@offset IntOffset(
+                                                    artStart().roundToPx(), // [offset] mirrors itself right to left
+                                                    artTop().roundToPx(),
+                                                )
+                                            }
                                             val height = (boxWidthPx / aspect).roundToInt()
                                             val centre = (artTop() + artSize() / 2).roundToPx()
                                             IntOffset(0, centre - height / 2)
                                         }
                                         .layout { measurable, _ ->
-                                            val height = (boxWidthPx / aspect).roundToInt()
-                                            val placeable = measurable.measure(Constraints.fixed(boxWidthPx, height))
-                                            layout(boxWidthPx, height) { placeable.placeRelative(0, 0) }
+                                            val width = if (squareVideo) artSize().roundToPx() else boxWidthPx
+                                            val height = if (squareVideo) width else (boxWidthPx / aspect).roundToInt()
+                                            val placeable = measurable.measure(Constraints.fixed(width, height))
+                                            layout(width, height) { placeable.placeRelative(0, 0) }
                                         }
                                         .graphicsLayer {
                                             alpha = (1f - p() * 2f).coerceIn(0f, 1f)
@@ -3244,6 +3272,7 @@ fun NowPlayingScreen(
                                     }
                                     MusicVideoSurface(
                                         videoId = song.videoId,
+                                        fit = !squareVideo,
                                         onRenderedChanged = { videoRendered = it },
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -3251,7 +3280,10 @@ fun NowPlayingScreen(
                                     )
                                     VideoCornerControls(
                                         fullscreen = false,
-                                        onToggleFullscreen = screenOrientation::landscape,
+                                        onToggleFullscreen = {
+                                            fullscreenRequested = true
+                                            screenOrientation.landscape()
+                                        },
                                         onOpenQuality = { showVideoQuality = true },
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
